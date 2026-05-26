@@ -19,7 +19,13 @@ Goal: prove the durable local workflow.
 - Improve note templates.
 - Add retryable processing jobs.
 
-## Phase 3: Menu Bar App
+## Phase 3: Menu Bar App (pulled forward — see docs/superpowers/specs/2026-05-26-native-recorder-design.md)
+
+The FFmpeg CLI recorder was replaced by a native, signed ZMeet.app menu-bar app
+capturing system audio + microphone (ScreenCaptureKit + AVAudioEngine) mixed to
+`.m4a`. The `zmeet` CLI is retired; ZMeetCore remains the engine. ZMeetCore work
+is Plan A (`docs/superpowers/plans/2026-05-26-zmeetcore-recorder-refactor.md`);
+the app is Plan B.
 
 - SwiftUI menu bar wrapper around the core.
 - Active recording status.
