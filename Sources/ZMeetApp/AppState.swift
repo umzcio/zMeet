@@ -91,6 +91,15 @@ final class AppState: ObservableObject {
         NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
     }
 
+    func openNotesFolder() {
+        let path = ZMeetPaths.expandTilde(config.notesRepoPath)
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
+
+    func openConfigFile() {
+        NSWorkspace.shared.open(store.configURL)
+    }
+
     private func reloadRecent() {
         recent = (try? manager.listSessions().prefix(10).map { $0 }) ?? []
     }
