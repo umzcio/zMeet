@@ -74,11 +74,9 @@ public struct MarkdownRenderer {
 
         `\(session.audioPath)`
 
-        Configure `transcriptionCommand` in `~/.zmeet/config.json` or with `zmeet config set transcriptionCommand ...`, then run:
-
-        ```sh
-        zmeet process --id \(session.id)
-        ```
+        Set `transcriptionCommand` in `~/.zmeet/config.json`, then re-process this
+        meeting from the ZMeet menu-bar app (it will re-run transcription and
+        regenerate this note).
         """
     }
 

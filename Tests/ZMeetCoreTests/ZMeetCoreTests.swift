@@ -158,6 +158,26 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(recovered.first?.errorMessage != nil)
 }
 
+@Test func transcriptPlaceholderDoesNotReferenceRetiredCLI() {
+    let session = MeetingSession(
+        id: "2026-05-26-120000-demo",
+        title: "Demo",
+        sourceApp: nil,
+        startedAt: Date(),
+        endedAt: nil,
+        status: .recorded,
+        audioPath: "/tmp/demo.m4a",
+        transcriptPath: nil,
+        notePath: nil,
+        recorderLogPath: nil,
+        errorMessage: nil
+    )
+    let text = MarkdownRenderer().renderTranscriptPlaceholder(session: session)
+    #expect(!text.contains("zmeet process"))
+    #expect(!text.contains("zmeet config"))
+    #expect(text.contains("~/.zmeet/config.json"))
+}
+
 @Test func recoveryIgnoresAlreadyFinalizedSessions() throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
