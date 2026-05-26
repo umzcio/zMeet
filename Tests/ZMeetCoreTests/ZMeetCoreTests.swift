@@ -114,3 +114,61 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     }
     #expect(try manager.listSessions().isEmpty)
 }
+
+@Test func recoveryFinalizesSessionWithAudio() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    // A recorder that writes a non-empty file simulates "audio was captured".
+    let manager = SessionManager(config: config, recorder: MockRecorder(createsAudioFile: true))
+    let started = try manager.start(title: "Interrupted", sourceApp: nil)
+    #expect(started.status == .recording)   // never stopped → still recording on disk
+
+    let recovered = try manager.recoverInterruptedSessions()
+    #expect(recovered.count == 1)
+    #expect(recovered.first?.status == .recorded)
+    #expect(recovered.first?.endedAt != nil)
+}
+
+@Test func recoveryFailsSessionWithoutAudio() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    // A recorder that writes no file simulates "crashed before any audio".
+    let manager = SessionManager(config: config, recorder: MockRecorder(createsAudioFile: false))
+    _ = try manager.start(title: "Empty", sourceApp: nil)
+
+    let recovered = try manager.recoverInterruptedSessions()
+    #expect(recovered.count == 1)
+    #expect(recovered.first?.status == .failed)
+    #expect(recovered.first?.errorMessage != nil)
+}
+
+@Test func recoveryFailsSessionWithZeroByteAudioFile() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    // Recorder created the .m4a container but crashed before writing frames.
+    let manager = SessionManager(config: config, recorder: MockRecorder(createsAudioFile: true, audioFileSize: 0))
+    _ = try manager.start(title: "ZeroByte", sourceApp: nil)
+
+    let recovered = try manager.recoverInterruptedSessions()
+    #expect(recovered.count == 1)
+    #expect(recovered.first?.status == .failed)
+    #expect(recovered.first?.errorMessage != nil)
+}
+
+@Test func recoveryIgnoresAlreadyFinalizedSessions() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+    let started = try manager.start(title: "Clean", sourceApp: nil)
+    _ = try manager.stop()
+
+    let recovered = try manager.recoverInterruptedSessions()
+    #expect(recovered.isEmpty)
+    // The stopped session is untouched.
+    let listed = try manager.listSessions().first { $0.id == started.id }
+    #expect(listed?.status == .recorded)
+}

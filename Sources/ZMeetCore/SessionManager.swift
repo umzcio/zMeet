@@ -160,6 +160,32 @@ public final class SessionManager {
             .sorted { $0.startedAt > $1.startedAt }
     }
 
+    /// Finalizes sessions left in `.recording` by a crash or force-quit. A session
+    /// whose audio file exists and is non-empty becomes `.recorded`; otherwise it
+    /// becomes `.failed`. Returns the sessions whose status changed.
+    @discardableResult
+    public func recoverInterruptedSessions() throws -> [MeetingSession] {
+        var recovered: [MeetingSession] = []
+
+        for var session in try listSessions() where session.status == .recording {
+            let attributes = try? fileManager.attributesOfItem(atPath: session.audioPath)
+            let size = (attributes?[.size] as? UInt64) ?? 0
+
+            if size > 0 {
+                session.status = .recorded
+            } else {
+                session.status = .failed
+                session.errorMessage = "Recording was interrupted before any audio was captured."
+            }
+            session.endedAt = session.endedAt ?? Date()
+
+            try save(session)
+            recovered.append(session)
+        }
+
+        return recovered
+    }
+
     private func transcribe(session: MeetingSession, transcriptURL: URL) throws -> String {
         let values = commandValues(session: session, transcriptURL: transcriptURL, summaryURL: nil)
 
