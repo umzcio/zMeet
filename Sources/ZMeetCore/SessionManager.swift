@@ -1,8 +1,8 @@
-import Darwin
 import Foundation
 
 public final class SessionManager {
     private let config: ZMeetConfig
+    private let recorder: MeetingRecorder
     private let runner: ProcessRunner
     private let fileManager: FileManager
 
@@ -26,8 +26,14 @@ public final class SessionManager {
         URL(fileURLWithPath: ZMeetPaths.expandTilde(config.notesRepoPath), isDirectory: true)
     }
 
-    public init(config: ZMeetConfig, runner: ProcessRunner = ProcessRunner(), fileManager: FileManager = .default) {
+    public init(
+        config: ZMeetConfig,
+        recorder: MeetingRecorder,
+        runner: ProcessRunner = ProcessRunner(),
+        fileManager: FileManager = .default
+    ) {
         self.config = config
+        self.recorder = recorder
         self.runner = runner
         self.fileManager = fileManager
     }
@@ -48,33 +54,11 @@ public final class SessionManager {
         try ZMeetPaths.ensureDirectory(datedAudioDirectory)
 
         let audioURL = datedAudioDirectory.appendingPathComponent("\(id).m4a")
-        let logURL = logsURL.appendingPathComponent("\(id).ffmpeg.log")
+        let logURL = logsURL.appendingPathComponent("\(id).recorder.log")
 
-        let arguments = [
-            "-nostdin",
-            "-y",
-            "-f", "avfoundation",
-            "-i", config.ffmpegAudioInput,
-            "-vn",
-            "-acodec", "aac",
-            "-b:a", "128k",
-            audioURL.path
-        ]
-
-        let pid = try runner.startDetached(
-            executable: ZMeetPaths.expandTilde(config.ffmpegPath),
-            arguments: arguments,
-            logURL: logURL
-        )
-
-        usleep(700_000)
-        guard isProcessAlive(pid: pid) else {
-            let detail = ((try? String(contentsOf: logURL, encoding: .utf8)) ?? "ffmpeg exited immediately")
-                .split(separator: "\n")
-                .suffix(30)
-                .joined(separator: "\n")
-            throw ZMeetError.recorderFailedToStart(detail)
-        }
+        // Start capture first; only persist a `.recording` session if it succeeds,
+        // so a synchronous start failure never leaves a dangling session.
+        try recorder.start(to: audioURL, logURL: logURL, audio: config.audio)
 
         let session = MeetingSession(
             id: id,
@@ -83,11 +67,10 @@ public final class SessionManager {
             startedAt: startedAt,
             endedAt: nil,
             status: .recording,
-            recorderPID: pid,
             audioPath: audioURL.path,
             transcriptPath: nil,
             notePath: nil,
-            ffmpegLogPath: logURL.path,
+            recorderLogPath: logURL.path,
             errorMessage: nil
         )
 
@@ -100,17 +83,18 @@ public final class SessionManager {
             throw ZMeetError.noActiveSession
         }
 
-        if let pid = session.recorderPID {
-            _ = Darwin.kill(pid, SIGINT)
-            waitForProcessToExit(pid: pid, timeoutSeconds: 8)
-            if Darwin.kill(pid, 0) == 0 {
-                _ = Darwin.kill(pid, SIGTERM)
-            }
+        do {
+            try recorder.stop()
+        } catch {
+            session.status = .failed
+            session.errorMessage = error.localizedDescription
+            session.endedAt = Date()
+            try? save(session)
+            throw error
         }
 
         session.endedAt = Date()
         session.status = .recorded
-        session.recorderPID = nil
         try save(session)
         return session
     }
@@ -174,13 +158,6 @@ public final class SessionManager {
         return try files
             .map(loadSession(from:))
             .sorted { $0.startedAt > $1.startedAt }
-    }
-
-    public func listAudioDevices() throws -> ProcessResult {
-        try runner.run(
-            executable: ZMeetPaths.expandTilde(config.ffmpegPath),
-            arguments: ["-f", "avfoundation", "-list_devices", "true", "-i", ""]
-        )
     }
 
     private func transcribe(session: MeetingSession, transcriptURL: URL) throws -> String {
@@ -340,19 +317,5 @@ public final class SessionManager {
             .appendingPathComponent(ZMeetDates.year(session.startedAt), isDirectory: true)
             .appendingPathComponent(ZMeetDates.month(session.startedAt), isDirectory: true)
             .appendingPathComponent("\(session.id).md")
-    }
-
-    private func waitForProcessToExit(pid: Int32, timeoutSeconds: TimeInterval) {
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            if !isProcessAlive(pid: pid) {
-                return
-            }
-            usleep(200_000)
-        }
-    }
-
-    private func isProcessAlive(pid: Int32) -> Bool {
-        Darwin.kill(pid, 0) == 0
     }
 }

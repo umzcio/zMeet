@@ -6,7 +6,6 @@ public enum ZMeetError: Error, LocalizedError {
     case noActiveSession
     case sessionNotFound(String)
     case invalidCommand(String)
-    case recorderFailedToStart(String)
     case processFailed(command: String, exitCode: Int32, stderr: String)
 
     public var errorDescription: String? {
@@ -21,8 +20,6 @@ public enum ZMeetError: Error, LocalizedError {
             "No meeting session found for id \(id)."
         case .invalidCommand(let command):
             "Invalid command: \(command)"
-        case .recorderFailedToStart(let detail):
-            "Recorder failed to start: \(detail)"
         case .processFailed(let command, let exitCode, let stderr):
             "Command failed with exit code \(exitCode): \(command)\n\(stderr)"
         }
@@ -43,11 +40,10 @@ public struct MeetingSession: Codable, Equatable {
     public var startedAt: Date
     public var endedAt: Date?
     public var status: SessionStatus
-    public var recorderPID: Int32?
     public var audioPath: String
     public var transcriptPath: String?
     public var notePath: String?
-    public var ffmpegLogPath: String
+    public var recorderLogPath: String?
     public var errorMessage: String?
 
     public init(
@@ -57,11 +53,10 @@ public struct MeetingSession: Codable, Equatable {
         startedAt: Date,
         endedAt: Date?,
         status: SessionStatus,
-        recorderPID: Int32?,
         audioPath: String,
         transcriptPath: String?,
         notePath: String?,
-        ffmpegLogPath: String,
+        recorderLogPath: String?,
         errorMessage: String?
     ) {
         self.id = id
@@ -70,58 +65,72 @@ public struct MeetingSession: Codable, Equatable {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.status = status
-        self.recorderPID = recorderPID
         self.audioPath = audioPath
         self.transcriptPath = transcriptPath
         self.notePath = notePath
-        self.ffmpegLogPath = ffmpegLogPath
+        self.recorderLogPath = recorderLogPath
         self.errorMessage = errorMessage
+    }
+}
+
+public struct AudioConfig: Codable, Equatable {
+    public var captureSystemAudio: Bool
+    public var captureMicrophone: Bool
+    public var sampleRate: Int
+    public var bitrate: Int
+
+    public init(
+        captureSystemAudio: Bool = true,
+        captureMicrophone: Bool = true,
+        sampleRate: Int = 48_000,
+        bitrate: Int = 128_000
+    ) {
+        self.captureSystemAudio = captureSystemAudio
+        self.captureMicrophone = captureMicrophone
+        self.sampleRate = sampleRate
+        self.bitrate = bitrate
     }
 }
 
 public struct ZMeetConfig: Codable, Equatable {
     public var notesRepoPath: String
     public var appDataPath: String
-    public var ffmpegPath: String
-    public var ffmpegAudioInput: String
+    public var audio: AudioConfig
     public var transcriptionCommand: String?
     public var summaryCommand: String?
     public var gitAutoCommit: Bool
+    public var autoProcessOnStop: Bool
 
     public init(
         notesRepoPath: String,
         appDataPath: String,
-        ffmpegPath: String,
-        ffmpegAudioInput: String,
+        audio: AudioConfig = AudioConfig(),
         transcriptionCommand: String?,
         summaryCommand: String?,
-        gitAutoCommit: Bool
+        gitAutoCommit: Bool,
+        autoProcessOnStop: Bool = true
     ) {
         self.notesRepoPath = notesRepoPath
         self.appDataPath = appDataPath
-        self.ffmpegPath = ffmpegPath
-        self.ffmpegAudioInput = ffmpegAudioInput
+        self.audio = audio
         self.transcriptionCommand = transcriptionCommand
         self.summaryCommand = summaryCommand
         self.gitAutoCommit = gitAutoCommit
+        self.autoProcessOnStop = autoProcessOnStop
     }
 
     public static func `default`(
         notesRepoPath: String,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> ZMeetConfig {
-        let defaultFFmpeg = FileManager.default.fileExists(atPath: "/opt/homebrew/bin/ffmpeg")
-            ? "/opt/homebrew/bin/ffmpeg"
-            : "ffmpeg"
-
-        return ZMeetConfig(
+        ZMeetConfig(
             notesRepoPath: notesRepoPath,
             appDataPath: home.appendingPathComponent(".zmeet").path,
-            ffmpegPath: defaultFFmpeg,
-            ffmpegAudioInput: ":0",
+            audio: AudioConfig(),
             transcriptionCommand: nil,
             summaryCommand: nil,
-            gitAutoCommit: true
+            gitAutoCommit: true,
+            autoProcessOnStop: true
         )
     }
 }

@@ -52,35 +52,6 @@ public struct ProcessRunner {
         try run(executable: "/bin/zsh", arguments: ["-lc", command], currentDirectory: currentDirectory)
     }
 
-    public func startDetached(
-        executable: String,
-        arguments: [String],
-        logURL: URL,
-        currentDirectory: URL? = nil
-    ) throws -> Int32 {
-        try ZMeetPaths.ensureDirectory(logURL.deletingLastPathComponent())
-        FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        let logHandle = try FileHandle(forWritingTo: logURL)
-
-        let process = Process()
-        let resolved = resolveExecutable(executable, arguments: arguments)
-        process.executableURL = resolved.executableURL
-        process.arguments = resolved.arguments
-        process.currentDirectoryURL = currentDirectory
-        process.standardOutput = logHandle
-        process.standardError = logHandle
-
-        do {
-            try process.run()
-        } catch {
-            try? logHandle.close()
-            throw ZMeetError.recorderFailedToStart(error.localizedDescription)
-        }
-
-        try? logHandle.close()
-        return process.processIdentifier
-    }
-
     private func resolveExecutable(_ executable: String, arguments: [String]) -> (executableURL: URL, arguments: [String]) {
         if executable.contains("/") {
             return (URL(fileURLWithPath: executable), arguments)
