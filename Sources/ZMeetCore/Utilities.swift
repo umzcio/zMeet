@@ -1,0 +1,112 @@
+import Foundation
+
+public enum ZMeetPaths {
+    public static func expandTilde(_ path: String, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> String {
+        guard path == "~" || path.hasPrefix("~/") else {
+            return path
+        }
+
+        if path == "~" {
+            return home.path
+        }
+
+        return home.appendingPathComponent(String(path.dropFirst(2))).path
+    }
+
+    public static func ensureDirectory(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
+    public static func relativePath(fromDirectory baseDirectory: URL, to target: URL) -> String {
+        let baseComponents = baseDirectory.standardizedFileURL.pathComponents
+        let targetComponents = target.standardizedFileURL.pathComponents
+
+        var sharedCount = 0
+        while sharedCount < baseComponents.count,
+              sharedCount < targetComponents.count,
+              baseComponents[sharedCount] == targetComponents[sharedCount] {
+            sharedCount += 1
+        }
+
+        let upCount = baseComponents.count - sharedCount
+        let upComponents = Array(repeating: "..", count: upCount)
+        let downComponents = Array(targetComponents.dropFirst(sharedCount))
+        let components = upComponents + downComponents
+
+        return components.isEmpty ? "." : components.joined(separator: "/")
+    }
+}
+
+public enum ZMeetText {
+    public static func slugify(_ input: String) -> String {
+        let lowercased = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var output = ""
+        var previousWasDash = false
+
+        for scalar in lowercased.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                output.unicodeScalars.append(scalar)
+                previousWasDash = false
+            } else if !previousWasDash {
+                output.append("-")
+                previousWasDash = true
+            }
+        }
+
+        let trimmed = output.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return trimmed.isEmpty ? "untitled-meeting" : trimmed
+    }
+
+    public static func shellQuote(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
+    }
+
+    public static func yamlQuote(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+
+    public static func expandCommandTemplate(_ template: String, values: [String: String]) -> String {
+        var command = template
+        for (key, value) in values {
+            command = command.replacingOccurrences(of: "{\(key)}", with: shellQuote(value))
+        }
+        return command
+    }
+}
+
+public enum ZMeetDates {
+    public static func iso8601(_ date: Date) -> String {
+        ISO8601DateFormatter().string(from: date)
+    }
+
+    public static func fileStamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        return formatter.string(from: date)
+    }
+
+    public static func year(_ date: Date) -> String {
+        component("yyyy", from: date)
+    }
+
+    public static func month(_ date: Date) -> String {
+        component("MM", from: date)
+    }
+
+    public static func displayDate(_ date: Date) -> String {
+        component("yyyy-MM-dd", from: date)
+    }
+
+    private static func component(_ format: String, from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = format
+        return formatter.string(from: date)
+    }
+}
