@@ -7,10 +7,15 @@ let package = Package(
         .macOS(.v15)
     ],
     products: [
-        .library(name: "ZMeetCore", targets: ["ZMeetCore"])
+        .library(name: "ZMeetCore", targets: ["ZMeetCore"]),
+        .executable(name: "ZMeetApp", targets: ["ZMeetApp"])
     ],
     targets: [
         .target(name: "ZMeetCore"),
+        .executableTarget(
+            name: "ZMeetApp",
+            dependencies: ["ZMeetCore"]
+        ),
         .testTarget(
             name: "ZMeetCoreTests",
             dependencies: ["ZMeetCore"]
