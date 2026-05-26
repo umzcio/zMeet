@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct ZMeetApp: App {
-    @StateObject private var state = AppState()
+    @StateObject private var state = AppState(recorder: SCKAudioRecorder())
 
     var body: some Scene {
         MenuBarExtra {

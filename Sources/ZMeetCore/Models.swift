@@ -26,14 +26,14 @@ public enum ZMeetError: Error, LocalizedError {
     }
 }
 
-public enum SessionStatus: String, Codable, Equatable {
+public enum SessionStatus: String, Codable, Equatable, Sendable {
     case recording
     case recorded
     case processed
     case failed
 }
 
-public struct MeetingSession: Codable, Equatable {
+public struct MeetingSession: Codable, Equatable, Sendable {
     public var id: String
     public var title: String
     public var sourceApp: String?
@@ -73,7 +73,7 @@ public struct MeetingSession: Codable, Equatable {
     }
 }
 
-public struct AudioConfig: Codable, Equatable {
+public struct AudioConfig: Codable, Equatable, Sendable {
     public var captureSystemAudio: Bool
     public var captureMicrophone: Bool
     public var sampleRate: Int
@@ -92,7 +92,7 @@ public struct AudioConfig: Codable, Equatable {
     }
 }
 
-public struct ZMeetConfig: Codable, Equatable {
+public struct ZMeetConfig: Codable, Equatable, Sendable {
     public var notesRepoPath: String
     public var appDataPath: String
     public var audio: AudioConfig

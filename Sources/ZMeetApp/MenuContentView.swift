@@ -22,6 +22,13 @@ struct MenuContentView: View {
                     .padding(.bottom, 10)
             }
 
+            if state.phase == .idle, !(state.micGranted && state.screenGranted) {
+                Divider()
+                permissionHint
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+            }
+
             Divider()
             recentSection
                 .padding(.horizontal, 14)
@@ -33,6 +40,7 @@ struct MenuContentView: View {
                 .padding(.vertical, 8)
         }
         .frame(width: 300)
+        .onAppear { state.refreshPermissions() }
     }
 
     // MARK: Header — app icon + name, status on the right (OneDrive-style)
@@ -42,7 +50,7 @@ struct MenuContentView: View {
             Image(systemName: "waveform.circle.fill")
                 .font(.title2)
                 .foregroundStyle(state.isRecording ? .red : .accentColor)
-            Text("ZMeet").font(.headline)
+            Text("zMeet").font(.headline)
             Spacer()
             Text(statusText)
                 .font(.caption)
@@ -108,6 +116,23 @@ struct MenuContentView: View {
         }
     }
 
+    // MARK: Permission hint — only shown when something is missing
+
+    private var permissionHint: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.shield.fill")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Permissions needed").font(.caption).fontWeight(.medium)
+                Text("Microphone & Screen Recording")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Grant") { state.grantPermissions() }
+                .font(.caption)
+        }
+    }
+
     // MARK: Recent — short, tidy list with a chevron affordance
 
     private var recentSection: some View {
@@ -138,7 +163,7 @@ struct MenuContentView: View {
                 state.openConfigFile()
             }
             Spacer()
-            ToolbarIcon(systemName: "power", help: "Quit ZMeet") {
+            ToolbarIcon(systemName: "power", help: "Quit zMeet") {
                 NSApplication.shared.terminate(nil)
             }
         }

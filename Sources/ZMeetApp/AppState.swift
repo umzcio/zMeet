@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AVFoundation
 import ZMeetCore
 
 @MainActor
@@ -14,6 +15,8 @@ final class AppState: ObservableObject {
     @Published private(set) var recent: [MeetingSession] = []
     @Published var draftTitle: String = ""
     @Published private(set) var lastError: String?
+    @Published private(set) var micGranted: Bool = false
+    @Published private(set) var screenGranted: Bool = false
 
     private let store = ConfigStore()
     private let config: ZMeetConfig
@@ -34,6 +37,7 @@ final class AppState: ObservableObject {
         // Finalize any session interrupted by a previous crash/quit.
         _ = try? manager.recoverInterruptedSessions()
         reloadRecent()
+        refreshPermissions()
     }
 
     var isRecording: Bool {
@@ -43,14 +47,41 @@ final class AppState: ObservableObject {
 
     func startRecording() {
         lastError = nil
-        do {
-            _ = try manager.start(title: draftTitle, sourceApp: nil)
-            phase = .recording(since: Date())
-            draftTitle = ""
-            reloadRecent()
-        } catch {
-            lastError = error.localizedDescription
+        Task {
+            let ok = await requestPermissions()
+            guard ok else {
+                lastError = "Microphone and Screen Recording permission are required. Grant them in System Settings → Privacy & Security, then try again."
+                Permissions.openScreenRecordingSettings()
+                return
+            }
+            do {
+                _ = try manager.start(title: draftTitle, sourceApp: nil)
+                phase = .recording(since: Date())
+                draftTitle = ""
+                reloadRecent()
+            } catch {
+                lastError = error.localizedDescription
+            }
         }
+    }
+
+    func refreshPermissions() {
+        micGranted = Permissions.microphoneAuthorized()
+        screenGranted = Permissions.hasScreenRecording()
+    }
+
+    /// Request both permissions; returns true only if both end up granted.
+    func requestPermissions() async -> Bool {
+        let mic = await Permissions.ensureMicrophone()
+        if !Permissions.hasScreenRecording() {
+            Permissions.requestScreenRecording()
+        }
+        refreshPermissions()
+        return mic && Permissions.hasScreenRecording()
+    }
+
+    func grantPermissions() {
+        Task { _ = await requestPermissions() }
     }
 
     func stopRecording() {

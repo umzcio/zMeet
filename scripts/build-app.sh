@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Builds Sources/ZMeetApp into a signed ZMeet.app bundle.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="ZMeet"
+APP_NAME="zMeet"
 BUNDLE_ID="edu.umontana.zmeet"
 IDENTITY="Developer ID Application: The University of Montana (5JJ6G6A84S)"
 APP_DIR="$ROOT/build/$APP_NAME.app"
