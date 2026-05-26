@@ -10,6 +10,7 @@ final class MockRecorder: MeetingRecorder {
     var createsAudioFile: Bool
     var audioFileSize: Int
     var startError: Error?
+    var stopError: Error?
 
     init(createsAudioFile: Bool = true, audioFileSize: Int = 32) {
         self.createsAudioFile = createsAudioFile
@@ -31,5 +32,6 @@ final class MockRecorder: MeetingRecorder {
 
     func stop() throws {
         stopCount += 1
+        if let stopError { throw stopError }
     }
 }

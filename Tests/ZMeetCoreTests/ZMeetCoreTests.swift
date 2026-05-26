@@ -89,6 +89,26 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(FileManager.default.fileExists(atPath: processed.notePath!))
 }
 
+@Test func stopFailureMarksSessionFailed() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let recorder = MockRecorder()
+    let manager = SessionManager(config: config, recorder: recorder)
+    let started = try manager.start(title: "Flaky", sourceApp: nil)
+
+    recorder.stopError = ZMeetError.noActiveSession  // any error
+    #expect(throws: (any Error).self) {
+        _ = try manager.stop()
+    }
+
+    // The error is recorded and the session is finalized as .failed, not left .recording.
+    let listed = try manager.listSessions().first { $0.id == started.id }
+    #expect(listed?.status == .failed)
+    #expect(listed?.errorMessage != nil)
+    #expect(listed?.endedAt != nil)
+}
+
 @Test func startRejectsSecondConcurrentSession() throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }

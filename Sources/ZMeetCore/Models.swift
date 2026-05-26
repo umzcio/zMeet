@@ -11,7 +11,7 @@ public enum ZMeetError: Error, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .configMissing(let url):
-            "No zMeet config found at \(url.path). Run `zmeet init` first."
+            "No zMeet config found at \(url.path). Launch ZMeet to complete first-time setup."
         case .activeSessionExists(let id):
             "A meeting is already recording: \(id). Stop it before starting another."
         case .noActiveSession:
