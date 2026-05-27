@@ -33,7 +33,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>LSUIElement</key><true/>
-    <key>NSMicrophoneUsageDescription</key><string>ZMeet records your microphone during meetings to create notes.</string>
+    <key>NSMicrophoneUsageDescription</key><string>zMeet records your microphone during meetings to create notes.</string>
+    <key>NSSpeechRecognitionUsageDescription</key><string>zMeet transcribes your meeting recordings on-device to create notes.</string>
 </dict>
 </plist>
 PLIST

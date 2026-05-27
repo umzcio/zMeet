@@ -144,6 +144,45 @@ public final class SessionManager {
         try activeSession()
     }
 
+    /// Returns the session with the given id (callers need its audio path/title
+    /// before producing a transcript).
+    public func session(id: String) throws -> MeetingSession {
+        try loadSession(id: id)
+    }
+
+    /// Writes an externally-produced transcript + summary into the meeting folder,
+    /// renders the note, and marks the session processed. Used by the app's
+    /// on-device transcription/summarization path (keeps async work out of Core).
+    @discardableResult
+    public func applyProcessedText(id: String, transcript: String, summary: String) throws -> MeetingSession {
+        var session = try loadSession(id: id)
+        let transcriptURL = transcriptURL(for: session)
+        let noteURL = noteURL(for: session)
+        try ZMeetPaths.ensureDirectory(transcriptURL.deletingLastPathComponent())
+
+        do {
+            try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
+            let note = MarkdownRenderer().renderProcessedNote(
+                session: session,
+                transcriptURL: transcriptURL,
+                noteURL: noteURL,
+                summaryMarkdown: summary
+            )
+            try note.write(to: noteURL, atomically: true, encoding: .utf8)
+            session.status = .processed
+            session.transcriptPath = transcriptURL.path
+            session.notePath = noteURL.path
+            session.errorMessage = nil
+            try save(session)
+            return session
+        } catch {
+            session.status = .failed
+            session.errorMessage = error.localizedDescription
+            try? save(session)
+            throw error
+        }
+    }
+
     public func listSessions() throws -> [MeetingSession] {
         guard fileManager.fileExists(atPath: sessionsURL.path) else {
             return []

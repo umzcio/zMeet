@@ -101,18 +101,34 @@ final class AppState: ObservableObject {
     }
 
     func process(id: String) {
-        // Placeholder/stub processing is fast, so run it on the main actor.
-        // Milestone 2: when real transcription/summary commands can be slow,
-        // move this onto a background executor to keep the menu responsive.
+        lastError = nil
         phase = .processing
-        defer {
+        Task {
+            do {
+                // The async Apple speech/LLM work runs off the main actor; the
+                // synchronous Core write happens back on the main actor.
+                let session = try manager.session(id: id)
+                let audioURL = URL(fileURLWithPath: session.audioPath)
+                let (transcript, summary) = try await produceNotes(audioURL: audioURL, title: session.title)
+                _ = try manager.applyProcessedText(id: id, transcript: transcript, summary: summary)
+            } catch {
+                lastError = error.localizedDescription
+            }
             phase = .idle
             reloadRecent()
         }
-        do {
-            _ = try manager.process(id: id)
-        } catch {
-            lastError = error.localizedDescription
+    }
+
+    private func produceNotes(audioURL: URL, title: String) async throws -> (transcript: String, summary: String) {
+        if #available(macOS 26, *) {
+            let transcript = try await SpeechTranscription().transcribe(audioURL: audioURL)
+            let summary = try await MeetingSummarizer().summarize(transcript: transcript, title: title)
+            return (transcript, summary)
+        } else {
+            throw NSError(
+                domain: "zMeet", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "On-device transcription requires macOS 26 or newer."]
+            )
         }
     }
 
