@@ -1,6 +1,13 @@
-# zMeet Implementation Phases
+# zMeet Implementation Phases — v1.0 (shipped)
 
-Status: ✅ done · 🔜 next · ⬜ planned
+**v1.0 is complete (2026-05-26): the MVP works end to end** — detect a
+Zoom/Teams meeting → record system audio + mic → on-device transcription +
+summary → per-meeting folder under `~/Documents/zMeet`.
+
+Everything below shipped in v1.0. Future work (Library window, Settings, Search,
+and backlog) lives in **`ROADMAP-v2.md`**.
+
+Status: ✅ done
 
 ## ✅ Phase 1 — Manual capture core (ZMeetCore engine)
 
@@ -25,47 +32,15 @@ Status: ✅ done · 🔜 next · ⬜ planned
   (Summary / Key Points / Action Items / Decisions), with extractive fallback.
 - Local-only today; cloud is a future opt-in (below).
 
-## 🔜 Phase 4 — Meeting detection + "Take notes" popup
+## ✅ Phase 4 — Meeting detection + "Take notes" popup
 
-- Detect Zoom / Teams native apps and browser-based Google Meet.
-- Zoom-style notification offering to start recording when a meeting is detected.
-- User confirmation before auto-recording; per-app auto-start settings.
+- Detects Zoom / Teams meeting windows (via the Screen Recording permission).
+- Floating, non-activating "meeting detected" panel offering to record
+  (with a close button + 15s auto-dismiss); always-confirm, no auto-record.
 
-## ⬜ Phase 5 — Library & Reader window
+---
 
-The actual app window you open to work with past meetings (today the menu bar only
-reveals files in Finder).
+## What's next → v2.0
 
-- List/browse all meetings from `~/Documents/zMeet`.
-- Read the rendered `notes.md` and `transcript.md` in-app.
-- Play back the `recording.m4a`.
-- Rename / delete / reveal-in-Finder a meeting.
-- (Search lives in Phase 7.)
-
-## ⬜ Phase 6 — Settings window
-
-A proper preferences UI replacing hand-editing `~/.zmeet/config.json`.
-
-- Output folder location.
-- Audio options (system/mic capture, sample rate, bitrate).
-- Processing: local (default) vs. cloud toggle; auto-process-on-stop.
-- Transcription/summary provider + model choices.
-- Permission status + shortcuts to grant.
-
-## ⬜ Phase 7 — Search
-
-- Disposable local index over the markdown (SQLite FTS first, embeddings later).
-- Optional: expose read-only MCP tools over the notes folder.
-
-## ⬜ Backlog / deferred
-
-- **Noise suppression (take 2).** First attempt (AVAudioEngine voice-processing
-  input) broke the recorder with `-10875` and was reverted; retry with a safer
-  approach (e.g. offline noise-reduction pass, or an isolated VPIO mic graph),
-  tested before committing.
-- **Cloud processing (opt-in).** Claude API summary (transcript text only) and/or
-  cloud transcription, behind the Settings toggle.
-- **Private remote access.** Read-only remote endpoint behind a Cloudflare tunnel
-  + strong auth, sourced from the local index.
-- **Live level meter** in the recording UI.
-- **Speaker diarization** (who said what).
+v1.0 is done. The Library/Reader window, Settings UI, Search, and the rest of the
+backlog are planned for **v2.0 — see `ROADMAP-v2.md`**.
