@@ -21,6 +21,9 @@ final class AppState: ObservableObject {
     private let store = ConfigStore()
     private let config: ZMeetConfig
     private let manager: SessionManager
+    private let detector = MeetingDetector()
+    private let meetingPopup = MeetingPopupController()
+    private var dismissedMeetingKeys: Set<String> = []
 
     init(recorder: MeetingRecorder = StubRecorder()) {
         // Load config, or bootstrap a fresh one if missing/old-schema.
@@ -37,6 +40,32 @@ final class AppState: ObservableObject {
         _ = try? manager.recoverInterruptedSessions()
         reloadRecent()
         refreshPermissions()
+        startMeetingDetection()
+    }
+
+    private func startMeetingDetection() {
+        detector.onChange = { [weak self] meeting in
+            guard let self else { return }
+            guard let meeting else {
+                // Meeting ended: hide the popup and allow future meetings to prompt again.
+                self.meetingPopup.hide()
+                self.dismissedMeetingKeys.removeAll()
+                return
+            }
+            // Don't prompt while already recording, or for a meeting already dismissed.
+            guard !self.isRecording, !self.dismissedMeetingKeys.contains(meeting.key) else { return }
+            self.meetingPopup.show(
+                meeting: meeting,
+                onStart: {
+                    self.draftTitle = meeting.title
+                    self.startRecording()
+                },
+                onDismiss: {
+                    self.dismissedMeetingKeys.insert(meeting.key)
+                }
+            )
+        }
+        detector.start()
     }
 
     var isRecording: Bool {
@@ -46,6 +75,7 @@ final class AppState: ObservableObject {
 
     func startRecording() {
         lastError = nil
+        meetingPopup.hide()
         Task {
             let ok = await requestPermissions()
             guard ok else {
