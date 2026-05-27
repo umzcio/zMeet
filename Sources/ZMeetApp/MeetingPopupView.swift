@@ -22,22 +22,25 @@ struct MeetingPopupView: View {
 
             Spacer(minLength: 8)
 
-            VStack(spacing: 6) {
-                Button(action: onStart) {
-                    Text("Take notes").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-
-                Button("Dismiss", action: onDismiss)
-                    .buttonStyle(.plain)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Button(action: onStart) {
+                Text("Take notes")
             }
-            .frame(width: 96)
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
         }
         .padding(14)
+        .padding(.leading, 8)  // room for the close button
         .frame(width: 360)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(alignment: .topLeading) {
+            Button(action: onDismiss) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .padding(7)
+            .help("Dismiss")
+        }
     }
 }

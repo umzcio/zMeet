@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor
 final class MeetingPopupController {
     private var panel: NSPanel?
+    private var autoDismiss: Timer?
 
     func show(meeting: DetectedMeeting, onStart: @escaping () -> Void, onDismiss: @escaping () -> Void) {
         hide()
@@ -34,9 +35,16 @@ final class MeetingPopupController {
         positionTopRight(panel)
         panel.orderFrontRegardless()
         self.panel = panel
+
+        // Auto-dismiss after 15s; the meeting can still be recorded from the menu.
+        autoDismiss = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.hide() }
+        }
     }
 
     func hide() {
+        autoDismiss?.invalidate()
+        autoDismiss = nil
         panel?.orderOut(nil)
         panel = nil
     }
