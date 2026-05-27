@@ -53,21 +53,26 @@ struct MenuContentView: View {
             Image(systemName: "waveform.circle.fill")
                 .font(.title2)
                 .foregroundStyle(state.isRecording ? .red : Self.mint)
-            // Wordmark: cursive z (Dancing Script) + mono "Meet"
-            HStack(spacing: 0) {
-                Text("z")
-                    .font(.custom("Dancing Script", size: 27))
+            // Wordmark: cursive z (Dancing Script) + mono "Meet".
+            // Baseline-aligned, with extra bottom room for the z's descender tail.
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+                // Leading space insets the glyph inside its own text box so the
+                // cursive z's entry swash isn't clipped at the frame's left edge.
+                Text(" z")
+                    .font(.custom("Dancing Script", size: 23))
                     .foregroundStyle(Self.mint)
                 Text("Meet")
                     .font(.headline)
             }
+            .padding(.bottom, 5)
             Spacer()
             Text(statusText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.top, 11)
+        .padding(.bottom, 12)
     }
 
     private var statusText: String {
