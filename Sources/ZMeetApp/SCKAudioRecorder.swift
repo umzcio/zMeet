@@ -4,19 +4,18 @@ import CoreMedia
 import ScreenCaptureKit
 import ZMeetCore
 
-/// Captures system audio via ScreenCaptureKit and the microphone via
-/// AVAudioEngine's voice-processing input (built-in noise suppression + echo
-/// cancellation). Both are mixed into a canonical PCM format and written to an
-/// AAC `.m4a`. The main mixer is muted so nothing plays back to the speakers
-/// (no feedback); a capture mixer is tapped at full level.
+/// Captures system audio + microphone via one SCStream (macOS 15+), normalizes
+/// both to a canonical PCM format, mixes them through an AVAudioEngine, and
+/// writes the mix to an AAC `.m4a`. The main mixer is muted so nothing plays
+/// back to the speakers (no feedback); a capture mixer is tapped at full level.
 final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchecked Sendable {
     private var stream: SCStream?
     private let engine = AVAudioEngine()
     private let systemPlayer = AVAudioPlayerNode()
+    private let micPlayer = AVAudioPlayerNode()
     private let captureMixer = AVAudioMixerNode()
     private var audioFile: AVAudioFile?
     private var logHandle: FileHandle?
-    private var micEnabled = false
     private let queue = DispatchQueue(label: "edu.umontana.zmeet.capture")
 
     private let canonical = AVAudioFormat(
@@ -26,6 +25,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchec
         interleaved: false
     )!
     private var systemConverter: AVAudioConverter?
+    private var micConverter: AVAudioConverter?
 
     func start(to url: URL, logURL: URL, audio: AudioConfig) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -42,24 +42,10 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchec
         ])
 
         engine.attach(systemPlayer)
+        engine.attach(micPlayer)
         engine.attach(captureMixer)
         engine.connect(systemPlayer, to: captureMixer, format: canonical)
-
-        // Microphone via the engine's voice-processing input node: this turns on
-        // Apple's noise suppression + echo cancellation for the mic signal.
-        if audio.captureMicrophone {
-            do {
-                try engine.inputNode.setVoiceProcessingEnabled(true)
-                let micFormat = engine.inputNode.outputFormat(forBus: 0)
-                engine.connect(engine.inputNode, to: captureMixer, format: micFormat)
-                micEnabled = true
-                log("mic via voice-processing input: \(micFormat)")
-            } catch {
-                log("voice-processing mic unavailable, continuing system-only: \(error)")
-                micEnabled = false
-            }
-        }
-
+        engine.connect(micPlayer, to: captureMixer, format: canonical)
         engine.connect(captureMixer, to: engine.mainMixerNode, format: canonical)
         engine.mainMixerNode.outputVolume = 0  // prevent speaker feedback
 
@@ -70,6 +56,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchec
 
         try engine.start()
         systemPlayer.play()
+        micPlayer.play()
 
         Task {
             do { try await self.startStream(audio: audio) }
@@ -78,10 +65,6 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchec
     }
 
     private func startStream(audio: AudioConfig) async throws {
-        guard audio.captureSystemAudio else {
-            log("system audio disabled")
-            return
-        }
         let content = try await SCShareableContent.current
         guard let display = content.displays.first else {
             log("no display available")
@@ -90,26 +73,38 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchec
         let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
 
         let config = SCStreamConfiguration()
-        config.capturesAudio = true
+        config.capturesAudio = audio.captureSystemAudio
         config.sampleRate = Int(canonical.sampleRate)
         config.channelCount = 2
-        config.captureMicrophone = false  // mic handled by the voice-processing engine input
+        config.captureMicrophone = audio.captureMicrophone
         config.width = 2
         config.height = 2
         config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
 
         let stream = SCStream(filter: filter, configuration: config, delegate: nil)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
+        if audio.captureMicrophone {
+            try stream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: queue)
+        }
         self.stream = stream
         try await stream.startCapture()
-        log("capture started (mic=\(micEnabled))")
+        log("capture started (system=\(audio.captureSystemAudio) mic=\(audio.captureMicrophone))")
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .audio, sampleBuffer.isValid, sampleBuffer.numSamples > 0,
+        guard sampleBuffer.isValid, sampleBuffer.numSamples > 0,
               let pcm = Self.pcmBuffer(from: sampleBuffer) else { return }
-        if let out = convert(pcm, using: &systemConverter, label: "system") {
-            systemPlayer.scheduleBuffer(out, completionHandler: nil)
+        switch type {
+        case .audio:
+            if let out = convert(pcm, using: &systemConverter, label: "system") {
+                systemPlayer.scheduleBuffer(out, completionHandler: nil)
+            }
+        case .microphone:
+            if let out = convert(pcm, using: &micConverter, label: "mic") {
+                micPlayer.scheduleBuffer(out, completionHandler: nil)
+            }
+        default:
+            break
         }
     }
 
@@ -151,11 +146,8 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchec
         stream = nil
         captureMixer.removeTap(onBus: 0)
         systemPlayer.stop()
+        micPlayer.stop()
         engine.stop()
-        if micEnabled {
-            try? engine.inputNode.setVoiceProcessingEnabled(false)
-            micEnabled = false
-        }
         audioFile = nil  // closes/finalizes the file
         try? logHandle?.close()
         logHandle = nil
