@@ -8,3 +8,6 @@
 # Generated editor files
 *.xcuserstate
 *.xcworkspace
+
+# Built app bundle output
+build/
