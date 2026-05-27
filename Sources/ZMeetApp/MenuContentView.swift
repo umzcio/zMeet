@@ -45,12 +45,22 @@ struct MenuContentView: View {
 
     // MARK: Header — app icon + name, status on the right (OneDrive-style)
 
+    /// Brand mint (#2EE08A).
+    private static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
+
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "waveform.circle.fill")
                 .font(.title2)
-                .foregroundStyle(state.isRecording ? .red : .accentColor)
-            Text("zMeet").font(.headline)
+                .foregroundStyle(state.isRecording ? .red : Self.mint)
+            // Wordmark: cursive z (Dancing Script) + mono "Meet"
+            HStack(spacing: 0) {
+                Text("z")
+                    .font(.custom("Dancing Script", size: 27))
+                    .foregroundStyle(Self.mint)
+                Text("Meet")
+                    .font(.headline)
+            }
             Spacer()
             Text(statusText)
                 .font(.caption)

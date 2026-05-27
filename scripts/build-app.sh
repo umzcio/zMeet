@@ -19,6 +19,10 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RES_DIR"
 cp "$BIN" "$MACOS_DIR/$APP_NAME"
 
+# Bundle the wordmark font (auto-registered at launch via ATSApplicationFontsPath).
+mkdir -p "$RES_DIR/Fonts"
+cp "$ROOT/scripts/assets/DancingScript.ttf" "$RES_DIR/Fonts/DancingScript.ttf"
+
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -33,6 +37,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>LSUIElement</key><true/>
+    <key>ATSApplicationFontsPath</key><string>Fonts</string>
     <key>NSMicrophoneUsageDescription</key><string>zMeet records your microphone during meetings to create notes.</string>
     <key>NSSpeechRecognitionUsageDescription</key><string>zMeet transcribes your meeting recordings on-device to create notes.</string>
 </dict>

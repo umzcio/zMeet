@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zMeet brand · 1f · mic + flourish z</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--mint:#2EE08A;--mint-deep:#16A35E;--mint-light:#E0F5E9;--surface:#1E2420;--bg:#0D110F;--muted:#7FD9A8;--line:rgba(46,224,138,.10);--mono:'JetBrains Mono',ui-monospace,monospace}
+  *{box-sizing:border-box;margin:0;padding:0}html,body{height:100%}
+  body{font-family:var(--mono);background:var(--bg);color:var(--mint-light);-webkit-font-smoothing:antialiased;line-height:1.5;
+    background-image:radial-gradient(120% 80% at 50% -10%,rgba(46,224,138,.12),transparent 60%),linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:auto,40px 40px,40px 40px;min-height:100%;display:flex;flex-direction:column;align-items:center;padding:48px 24px 80px}
+  .tag{font-size:12px;letter-spacing:.18em;color:var(--mint);text-transform:uppercase;opacity:.85}
+  .concept{margin-top:6px;font-size:13px;color:var(--muted);text-align:center;max-width:560px}
+  .blink{animation:blink 1.1s steps(1) infinite}@keyframes blink{50%{opacity:0}}
+
+  .tiles{display:flex;gap:40px;flex-wrap:wrap;justify-content:center;margin-top:42px}
+  .tile{display:flex;flex-direction:column;align-items:center;gap:14px}
+  .tile small{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .tile .note{font-size:11px;color:#5f7a6c;max-width:200px;text-align:center}
+
+  .icon{width:184px;height:184px;border-radius:42px;position:relative;overflow:hidden;
+    background:linear-gradient(160deg,#10160f,#0a0d0b 70%);
+    box-shadow:0 0 0 1px rgba(46,224,138,.18),0 26px 64px -22px rgba(46,224,138,.5),inset 0 1px 0 rgba(255,255,255,.06)}
+  .icon::after{content:"";position:absolute;inset:0;background:radial-gradient(80% 60% at 50% 0%,rgba(46,224,138,.14),transparent 70%);mix-blend-mode:screen;pointer-events:none}
+  .icon svg{position:absolute;inset:0;width:100%;height:100%}
+  .mic line,.mic rect{stroke:#fff;stroke-linecap:round;fill:none}
+  .zpath{fill:none;stroke:var(--mint);stroke-width:15;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 8px rgba(46,224,138,.55))}
+
+  .words{margin-top:66px;display:flex;flex-direction:column;align-items:center;gap:10px}
+  .wm{display:flex;align-items:baseline}
+  .wm .cz{font-family:'Dancing Script',cursive;font-weight:700;color:var(--mint);font-size:74px;line-height:.8;transform:translateY(.06em);filter:drop-shadow(0 0 8px rgba(46,224,138,.5))}
+  .wm .rest{font-family:var(--mono);font-weight:800;font-size:50px;letter-spacing:-.02em;color:var(--mint-light)}
+  .wm .cur{width:.4ch;height:.9em;background:var(--mint);align-self:center;margin-left:.15ch}
+  .label{font-size:11px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}
+  .swatches{display:flex;gap:8px;margin-top:46px}.sw{width:48px;height:48px;border-radius:9px;display:flex;align-items:flex-end;padding:5px;font-size:9px;color:#0a3320}
+  footer{margin-top:34px;font-size:11px;color:#4d6358;text-align:center;max-width:600px}
+</style>
+</head>
+<body>
+  <div class="tag">Direction 01f · mic + flourish z</div>
+  <p class="concept">Hand-drawn big cursive z with long sweeping flourishes wrapping the white mic — closer to your reference. A: z over the mic · B: z behind.</p>
+
+  <div class="tiles">
+    <!-- A: z in front -->
+    <div class="tile">
+      <div class="icon">
+        <svg class="mic" viewBox="0 0 220 220">
+          <rect x="86" y="24" width="48" height="96" rx="24" stroke-width="9" fill="#0D110F"/>
+          <line x1="110" y1="48" x2="110" y2="86" stroke-width="9"/>
+          <line x1="110" y1="120" x2="110" y2="168" stroke-width="9"/>
+          <line x1="86" y1="170" x2="134" y2="170" stroke-width="9"/>
+        </svg>
+        <svg viewBox="0 0 220 220">
+          <path class="zpath" d="M54,96 C48,74 96,70 92,96 C88,118 150,104 148,128 C146,150 92,150 82,150 C44,150 44,186 80,178 C140,164 156,150 190,98"/>
+        </svg>
+      </div>
+      <small>A · z in front</small>
+      <div class="note">Green z sweeps over the mic, flourishes out left + up-right.</div>
+    </div>
+
+    <!-- B: z behind -->
+    <div class="tile">
+      <div class="icon">
+        <svg viewBox="0 0 220 220">
+          <path class="zpath" d="M54,96 C48,74 96,70 92,96 C88,118 150,104 148,128 C146,150 92,150 82,150 C44,150 44,186 80,178 C140,164 156,150 190,98"/>
+        </svg>
+        <svg class="mic" viewBox="0 0 220 220">
+          <rect x="86" y="24" width="48" height="96" rx="24" stroke-width="9" fill="#0D110F"/>
+          <line x1="110" y1="48" x2="110" y2="86" stroke-width="9"/>
+          <line x1="110" y1="120" x2="110" y2="168" stroke-width="9"/>
+          <line x1="86" y1="170" x2="134" y2="170" stroke-width="9"/>
+        </svg>
+      </div>
+      <small>B · z behind</small>
+      <div class="note">Mic solid in front; z flourish as a backdrop ribbon.</div>
+    </div>
+  </div>
+
+  <div class="words">
+    <div class="label">paired wordmark</div>
+    <div class="wm"><span class="cz">z</span><span class="rest">Meet</span><span class="cur blink"></span></div>
+  </div>
+
+  <div class="swatches">
+    <div class="sw" style="background:#2EE08A">#2EE08A</div>
+    <div class="sw" style="background:#16A35E;color:#E0F5E9">#16A35E</div>
+    <div class="sw" style="background:#1E2420;color:#7FD9A8">#1E2420</div>
+    <div class="sw" style="background:#0D110F;color:#2EE08A">#0D110F</div>
+    <div class="sw" style="background:#ffffff;color:#0A3320">#FFFFFF</div>
+  </div>
+
+  <footer>This z is a hand-drawn curve — treat the shape as a draft. Tell me what to adjust: bigger/smaller, more or fewer flourishes, where the loops sit, thicker/thinner stroke, front vs behind — and I'll keep tuning the path until the gesture is right.</footer>
+</body>
+</html>

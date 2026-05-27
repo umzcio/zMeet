@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zMeet brand · 1b · Cursive-z wave</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Dancing+Script:wght@600;700&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--mint:#2EE08A;--mint-deep:#16A35E;--mint-light:#E0F5E9;--surface:#1E2420;--bg:#0D110F;--muted:#7FD9A8;--line:rgba(46,224,138,.10);--mono:'JetBrains Mono',ui-monospace,monospace}
+  *{box-sizing:border-box;margin:0;padding:0}html,body{height:100%}
+  body{font-family:var(--mono);background:var(--bg);color:var(--mint-light);-webkit-font-smoothing:antialiased;line-height:1.5;
+    background-image:radial-gradient(120% 80% at 50% -10%,rgba(46,224,138,.12),transparent 60%),linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:auto,40px 40px,40px 40px;min-height:100%;display:flex;flex-direction:column;align-items:center;padding:48px 24px 80px}
+  .tag{font-size:12px;letter-spacing:.18em;color:var(--mint);text-transform:uppercase;opacity:.85}
+  .concept{margin-top:6px;font-size:13px;color:var(--muted);text-align:center;max-width:560px}
+  .blink{animation:blink 1.1s steps(1) infinite}@keyframes blink{50%{opacity:0}}
+
+  .tiles{display:flex;gap:34px;flex-wrap:wrap;justify-content:center;margin-top:40px}
+  .tile{display:flex;flex-direction:column;align-items:center;gap:14px}
+  .tile small{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .tile .note{font-size:11px;color:#5f7a6c;max-width:200px;text-align:center}
+  .icon{width:132px;height:132px;border-radius:30px;position:relative;display:grid;place-items:center;
+    background:linear-gradient(160deg,#10160f,#0a0d0b 70%);
+    box-shadow:0 0 0 1px rgba(46,224,138,.18),0 24px 60px -22px rgba(46,224,138,.5),inset 0 1px 0 rgba(255,255,255,.06)}
+  .icon::after{content:"";position:absolute;inset:0;border-radius:inherit;background:radial-gradient(80% 60% at 50% 0%,rgba(46,224,138,.2),transparent 70%);mix-blend-mode:screen}
+  .stroke{fill:none;stroke:url(#mg);stroke-width:6.5;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 7px rgba(46,224,138,.6))}
+  /* draw-on animation like an oscilloscope trace */
+  .draw{stroke-dasharray:1000;stroke-dashoffset:1000;animation:draw 2.4s ease-in-out forwards}
+  @keyframes draw{to{stroke-dashoffset:0}}
+
+  .words{margin-top:64px;display:flex;flex-direction:column;gap:26px;align-items:center}
+  .wm{display:flex;align-items:baseline}
+  .wm .cz{font-family:'Dancing Script',cursive;font-weight:700;color:var(--mint);font-size:74px;line-height:.8;transform:translateY(.06em);filter:drop-shadow(0 0 8px rgba(46,224,138,.5))}
+  .wm .cz.caveat{font-family:'Caveat',cursive}
+  .wm .rest{font-family:var(--mono);font-weight:800;font-size:50px;letter-spacing:-.02em;color:var(--mint-light)}
+  .label{font-size:11px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}
+
+  footer{margin-top:54px;font-size:11px;color:#4d6358;text-align:center;max-width:560px}
+  .swatches{display:flex;gap:8px;margin-top:40px}.sw{width:48px;height:48px;border-radius:9px;display:flex;align-items:flex-end;padding:5px;font-size:9px;color:#0a3320}
+</style>
+</head>
+<body>
+  <div class="tag">Direction 01b · Cursive-z wave</div>
+  <p class="concept">One continuous mint line that reads as a script "z" <em>and</em> an audio waveform at once — drawn like an oscilloscope trace. Three takes on the idea; tell me which gesture feels right and I'll refine the exact curve.</p>
+
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <linearGradient id="mg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2EE08A"/><stop offset="1" stop-color="#16A35E"/></linearGradient>
+  </defs></svg>
+
+  <div class="tiles">
+    <!-- Take A: flowing single-stroke z-wave -->
+    <div class="tile">
+      <div class="icon">
+        <svg width="86" height="86" viewBox="0 0 100 100">
+          <path class="stroke draw" d="M20,38 C30,30 36,46 46,40 C56,34 62,46 76,34
+            C64,48 48,56 30,64 C42,60 50,70 60,64 C70,58 74,70 82,64"/>
+        </svg>
+      </div>
+      <small>Take A · flowing</small>
+      <div class="note">Soft sine undulation. Most "wave", z is implied by the overall sweep.</div>
+    </div>
+
+    <!-- Take B: script z with a looped entry, wave on the spine -->
+    <div class="tile">
+      <div class="icon">
+        <svg width="86" height="86" viewBox="0 0 100 100">
+          <path class="stroke draw" style="animation-delay:.3s" d="M26,34 C34,24 52,26 56,36 C58,44 50,46 44,44
+            C58,46 66,40 74,34 C60,50 44,58 30,66 C46,62 62,66 76,62
+            C70,72 56,76 48,70"/>
+        </svg>
+      </div>
+      <small>Take B · script loop</small>
+      <div class="note">A cursive entry loop up top + a tail curl. Reads more like handwriting.</div>
+    </div>
+
+    <!-- Take C: z whose baseline is an EQ waveform -->
+    <div class="tile">
+      <div class="icon">
+        <svg width="86" height="86" viewBox="0 0 100 100">
+          <path class="stroke draw" style="animation-delay:.55s" d="M24,33 C40,31 60,31 74,33 C58,48 44,54 30,62
+            C38,62 38,54 44,54 C50,54 50,68 56,68 C62,68 62,50 68,50 C74,50 74,66 80,64"/>
+        </svg>
+      </div>
+      <small>Take C · wave baseline</small>
+      <div class="note">Clear z top + diagonal, with the bottom stroke breaking into a little waveform.</div>
+    </div>
+  </div>
+
+  <div class="words">
+    <div class="label">Wordmark — cursive z + mono "Meet"</div>
+    <div class="wm"><span class="cz">z</span><span class="rest">Meet</span><span style="width:.4ch;height:.9em;background:var(--mint);align-self:center;margin-left:.15ch" class="blink"></span></div>
+    <div class="wm"><span class="cz caveat">z</span><span class="rest">Meet</span></div>
+    <div class="label" style="margin-top:4px">(top: Dancing Script · bottom: Caveat — the cursive feel of the icon, echoed in the wordmark)</div>
+  </div>
+
+  <div class="swatches">
+    <div class="sw" style="background:#2EE08A">#2EE08A</div>
+    <div class="sw" style="background:#16A35E;color:#E0F5E9">#16A35E</div>
+    <div class="sw" style="background:#1E2420;color:#7FD9A8">#1E2420</div>
+    <div class="sw" style="background:#0D110F;color:#2EE08A">#0D110F</div>
+    <div class="sw" style="background:#E0F5E9;color:#0A3320">#E0F5E9</div>
+  </div>
+
+  <footer>These curves are hand-authored Béziers — think of them as rough gestures, not the final glyph. Once you pick the take that feels closest, I'll redraw it precisely (and tune how legible it stays at 16px in the menu bar).</footer>
+</body>
+</html>
