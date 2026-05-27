@@ -93,7 +93,9 @@ public struct AudioConfig: Codable, Equatable, Sendable {
 }
 
 public struct ZMeetConfig: Codable, Equatable, Sendable {
-    public var notesRepoPath: String
+    /// Root for user-facing meeting output (one folder per meeting lives here),
+    /// e.g. ~/Documents/zMeet.
+    public var outputPath: String
     public var appDataPath: String
     public var audio: AudioConfig
     public var transcriptionCommand: String?
@@ -102,15 +104,15 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     public var autoProcessOnStop: Bool
 
     public init(
-        notesRepoPath: String,
+        outputPath: String,
         appDataPath: String,
         audio: AudioConfig = AudioConfig(),
         transcriptionCommand: String?,
         summaryCommand: String?,
-        gitAutoCommit: Bool,
+        gitAutoCommit: Bool = false,
         autoProcessOnStop: Bool = true
     ) {
-        self.notesRepoPath = notesRepoPath
+        self.outputPath = outputPath
         self.appDataPath = appDataPath
         self.audio = audio
         self.transcriptionCommand = transcriptionCommand
@@ -120,16 +122,16 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     }
 
     public static func `default`(
-        notesRepoPath: String,
+        outputPath: String? = nil,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> ZMeetConfig {
         ZMeetConfig(
-            notesRepoPath: notesRepoPath,
+            outputPath: outputPath ?? home.appendingPathComponent("Documents/zMeet").path,
             appDataPath: home.appendingPathComponent(".zmeet").path,
             audio: AudioConfig(),
             transcriptionCommand: nil,
             summaryCommand: nil,
-            gitAutoCommit: true,
+            gitAutoCommit: false,
             autoProcessOnStop: true
         )
     }

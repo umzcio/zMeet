@@ -26,15 +26,13 @@ public final class ConfigStore {
         try data.write(to: configURL, options: [.atomic])
     }
 
-    public func bootstrap(notesRepoPath rawNotesRepoPath: String) throws -> ZMeetConfig {
-        let notesRepoPath = ZMeetPaths.expandTilde(rawNotesRepoPath, home: home)
-        let config = ZMeetConfig.default(notesRepoPath: notesRepoPath, home: home)
+    public func bootstrap(outputPath rawOutputPath: String? = nil) throws -> ZMeetConfig {
+        let outputPath = rawOutputPath.map { ZMeetPaths.expandTilde($0, home: home) }
+        let config = ZMeetConfig.default(outputPath: outputPath, home: home)
 
         try write(config)
         try ZMeetPaths.ensureDirectory(URL(fileURLWithPath: config.appDataPath, isDirectory: true))
-        try ZMeetPaths.ensureDirectory(URL(fileURLWithPath: config.notesRepoPath, isDirectory: true))
-        try ZMeetPaths.ensureDirectory(URL(fileURLWithPath: config.notesRepoPath, isDirectory: true).appendingPathComponent("meetings", isDirectory: true))
-        try ZMeetPaths.ensureDirectory(URL(fileURLWithPath: config.notesRepoPath, isDirectory: true).appendingPathComponent("transcripts", isDirectory: true))
+        try ZMeetPaths.ensureDirectory(URL(fileURLWithPath: config.outputPath, isDirectory: true))
 
         return config
     }

@@ -156,8 +156,8 @@ struct MenuContentView: View {
 
     private var toolbar: some View {
         HStack(spacing: 18) {
-            ToolbarIcon(systemName: "folder", help: "Open notes folder") {
-                state.openNotesFolder()
+            ToolbarIcon(systemName: "folder", help: "Open zMeet folder") {
+                state.openOutputFolder()
             }
             ToolbarIcon(systemName: "gearshape", help: "Edit configuration") {
                 state.openConfigFile()

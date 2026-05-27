@@ -28,8 +28,7 @@ final class AppState: ObservableObject {
         if let existing = try? store.load() {
             loaded = existing
         } else {
-            loaded = (try? store.bootstrap(notesRepoPath: "~/Documents/Github/zMeetNotes"))
-                ?? ZMeetConfig.default(notesRepoPath: "~/Documents/Github/zMeetNotes")
+            loaded = (try? store.bootstrap()) ?? ZMeetConfig.default()
         }
         self.config = loaded
         self.manager = SessionManager(config: loaded, recorder: recorder)
@@ -122,8 +121,8 @@ final class AppState: ObservableObject {
         NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
     }
 
-    func openNotesFolder() {
-        let path = ZMeetPaths.expandTilde(config.notesRepoPath)
+    func openOutputFolder() {
+        let path = ZMeetPaths.expandTilde(config.outputPath)
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 

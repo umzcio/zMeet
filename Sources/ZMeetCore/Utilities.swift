@@ -57,6 +57,21 @@ public enum ZMeetText {
         return trimmed.isEmpty ? "untitled-meeting" : trimmed
     }
 
+    /// Sanitizes a meeting title for use as a folder or file name: strips path
+    /// separators and other characters that are awkward on disk, collapses
+    /// whitespace, and falls back to a default when empty.
+    public static func sanitizeFileName(_ input: String) -> String {
+        let illegal = CharacterSet(charactersIn: "/\\:*?\"<>|")
+        let cleaned = input
+            .components(separatedBy: illegal)
+            .joined(separator: "-")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: CharacterSet(charactersIn: " .-"))
+        return cleaned.isEmpty ? "Untitled Meeting" : cleaned
+    }
+
     public static func shellQuote(_ value: String) -> String {
         "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
@@ -87,6 +102,15 @@ public enum ZMeetDates {
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        return formatter.string(from: date)
+    }
+
+    /// Human-friendly stamp for per-meeting folder names, e.g. "2026-05-26 1755".
+    public static func folderStamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HHmm"
         return formatter.string(from: date)
     }
 

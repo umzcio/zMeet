@@ -14,16 +14,13 @@ public final class SessionManager {
         appDataURL.appendingPathComponent("sessions", isDirectory: true)
     }
 
-    private var audioRootURL: URL {
-        appDataURL.appendingPathComponent("audio", isDirectory: true)
-    }
-
     private var logsURL: URL {
         appDataURL.appendingPathComponent("logs", isDirectory: true)
     }
 
-    private var notesRepoURL: URL {
-        URL(fileURLWithPath: ZMeetPaths.expandTilde(config.notesRepoPath), isDirectory: true)
+    /// Root for all user-facing meeting output (e.g. ~/Documents/zMeet).
+    private var outputURL: URL {
+        URL(fileURLWithPath: ZMeetPaths.expandTilde(config.outputPath), isDirectory: true)
     }
 
     public init(
@@ -48,12 +45,12 @@ public final class SessionManager {
         let startedAt = Date()
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Meeting" : rawTitle
         let id = try uniqueSessionID(title: title, startedAt: startedAt)
-        let datedAudioDirectory = audioRootURL
-            .appendingPathComponent(ZMeetDates.year(startedAt), isDirectory: true)
-            .appendingPathComponent(ZMeetDates.month(startedAt), isDirectory: true)
-        try ZMeetPaths.ensureDirectory(datedAudioDirectory)
+        // One folder per meeting (Zoom-style), holding the recording, transcript,
+        // and notes together under the output root.
+        let meetingFolder = uniqueMeetingFolderURL(title: title, startedAt: startedAt)
+        try ZMeetPaths.ensureDirectory(meetingFolder)
 
-        let audioURL = datedAudioDirectory.appendingPathComponent("\(id).m4a")
+        let audioURL = meetingFolder.appendingPathComponent("recording.m4a")
         let logURL = logsURL.appendingPathComponent("\(id).recorder.log")
 
         // Start capture first; only persist a `.recording` session if it succeeds,
@@ -131,7 +128,7 @@ public final class SessionManager {
             try save(session)
 
             if config.gitAutoCommit {
-                _ = try? GitRepository(repoURL: notesRepoURL).commitAll(message: "Add meeting notes: \(session.title)")
+                _ = try? GitRepository(repoURL: outputURL).commitAll(message: "Add meeting notes: \(session.title)")
             }
 
             return session
@@ -192,7 +189,7 @@ public final class SessionManager {
         if let commandTemplate = config.transcriptionCommand,
            !commandTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let command = ZMeetText.expandCommandTemplate(commandTemplate, values: values)
-            let result = try runner.runShell(command, currentDirectory: notesRepoURL)
+            let result = try runner.runShell(command, currentDirectory: meetingFolderURL(for: session))
             guard result.exitCode == 0 else {
                 throw ZMeetError.processFailed(command: command, exitCode: result.exitCode, stderr: result.stderr)
             }
@@ -230,7 +227,7 @@ public final class SessionManager {
                 commandTemplate,
                 values: commandValues(session: session, transcriptURL: transcriptURL, summaryURL: summaryURL)
             )
-            let result = try runner.runShell(command, currentDirectory: notesRepoURL)
+            let result = try runner.runShell(command, currentDirectory: meetingFolderURL(for: session))
             guard result.exitCode == 0 else {
                 throw ZMeetError.processFailed(command: command, exitCode: result.exitCode, stderr: result.stderr)
             }
@@ -257,7 +254,8 @@ public final class SessionManager {
             "audio": session.audioPath,
             "transcript": transcriptURL.path,
             "transcriptBase": transcriptURL.deletingPathExtension().path,
-            "notesRepo": notesRepoURL.path
+            "meetingDir": meetingFolderURL(for: session).path,
+            "output": outputURL.path
         ]
 
         if let summaryURL {
@@ -311,9 +309,26 @@ public final class SessionManager {
     private func ensureRuntimeDirectories() throws {
         try ZMeetPaths.ensureDirectory(appDataURL)
         try ZMeetPaths.ensureDirectory(sessionsURL)
-        try ZMeetPaths.ensureDirectory(audioRootURL)
         try ZMeetPaths.ensureDirectory(logsURL)
-        try ZMeetPaths.ensureDirectory(notesRepoURL)
+        try ZMeetPaths.ensureDirectory(outputURL)
+    }
+
+    /// A unique per-meeting folder like `2026-05-26 1755 Weekly Sync` under the
+    /// output root, disambiguated with a numeric suffix if it already exists.
+    private func uniqueMeetingFolderURL(title: String, startedAt: Date) -> URL {
+        let base = "\(ZMeetDates.folderStamp(startedAt)) \(ZMeetText.sanitizeFileName(title))"
+        var name = base
+        var suffix = 2
+        while fileManager.fileExists(atPath: outputURL.appendingPathComponent(name).path) {
+            name = "\(base) (\(suffix))"
+            suffix += 1
+        }
+        return outputURL.appendingPathComponent(name, isDirectory: true)
+    }
+
+    /// The meeting folder for an existing session, derived from its stored audio path.
+    private func meetingFolderURL(for session: MeetingSession) -> URL {
+        URL(fileURLWithPath: session.audioPath).deletingLastPathComponent()
     }
 
     private func uniqueSessionID(title: String, startedAt: Date) throws -> String {
@@ -330,18 +345,10 @@ public final class SessionManager {
     }
 
     private func transcriptURL(for session: MeetingSession) -> URL {
-        notesRepoURL
-            .appendingPathComponent("transcripts", isDirectory: true)
-            .appendingPathComponent(ZMeetDates.year(session.startedAt), isDirectory: true)
-            .appendingPathComponent(ZMeetDates.month(session.startedAt), isDirectory: true)
-            .appendingPathComponent("\(session.id).transcript.md")
+        meetingFolderURL(for: session).appendingPathComponent("transcript.md")
     }
 
     private func noteURL(for session: MeetingSession) -> URL {
-        notesRepoURL
-            .appendingPathComponent("meetings", isDirectory: true)
-            .appendingPathComponent(ZMeetDates.year(session.startedAt), isDirectory: true)
-            .appendingPathComponent(ZMeetDates.month(session.startedAt), isDirectory: true)
-            .appendingPathComponent("\(session.id).md")
+        meetingFolderURL(for: session).appendingPathComponent("notes.md")
     }
 }

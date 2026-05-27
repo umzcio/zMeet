@@ -16,7 +16,7 @@ import Testing
 }
 
 @Test func audioConfigDefaultValues() {
-    let config = ZMeetConfig.default(notesRepoPath: "/tmp/zmeet-notes")
+    let config = ZMeetConfig.default(outputPath: "/tmp/zmeet-output")
     #expect(config.audio.captureSystemAudio == true)
     #expect(config.audio.captureMicrophone == true)
     #expect(config.audio.sampleRate == 48000)
@@ -25,7 +25,7 @@ import Testing
 }
 
 @Test func configRoundTrips() throws {
-    let config = ZMeetConfig.default(notesRepoPath: "/tmp/zmeet-notes")
+    let config = ZMeetConfig.default(outputPath: "/tmp/zmeet-output")
     let data = try JSONEncoder.zmeet.encode(config)
     let decoded = try JSONDecoder.zmeet.decode(ZMeetConfig.self, from: data)
 
@@ -56,7 +56,7 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("zmeet-tests-\(UUID().uuidString)", isDirectory: true)
     let config = ZMeetConfig(
-        notesRepoPath: root.appendingPathComponent("notes").path,
+        outputPath: root.appendingPathComponent("zMeet").path,
         appDataPath: root.appendingPathComponent("data").path,
         transcriptionCommand: nil,
         summaryCommand: nil,
