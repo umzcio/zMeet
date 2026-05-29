@@ -25,10 +25,14 @@ final class AppState: ObservableObject {
     private var manager: SessionManager
     private let detector = MeetingDetector()
     private let meetingPopup = MeetingPopupController()
+    private let notesReadyPopup = NotesReadyPopupController()
     private let onboarding = OnboardingWindowController()
     private let settingsWindow = SettingsWindowController()
     let updater = UpdaterController()
     private var dismissedMeetingKeys: Set<String> = []
+    /// True when the current recording was started from a detected meeting, so it
+    /// can be auto-stopped when that meeting ends.
+    private var recordingFromDetection = false
 
     init(recorder: MeetingRecorder = StubRecorder()) {
         // Load config, or bootstrap a fresh one if missing/old-schema.
@@ -85,6 +89,10 @@ final class AppState: ObservableObject {
                 // Meeting ended: hide the popup and allow future meetings to prompt again.
                 self.meetingPopup.hide()
                 self.dismissedMeetingKeys.removeAll()
+                // Auto-stop a recording that was started from this detected meeting.
+                if self.isRecording, self.recordingFromDetection {
+                    self.stopRecording()
+                }
                 return
             }
             // Don't prompt while already recording, or for a meeting already dismissed.
@@ -121,6 +129,7 @@ final class AppState: ObservableObject {
             do {
                 _ = try manager.start(title: draftTitle, sourceApp: sourceApp)
                 phase = .recording(since: Date())
+                recordingFromDetection = (sourceApp != nil)
                 draftTitle = ""
                 reloadRecent()
             } catch {
@@ -182,6 +191,7 @@ final class AppState: ObservableObject {
 
     func stopRecording() {
         lastError = nil
+        recordingFromDetection = false
         do {
             let stopped = try manager.stop()
             reloadRecent()
@@ -207,7 +217,10 @@ final class AppState: ObservableObject {
                 let session = try manager.session(id: id)
                 let audioURL = URL(fileURLWithPath: session.audioPath)
                 let (transcript, summary) = try await produceNotes(audioURL: audioURL, title: session.title)
-                _ = try manager.applyProcessedText(id: id, transcript: transcript, summary: summary)
+                let processed = try manager.applyProcessedText(id: id, transcript: transcript, summary: summary)
+                notesReadyPopup.show(title: processed.title) { [weak self] in
+                    self?.revealNote(processed)
+                }
             } catch {
                 lastError = error.localizedDescription
             }
