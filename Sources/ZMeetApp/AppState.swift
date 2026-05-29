@@ -17,12 +17,14 @@ final class AppState: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var micGranted: Bool = false
     @Published private(set) var screenGranted: Bool = false
+    @Published private(set) var speechGranted: Bool = false
 
     private let store = ConfigStore()
     private let config: ZMeetConfig
     private let manager: SessionManager
     private let detector = MeetingDetector()
     private let meetingPopup = MeetingPopupController()
+    private let onboarding = OnboardingWindowController()
     private var dismissedMeetingKeys: Set<String> = []
 
     init(recorder: MeetingRecorder = StubRecorder()) {
@@ -41,6 +43,17 @@ final class AppState: ObservableObject {
         reloadRecent()
         refreshPermissions()
         startMeetingDetection()
+
+        // Show first-run setup (or whenever a required permission is missing).
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.onboarding.showIfNeeded(state: self)
+        }
+    }
+
+    /// Re-open the setup window on demand (from the menu's permission hint).
+    func openOnboarding() {
+        onboarding.show(state: self)
     }
 
     private func startMeetingDetection() {
@@ -97,6 +110,38 @@ final class AppState: ObservableObject {
     func refreshPermissions() {
         micGranted = Permissions.microphoneAuthorized()
         screenGranted = Permissions.hasScreenRecording()
+        speechGranted = Permissions.speechAuthorized()
+    }
+
+    /// All permissions zMeet needs to record + process are granted.
+    var allPermissionsGranted: Bool {
+        micGranted && screenGranted && speechGranted
+    }
+
+    // MARK: Per-permission grant actions (used by the first-run setup window)
+
+    func grantMicrophone() {
+        if Permissions.micNeedsSettings() {
+            Permissions.openMicrophoneSettings()
+            return
+        }
+        Task { _ = await Permissions.ensureMicrophone(); refreshPermissions() }
+    }
+
+    func grantSpeech() {
+        if Permissions.speechNeedsSettings() {
+            Permissions.openSpeechSettings()
+            return
+        }
+        Task { _ = await Permissions.ensureSpeech(); refreshPermissions() }
+    }
+
+    func grantScreenRecording() {
+        // First request shows the prompt; once decided, macOS requires a manual
+        // toggle in Settings + relaunch, so always also open the pane.
+        Permissions.requestScreenRecording()
+        Permissions.openScreenRecordingSettings()
+        refreshPermissions()
     }
 
     /// Request both permissions; returns true only if both end up granted.

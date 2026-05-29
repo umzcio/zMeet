@@ -143,7 +143,7 @@ struct MenuContentView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Grant") { state.grantPermissions() }
+            Button("Set up") { state.openOnboarding() }
                 .font(.caption)
         }
     }
