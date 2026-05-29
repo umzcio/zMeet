@@ -25,6 +25,7 @@ final class AppState: ObservableObject {
     private let detector = MeetingDetector()
     private let meetingPopup = MeetingPopupController()
     private let onboarding = OnboardingWindowController()
+    let updater = UpdaterController()
     private var dismissedMeetingKeys: Set<String> = []
 
     init(recorder: MeetingRecorder = StubRecorder()) {

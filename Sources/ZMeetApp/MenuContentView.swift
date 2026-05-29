@@ -177,6 +177,9 @@ struct MenuContentView: View {
             ToolbarIcon(systemName: "gearshape", help: "Edit configuration") {
                 state.openConfigFile()
             }
+            ToolbarIcon(systemName: "arrow.triangle.2.circlepath", help: "Check for Updates…") {
+                state.updater.checkForUpdates()
+            }
             Spacer()
             ToolbarIcon(systemName: "power", help: "Quit zMeet") {
                 NSApplication.shared.terminate(nil)
