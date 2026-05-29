@@ -58,7 +58,7 @@ final class AppState: ObservableObject {
                 meeting: meeting,
                 onStart: {
                     self.draftTitle = meeting.title
-                    self.startRecording()
+                    self.startRecording(sourceApp: meeting.app)
                 },
                 onDismiss: {
                     self.dismissedMeetingKeys.insert(meeting.key)
@@ -73,7 +73,7 @@ final class AppState: ObservableObject {
         return false
     }
 
-    func startRecording() {
+    func startRecording(sourceApp: String? = nil) {
         lastError = nil
         meetingPopup.hide()
         Task {
@@ -84,7 +84,7 @@ final class AppState: ObservableObject {
                 return
             }
             do {
-                _ = try manager.start(title: draftTitle, sourceApp: nil)
+                _ = try manager.start(title: draftTitle, sourceApp: sourceApp)
                 phase = .recording(since: Date())
                 draftTitle = ""
                 reloadRecent()

@@ -196,35 +196,47 @@ private struct RecentRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: glyph)
-                    .foregroundStyle(tint)
-                    .font(.caption)
+            HStack(spacing: 9) {
+                Image(nsImage: SourceAppIcons.icon(for: session.sourceApp, title: session.title))
+                    .resizable()
+                    .frame(width: 18, height: 18)
                 Text(session.title).lineLimit(1)
                 Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                statusBadge
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(helpText)
     }
 
-    private var glyph: String {
+    /// Status only surfaces when it's not the normal, finished case — keeps the
+    /// list clean and only draws attention when something needs it.
+    @ViewBuilder
+    private var statusBadge: some View {
         switch session.status {
-        case .recording: return "record.circle"
-        case .recorded:  return "stop.circle"
-        case .processed: return "checkmark.circle.fill"
-        case .failed:    return "exclamationmark.triangle.fill"
+        case .processed:
+            EmptyView()
+        case .recorded:
+            Text("not processed")
+                .font(.caption2).foregroundStyle(.secondary)
+        case .recording:
+            Text("recording")
+                .font(.caption2).foregroundStyle(.secondary)
+        case .failed:
+            Label("Failed", systemImage: "exclamationmark.triangle.fill")
+                .labelStyle(.iconOnly)
+                .font(.caption)
+                .foregroundStyle(.orange)
         }
     }
 
-    private var tint: Color {
+    private var helpText: String {
         switch session.status {
-        case .processed: return .green
-        case .failed:    return .orange
-        default:         return .secondary
+        case .processed: return "Reveal notes in Finder"
+        case .recorded:  return "Recorded — not yet processed"
+        case .recording: return "Still marked recording (relaunch zMeet to recover)"
+        case .failed:    return session.errorMessage ?? "Processing failed"
         }
     }
 }
