@@ -20,11 +20,13 @@ final class AppState: ObservableObject {
     @Published private(set) var speechGranted: Bool = false
 
     private let store = ConfigStore()
-    private let config: ZMeetConfig
-    private let manager: SessionManager
+    private let recorder: MeetingRecorder
+    @Published private(set) var config: ZMeetConfig
+    private var manager: SessionManager
     private let detector = MeetingDetector()
     private let meetingPopup = MeetingPopupController()
     private let onboarding = OnboardingWindowController()
+    private let settingsWindow = SettingsWindowController()
     let updater = UpdaterController()
     private var dismissedMeetingKeys: Set<String> = []
 
@@ -36,6 +38,7 @@ final class AppState: ObservableObject {
         } else {
             loaded = (try? store.bootstrap()) ?? ZMeetConfig.default()
         }
+        self.recorder = recorder
         self.config = loaded
         self.manager = SessionManager(config: loaded, recorder: recorder)
 
@@ -43,7 +46,7 @@ final class AppState: ObservableObject {
         _ = try? manager.recoverInterruptedSessions()
         reloadRecent()
         refreshPermissions()
-        startMeetingDetection()
+        if config.detectMeetings { startMeetingDetection() }
 
         // Show first-run setup (or whenever a required permission is missing).
         DispatchQueue.main.async { [weak self] in
@@ -55,6 +58,24 @@ final class AppState: ObservableObject {
     /// Re-open the setup window on demand (from the menu's permission hint).
     func openOnboarding() {
         onboarding.show(state: self)
+    }
+
+    func openSettings() {
+        settingsWindow.show(state: self)
+    }
+
+    /// Mutate + persist config, then apply side-effects (recorder uses the new
+    /// config; meeting detection turns on/off).
+    func updateConfig(_ mutate: (inout ZMeetConfig) -> Void) {
+        mutate(&config)
+        try? store.write(config)
+        manager = SessionManager(config: config, recorder: recorder)
+        if config.detectMeetings {
+            startMeetingDetection()
+        } else {
+            detector.stop()
+            meetingPopup.hide()
+        }
     }
 
     private func startMeetingDetection() {

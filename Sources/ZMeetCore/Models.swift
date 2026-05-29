@@ -102,6 +102,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     public var summaryCommand: String?
     public var gitAutoCommit: Bool
     public var autoProcessOnStop: Bool
+    /// Whether to watch for Zoom/Teams meetings and show the "Take notes" popup.
+    public var detectMeetings: Bool
 
     public init(
         outputPath: String,
@@ -110,7 +112,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         transcriptionCommand: String?,
         summaryCommand: String?,
         gitAutoCommit: Bool = false,
-        autoProcessOnStop: Bool = true
+        autoProcessOnStop: Bool = true,
+        detectMeetings: Bool = true
     ) {
         self.outputPath = outputPath
         self.appDataPath = appDataPath
@@ -119,6 +122,24 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         self.summaryCommand = summaryCommand
         self.gitAutoCommit = gitAutoCommit
         self.autoProcessOnStop = autoProcessOnStop
+        self.detectMeetings = detectMeetings
+    }
+
+    /// Lenient decoding so older/partial `config.json` files still load — any
+    /// missing key falls back to its default instead of failing the whole load.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        outputPath = try c.decodeIfPresent(String.self, forKey: .outputPath)
+            ?? home.appendingPathComponent("Documents/zMeet").path
+        appDataPath = try c.decodeIfPresent(String.self, forKey: .appDataPath)
+            ?? home.appendingPathComponent(".zmeet").path
+        audio = try c.decodeIfPresent(AudioConfig.self, forKey: .audio) ?? AudioConfig()
+        transcriptionCommand = try c.decodeIfPresent(String.self, forKey: .transcriptionCommand)
+        summaryCommand = try c.decodeIfPresent(String.self, forKey: .summaryCommand)
+        gitAutoCommit = try c.decodeIfPresent(Bool.self, forKey: .gitAutoCommit) ?? false
+        autoProcessOnStop = try c.decodeIfPresent(Bool.self, forKey: .autoProcessOnStop) ?? true
+        detectMeetings = try c.decodeIfPresent(Bool.self, forKey: .detectMeetings) ?? true
     }
 
     public static func `default`(
@@ -132,7 +153,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             transcriptionCommand: nil,
             summaryCommand: nil,
             gitAutoCommit: false,
-            autoProcessOnStop: true
+            autoProcessOnStop: true,
+            detectMeetings: true
         )
     }
 }

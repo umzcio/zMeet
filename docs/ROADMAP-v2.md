@@ -61,6 +61,14 @@ A proper preferences UI replacing hand-editing `~/.zmeet/config.json`.
 - **Private remote access.** A read-only remote endpoint (behind a Cloudflare
   tunnel + strong auth) sourced from the local index, to reach your notes away
   from your Mac.
+- **In-person / hybrid recording mode.** A meeting-type switch so capture adapts:
+  *Remote* (current default — system audio + mic, lean toward a clean voice signal)
+  vs. *In-person/Hybrid* (emphasize the room — capture ambient mic without noise
+  suppression, possibly higher mic gain/sensitivity, and make system audio optional
+  since an in-person meeting has no remote stream). Open question: the built-in mic
+  may not capture a full room well; explore input-device selection (external/USB mic)
+  and gain. Pairs with the noise-suppression item (suppression helps remote, hurts
+  in-person). Surface the toggle in Settings and/or the start-recording control.
 - **Live level meter** in the recording UI (confidence that audio is flowing).
 - **Speaker diarization** (who said what) in transcripts.
 - **Pre-publish scrub** before open-sourcing: rewrite git history to a neutral

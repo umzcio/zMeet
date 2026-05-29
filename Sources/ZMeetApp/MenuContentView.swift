@@ -174,8 +174,8 @@ struct MenuContentView: View {
             ToolbarIcon(systemName: "folder", help: "Open zMeet folder") {
                 state.openOutputFolder()
             }
-            ToolbarIcon(systemName: "gearshape", help: "Edit configuration") {
-                state.openConfigFile()
+            ToolbarIcon(systemName: "gearshape", help: "Settings") {
+                state.openSettings()
             }
             ToolbarIcon(systemName: "arrow.triangle.2.circlepath", help: "Check for Updates…") {
                 state.updater.checkForUpdates()
