@@ -8,9 +8,10 @@ struct MeetingPopupView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.largeTitle)
-                .foregroundStyle(.red)
+            // The detected app's real icon (Zoom/Teams), matching the Recent list.
+            Image(nsImage: SourceAppIcons.icon(for: appName))
+                .resizable()
+                .frame(width: 40, height: 40)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(appName) meeting detected")
