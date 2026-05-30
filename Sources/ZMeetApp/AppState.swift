@@ -84,6 +84,7 @@ final class AppState: ObservableObject {
         reloadRecent()
         if let id { librarySelectedID = id }
         libraryWindow.show(state: self)
+        Task { await reconcileSearchIndex() }
     }
 
     /// Rename a meeting's display title, then refresh the lists.
@@ -109,6 +110,31 @@ final class AppState: ObservableObject {
         guard let path = session.transcriptPath,
               let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
         return text
+    }
+
+    /// Full-text search over processed meetings. Runs off the main thread; results
+    /// are returned on the main actor.
+    func searchMeetings(_ query: String) async -> [SearchHit] {
+        guard let store = manager.searchStore else { return [] }
+        let q = query
+        return await Task.detached(priority: .userInitiated) {
+            store.search(q, limit: 50)
+        }.value
+    }
+
+    /// Backfill/clean the search index from the meeting files. Cheap after the
+    /// first run (already-indexed meetings are skipped). File IO + indexing run off
+    /// the main thread. Notes files are reduced to their title-free body so the
+    /// index matches what fresh processing stores.
+    func reconcileSearchIndex() async {
+        guard let store = manager.searchStore else { return }
+        let docs = manager.searchIndexDocuments()
+        await Task.detached(priority: .utility) {
+            store.reconcile(documents: docs) { path in
+                guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+                return path.hasSuffix("notes.md") ? ZMeetText.noteSearchBody(text) : text
+            }
+        }.value
     }
 
     func setMicDevice(_ id: String?) {
