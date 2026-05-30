@@ -77,6 +77,10 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchec
         config.sampleRate = Int(canonical.sampleRate)
         config.channelCount = 2
         config.captureMicrophone = audio.captureMicrophone
+        if let micID = audio.micDeviceID {
+            config.microphoneCaptureDeviceID = micID
+            log("mic device: \(micID)")
+        }
         config.width = 2
         config.height = 2
         config.minimumFrameInterval = CMTime(value: 1, timescale: 1)

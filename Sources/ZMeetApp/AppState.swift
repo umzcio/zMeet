@@ -26,6 +26,7 @@ final class AppState: ObservableObject {
     private let detector = MeetingDetector()
     private let meetingPopup = MeetingPopupController()
     private let notesReadyPopup = NotesReadyPopupController()
+    private let modeChoicePopup = ModeChoicePopupController()
     private let onboarding = OnboardingWindowController()
     private let settingsWindow = SettingsWindowController()
     let updater = UpdaterController()
@@ -68,6 +69,10 @@ final class AppState: ObservableObject {
         settingsWindow.show(state: self)
     }
 
+    func setMicDevice(_ id: String?) {
+        updateConfig { $0.audio.micDeviceID = id }
+    }
+
     /// Mutate + persist config, then apply side-effects (recorder uses the new
     /// config; meeting detection turns on/off).
     func updateConfig(_ mutate: (inout ZMeetConfig) -> Void) {
@@ -101,7 +106,8 @@ final class AppState: ObservableObject {
                 meeting: meeting,
                 onStart: {
                     self.draftTitle = meeting.title
-                    self.startRecording(sourceApp: meeting.app)
+                    // Detected meetings are remote — no need to ask.
+                    self.startRecording(mode: .remote, sourceApp: meeting.app)
                 },
                 onDismiss: {
                     self.dismissedMeetingKeys.insert(meeting.key)
@@ -116,9 +122,22 @@ final class AppState: ObservableObject {
         return false
     }
 
-    func startRecording(sourceApp: String? = nil) {
+    /// Manual start: ask remote vs in-person first, then record.
+    func requestManualStart() {
+        modeChoicePopup.show { [weak self] mode in
+            self?.startRecording(mode: mode, sourceApp: nil)
+        }
+    }
+
+    func startRecording(mode: RecordingMode, sourceApp: String? = nil) {
         lastError = nil
         meetingPopup.hide()
+        // Apply the chosen mode (remote captures system audio, in-person doesn't)
+        // and remember it.
+        updateConfig {
+            $0.recordingMode = mode
+            $0.audio.captureSystemAudio = (mode == .remote)
+        }
         Task {
             let ok = await requestPermissions()
             guard ok else {

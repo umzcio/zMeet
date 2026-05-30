@@ -93,7 +93,7 @@ struct MenuContentView: View {
                 TextField("Meeting title", text: $state.draftTitle)
                     .textFieldStyle(.roundedBorder)
                 Button {
-                    state.startRecording()
+                    state.requestManualStart()
                 } label: {
                     Label("Start Recording", systemImage: "record.circle")
                         .frame(maxWidth: .infinity)

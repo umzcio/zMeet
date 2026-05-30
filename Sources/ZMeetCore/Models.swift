@@ -73,22 +73,43 @@ public struct MeetingSession: Codable, Equatable, Sendable {
     }
 }
 
+/// How a meeting is captured. Remote (and hybrid) records the other participants'
+/// system audio plus the mic; In-person records the room via the mic only.
+public enum RecordingMode: String, Codable, Equatable, Sendable {
+    case remote
+    case inPerson
+}
+
 public struct AudioConfig: Codable, Equatable, Sendable {
     public var captureSystemAudio: Bool
     public var captureMicrophone: Bool
     public var sampleRate: Int
     public var bitrate: Int
+    /// Preferred microphone input device (Core Audio / AVCaptureDevice unique id).
+    /// `nil` uses the system default input.
+    public var micDeviceID: String?
 
     public init(
         captureSystemAudio: Bool = true,
         captureMicrophone: Bool = true,
         sampleRate: Int = 48_000,
-        bitrate: Int = 128_000
+        bitrate: Int = 128_000,
+        micDeviceID: String? = nil
     ) {
         self.captureSystemAudio = captureSystemAudio
         self.captureMicrophone = captureMicrophone
         self.sampleRate = sampleRate
         self.bitrate = bitrate
+        self.micDeviceID = micDeviceID
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        captureSystemAudio = try c.decodeIfPresent(Bool.self, forKey: .captureSystemAudio) ?? true
+        captureMicrophone = try c.decodeIfPresent(Bool.self, forKey: .captureMicrophone) ?? true
+        sampleRate = try c.decodeIfPresent(Int.self, forKey: .sampleRate) ?? 48_000
+        bitrate = try c.decodeIfPresent(Int.self, forKey: .bitrate) ?? 128_000
+        micDeviceID = try c.decodeIfPresent(String.self, forKey: .micDeviceID)
     }
 }
 
@@ -104,6 +125,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     public var autoProcessOnStop: Bool
     /// Whether to watch for Zoom/Teams meetings and show the "Take notes" popup.
     public var detectMeetings: Bool
+    /// Remembered recording mode (remote vs in-person) for the quick switch.
+    public var recordingMode: RecordingMode
 
     public init(
         outputPath: String,
@@ -113,7 +136,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         summaryCommand: String?,
         gitAutoCommit: Bool = false,
         autoProcessOnStop: Bool = true,
-        detectMeetings: Bool = true
+        detectMeetings: Bool = true,
+        recordingMode: RecordingMode = .remote
     ) {
         self.outputPath = outputPath
         self.appDataPath = appDataPath
@@ -123,6 +147,7 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         self.gitAutoCommit = gitAutoCommit
         self.autoProcessOnStop = autoProcessOnStop
         self.detectMeetings = detectMeetings
+        self.recordingMode = recordingMode
     }
 
     /// Lenient decoding so older/partial `config.json` files still load — any
@@ -140,6 +165,7 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         gitAutoCommit = try c.decodeIfPresent(Bool.self, forKey: .gitAutoCommit) ?? false
         autoProcessOnStop = try c.decodeIfPresent(Bool.self, forKey: .autoProcessOnStop) ?? true
         detectMeetings = try c.decodeIfPresent(Bool.self, forKey: .detectMeetings) ?? true
+        recordingMode = try c.decodeIfPresent(RecordingMode.self, forKey: .recordingMode) ?? .remote
     }
 
     public static func `default`(
@@ -154,7 +180,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             summaryCommand: nil,
             gitAutoCommit: false,
             autoProcessOnStop: true,
-            detectMeetings: true
+            detectMeetings: true,
+            recordingMode: .remote
         )
     }
 }

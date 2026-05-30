@@ -6,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject var state: AppState
     @State private var selection: Section = .general
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
+    @State private var inputDevices: [AudioInputs.Device] = []
 
     // Mint-terminal palette
     static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
@@ -155,13 +156,19 @@ struct SettingsView: View {
 
     private var recordingSection: some View {
         card {
-            toggleRow("Capture system audio",
-                      "Record the other participants you hear.",
-                      boolBinding(\.audio.captureSystemAudio))
-            divider
-            toggleRow("Capture microphone",
-                      "Record your own voice.",
-                      boolBinding(\.audio.captureMicrophone))
+            row("Microphone", "Input device used to record.") {
+                Picker("", selection: Binding<String?>(
+                    get: { state.config.audio.micDeviceID },
+                    set: { state.setMicDevice($0) }
+                )) {
+                    Text("System Default").tag(String?.none)
+                    ForEach(inputDevices) { dev in
+                        Text(dev.name).tag(String?.some(dev.id))
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 200)
+            }
             divider
             row("Audio quality", "Higher quality means larger files.") {
                 Picker("", selection: bitrateBinding) {
@@ -173,6 +180,7 @@ struct SettingsView: View {
                 .frame(width: 130)
             }
         }
+        .onAppear { inputDevices = AudioInputs.available() }
     }
 
     private var meetingsSection: some View {
