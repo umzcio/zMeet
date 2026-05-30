@@ -145,6 +145,47 @@ public final class SearchStore: @unchecked Sendable {
 
     // MARK: Public API
 
+    /// Insert or replace a meeting's indexed content.
+    public func index(sessionID: String, title: String, notes: String, transcript: String) throws {
+        try queue.sync {
+            try execStmt("DELETE FROM meetings_fts WHERE session_id = ?;") { stmt in
+                sqlite3_bind_text(stmt, 1, sessionID, -1, SQLITE_TRANSIENT)
+            }
+            try execStmt("INSERT INTO meetings_fts(session_id, title, notes, transcript) VALUES(?, ?, ?, ?);") { stmt in
+                sqlite3_bind_text(stmt, 1, sessionID, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_text(stmt, 2, title, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_text(stmt, 3, notes, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_text(stmt, 4, transcript, -1, SQLITE_TRANSIENT)
+            }
+        }
+    }
+
+    public func remove(sessionID: String) throws {
+        try queue.sync {
+            try execStmt("DELETE FROM meetings_fts WHERE session_id = ?;") { stmt in
+                sqlite3_bind_text(stmt, 1, sessionID, -1, SQLITE_TRANSIENT)
+            }
+        }
+    }
+
+    public func removeAll() throws {
+        try queue.sync { try exec("DELETE FROM meetings_fts;") }
+    }
+
+    /// Prepare a statement, let the caller bind, step it once, finalize.
+    private func execStmt(_ sql: String, bind: (OpaquePointer?) -> Void) throws {
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw SearchError.exec(lastErrorMessage())
+        }
+        defer { sqlite3_finalize(stmt) }
+        bind(stmt)
+        let rc = sqlite3_step(stmt)
+        guard rc == SQLITE_DONE || rc == SQLITE_ROW else {
+            throw SearchError.exec(lastErrorMessage())
+        }
+    }
+
     public func indexedIDs() throws -> Set<String> {
         try queue.sync {
             var ids = Set<String>()
