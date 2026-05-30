@@ -83,6 +83,29 @@ public enum ZMeetText {
         return "\"\(escaped)\""
     }
 
+    /// Extracts the searchable prose from a rendered `notes.md`: drops the YAML
+    /// frontmatter, Markdown heading lines (which repeat the title), and the
+    /// trailing transcript-link section, leaving the summary body. Keeps the
+    /// search index free of title/path/frontmatter noise.
+    public static func noteSearchBody(_ markdown: String) -> String {
+        var lines = markdown.components(separatedBy: "\n")
+
+        // Drop a leading YAML frontmatter block (--- ... ---).
+        if lines.first?.trimmingCharacters(in: .whitespaces) == "---",
+           let end = lines.dropFirst().firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "---" }) {
+            lines = Array(lines[(end + 1)...])
+        }
+
+        var body: [String] = []
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#") { continue }            // headings repeat the title
+            if trimmed.lowercased() == "## transcript" { break }  // tab/section covers it
+            body.append(line)
+        }
+        return body.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     public static func expandCommandTemplate(_ template: String, values: [String: String]) -> String {
         var command = template
         for (key, value) in values {

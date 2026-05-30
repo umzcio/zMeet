@@ -168,6 +168,18 @@ public final class SearchStore: @unchecked Sendable {
         }
     }
 
+    /// Update just the title of an already-indexed meeting, leaving its notes and
+    /// transcript content intact (so renaming doesn't drop a meeting's body from
+    /// search). A no-op if the meeting isn't indexed.
+    public func updateTitle(sessionID: String, title: String) throws {
+        try queue.sync {
+            try execStmt("UPDATE meetings_fts SET title = ? WHERE session_id = ?;") { stmt in
+                sqlite3_bind_text(stmt, 1, title, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_text(stmt, 2, sessionID, -1, SQLITE_TRANSIENT)
+            }
+        }
+    }
+
     public func removeAll() throws {
         try queue.sync { try exec("DELETE FROM meetings_fts;") }
     }

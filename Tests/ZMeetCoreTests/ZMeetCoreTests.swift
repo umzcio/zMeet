@@ -8,6 +8,30 @@ import Testing
     #expect(ZMeetText.slugify("!!!") == "untitled-meeting")
 }
 
+@Test func noteSearchBodyStripsFrontmatterHeadingsAndTranscriptLink() {
+    let note = """
+    ---
+    id: "abc"
+    title: "Weekly Sync"
+    ---
+
+    # Weekly Sync
+
+    ## Summary
+
+    We shipped the detector and agreed on next steps.
+
+    ## Transcript
+
+    [Open transcript](transcript.md)
+    """
+    let body = ZMeetText.noteSearchBody(note)
+    #expect(body.contains("We shipped the detector"))
+    #expect(!body.contains("title:"))          // frontmatter gone
+    #expect(!body.contains("# Weekly Sync"))    // heading gone
+    #expect(!body.contains("Open transcript"))  // transcript link gone
+}
+
 @Test func relativePathHandlesSiblingTrees() {
     let from = URL(fileURLWithPath: "/tmp/repo/meetings/2026/05", isDirectory: true)
     let to = URL(fileURLWithPath: "/tmp/repo/transcripts/2026/05/demo.transcript.md")

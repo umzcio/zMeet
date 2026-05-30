@@ -181,9 +181,12 @@ public final class SessionManager {
             session.notePath = noteURL.path
             session.errorMessage = nil
             try save(session)
+            // Index the title-free summary as the notes column (not the full
+            // rendered note, which embeds the title/frontmatter/paths) so the
+            // title lives only in the title column and rename can update it cleanly.
             try? searchStore?.index(
                 sessionID: session.id, title: session.title,
-                notes: note, transcript: transcript
+                notes: summary, transcript: transcript
             )
             return session
         } catch {
@@ -203,16 +206,10 @@ public final class SessionManager {
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         session.title = title.isEmpty ? "Untitled Meeting" : title
         try save(session)
-        if session.status == .processed {
-            // Notes file still contains the old title in its frontmatter/heading,
-            // so we index only the transcript (unchanged) under the new title.
-            // The notes will be re-indexed correctly when the user re-processes or
-            // when reconcile runs with updated file content.
-            let transcript = session.transcriptPath.flatMap { try? String(contentsOfFile: $0, encoding: .utf8) } ?? ""
-            try? searchStore?.index(sessionID: session.id, title: session.title, notes: "", transcript: transcript)
-        } else {
-            try? searchStore?.remove(sessionID: session.id)
-        }
+        // Update only the indexed title, preserving the meeting's notes/transcript
+        // in the index (a no-op if it isn't indexed). The old title leaves search;
+        // the body stays searchable.
+        try? searchStore?.updateTitle(sessionID: session.id, title: session.title)
         return session
     }
 
