@@ -41,6 +41,9 @@ cp -R "$SPARKLE_FW" "$FW_DIR/"
 mkdir -p "$RES_DIR/Fonts"
 cp "$ROOT/scripts/assets/DancingScript.ttf" "$RES_DIR/Fonts/DancingScript.ttf"
 
+# App icon.
+cp "$ROOT/scripts/assets/AppIcon.icns" "$RES_DIR/AppIcon.icns"
+
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -50,6 +53,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key><string>$APP_NAME</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleExecutable</key><string>$APP_NAME</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD</string>
