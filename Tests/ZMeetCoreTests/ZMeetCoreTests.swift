@@ -248,3 +248,32 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(try manager.listSessions().contains { $0.id == started.id } == false)
     #expect(throws: (any Error).self) { _ = try manager.session(id: started.id) }
 }
+
+@Test func processingIndexesMeetingForSearch() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Roadmap Review", sourceApp: nil)
+    _ = try manager.stop()
+    _ = try manager.applyProcessedText(
+        id: started.id,
+        transcript: "we agreed to ship the meeting detector next sprint",
+        summary: "Shipping detection."
+    )
+
+    let store = try #require(manager.searchStore)
+    // Findable by a transcript term...
+    #expect(store.search("detector", limit: 10).map(\.sessionID) == [started.id])
+    // ...and by title.
+    #expect(store.search("roadmap", limit: 10).map(\.sessionID) == [started.id])
+
+    // Rename updates the indexed title.
+    _ = try manager.setTitle(id: started.id, to: "Quarterly Planning")
+    #expect(store.search("quarterly", limit: 10).map(\.sessionID) == [started.id])
+    #expect(store.search("roadmap", limit: 10).isEmpty)
+
+    // Delete removes it.
+    try manager.delete(id: started.id)
+    #expect(store.search("detector", limit: 10).isEmpty)
+}

@@ -6,6 +6,10 @@ public final class SessionManager {
     private let runner: ProcessRunner
     private let fileManager: FileManager
 
+    /// Full-text index over processed meetings. Optional: if the database can't
+    /// be opened, search is disabled but everything else works.
+    public let searchStore: SearchStore?
+
     private var appDataURL: URL {
         URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
     }
@@ -33,6 +37,9 @@ public final class SessionManager {
         self.recorder = recorder
         self.runner = runner
         self.fileManager = fileManager
+        let searchDBURL = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
+            .appendingPathComponent("search.db")
+        self.searchStore = try? SearchStore(databaseURL: searchDBURL)
     }
 
     public func start(title rawTitle: String, sourceApp: String?) throws -> MeetingSession {
@@ -174,6 +181,10 @@ public final class SessionManager {
             session.notePath = noteURL.path
             session.errorMessage = nil
             try save(session)
+            try? searchStore?.index(
+                sessionID: session.id, title: session.title,
+                notes: note, transcript: transcript
+            )
             return session
         } catch {
             session.status = .failed
@@ -192,6 +203,16 @@ public final class SessionManager {
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         session.title = title.isEmpty ? "Untitled Meeting" : title
         try save(session)
+        if session.status == .processed {
+            // Notes file still contains the old title in its frontmatter/heading,
+            // so we index only the transcript (unchanged) under the new title.
+            // The notes will be re-indexed correctly when the user re-processes or
+            // when reconcile runs with updated file content.
+            let transcript = session.transcriptPath.flatMap { try? String(contentsOfFile: $0, encoding: .utf8) } ?? ""
+            try? searchStore?.index(sessionID: session.id, title: session.title, notes: "", transcript: transcript)
+        } else {
+            try? searchStore?.remove(sessionID: session.id)
+        }
         return session
     }
 
@@ -207,6 +228,7 @@ public final class SessionManager {
             try? fileManager.removeItem(at: folder)
         }
         try? fileManager.removeItem(at: sessionsURL.appendingPathComponent("\(id).json"))
+        try? searchStore?.remove(sessionID: id)
     }
 
     public func listSessions() throws -> [MeetingSession] {
@@ -220,6 +242,15 @@ public final class SessionManager {
         return try files
             .map(loadSession(from:))
             .sorted { $0.startedAt > $1.startedAt }
+    }
+
+    /// Processed meetings as lightweight, Sendable docs the app uses to reconcile
+    /// the search index off the main thread.
+    public func searchIndexDocuments() -> [SearchIndexDoc] {
+        let sessions = (try? listSessions()) ?? []
+        return sessions.filter { $0.status == .processed }.map {
+            SearchIndexDoc(id: $0.id, title: $0.title, notePath: $0.notePath, transcriptPath: $0.transcriptPath)
+        }
     }
 
     /// Finalizes sessions left in `.recording` by a crash or force-quit. A session
