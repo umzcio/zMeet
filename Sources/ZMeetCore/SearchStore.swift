@@ -62,17 +62,22 @@ public final class SearchStore: @unchecked Sendable {
     }
 
     deinit {
-        if let db { sqlite3_close(db) }
+        // close_v2 defers the close until any lingering resources are released,
+        // so it never fails even if a statement were somehow still open.
+        if let db { sqlite3_close_v2(db) }
     }
 
     // MARK: Open / schema
 
     private func open(at url: URL) throws {
+        // path(percentEncoded:) gives SQLite the real filesystem path even when
+        // the home directory contains spaces or non-ASCII characters.
+        let path = url.path(percentEncoded: false)
         // If the file is corrupt, start clean — the index is rebuildable.
-        if sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) != SQLITE_OK {
-            sqlite3_close(db); db = nil
+        if sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) != SQLITE_OK {
+            sqlite3_close_v2(db); db = nil
             try? FileManager.default.removeItem(at: url)
-            if sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) != SQLITE_OK {
+            if sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) != SQLITE_OK {
                 throw SearchError.open(lastErrorMessage())
             }
         }
@@ -98,10 +103,12 @@ public final class SearchStore: @unchecked Sendable {
             """)
         }
 
-        // Reset the index whenever the stored schema version differs.
+        // Reset the index whenever the stored schema version differs. Only record
+        // the new version once the clear actually succeeds, so a failed reset
+        // isn't masked as an up-to-date index.
         let stored = Int(metaValue(forKey: "schema_version") ?? "") ?? 0
         if stored != Self.schemaVersion {
-            try? exec("DELETE FROM meetings_fts;")
+            try exec("DELETE FROM meetings_fts;")
             setMeta(key: "schema_version", value: String(Self.schemaVersion))
         }
     }
