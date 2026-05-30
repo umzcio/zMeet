@@ -106,3 +106,42 @@ private func tempDBURL() -> URL {
     try store.remove(sessionID: "x")
     #expect(store.search("roadmap", limit: 10).isEmpty)
 }
+
+@Test func reconcileBackfillsMissingAndDropsOrphans() throws {
+    let url = tempDBURL()
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let store = try SearchStore(databaseURL: url)
+
+    // Pre-existing orphan that is no longer a current meeting.
+    try store.index(sessionID: "orphan", title: "Gone", notes: "", transcript: "stale")
+
+    let docs = [
+        SearchIndexDoc(id: "m1", title: "Planning", notePath: "/notes/m1", transcriptPath: "/tx/m1"),
+        SearchIndexDoc(id: "m2", title: "Review", notePath: nil, transcriptPath: nil)
+    ]
+    let files = ["/notes/m1": "budget notes", "/tx/m1": "we talked about hiring"]
+
+    store.reconcile(documents: docs) { path in files[path] }
+
+    #expect(try store.indexedIDs() == ["m1", "m2"])           // orphan dropped, both added
+    #expect(store.search("hiring", limit: 10).map(\.sessionID) == ["m1"])
+    #expect(store.search("review", limit: 10).map(\.sessionID) == ["m2"])  // title-only doc
+}
+
+@Test func rebuildFromFilesReproducesResults() throws {
+    let url = tempDBURL()
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let store = try SearchStore(databaseURL: url)
+
+    let docs = [SearchIndexDoc(id: "m1", title: "Sync", notePath: "/n", transcriptPath: "/t")]
+    let files = ["/n": "summary", "/t": "roadmap discussion"]
+    store.reconcile(documents: docs) { files[$0] }
+    let before = store.search("roadmap", limit: 10).map(\.sessionID)
+
+    // Simulate losing the index, then rebuild from the same files.
+    try store.removeAll()
+    #expect(store.search("roadmap", limit: 10).isEmpty)
+    store.reconcile(documents: docs) { files[$0] }
+
+    #expect(store.search("roadmap", limit: 10).map(\.sessionID) == before)
+}

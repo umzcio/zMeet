@@ -246,6 +246,24 @@ public final class SearchStore: @unchecked Sendable {
         }
     }
 
+    /// Make the index match `documents`: drop rows whose meeting no longer
+    /// exists, and index any document not already present (reading its content via
+    /// `readFile`). Already-indexed meetings are left untouched. Failures on a
+    /// single document are skipped; the next reconcile retries.
+    public func reconcile(documents: [SearchIndexDoc], readFile: @Sendable (String) -> String?) {
+        let current = Set(documents.map(\.id))
+        let existing = (try? indexedIDs()) ?? []
+
+        for orphan in existing.subtracting(current) {
+            try? remove(sessionID: orphan)
+        }
+        for doc in documents where !existing.contains(doc.id) {
+            let notes = doc.notePath.flatMap(readFile) ?? ""
+            let transcript = doc.transcriptPath.flatMap(readFile) ?? ""
+            try? index(sessionID: doc.id, title: doc.title, notes: notes, transcript: transcript)
+        }
+    }
+
     public func indexedIDs() throws -> Set<String> {
         try queue.sync {
             var ids = Set<String>()
