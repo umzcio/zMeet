@@ -15,6 +15,8 @@ struct LibraryView: View {
     @State private var transcriptText: String?
     @State private var renameText = ""
     @State private var showActions = false
+    @State private var searchHits: [SearchHit] = []
+    @State private var searchTask: Task<Void, Never>?
 
     private let ticker = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
@@ -54,6 +56,7 @@ struct LibraryView: View {
         .onReceive(ticker) { _ in audio.tick() }
         .task(id: reloadKey) { await loadSelected() }
         .onChange(of: selected?.id) { showActions = false }
+        .onChange(of: query) { runSearch() }
     }
 
     // MARK: In-app dialogs (custom, to match the app rather than system alerts)
@@ -110,11 +113,11 @@ struct LibraryView: View {
 
     // MARK: Selection
 
-    /// The meetings shown, filtered by the search box.
-    private var meetings: [MeetingSession] {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return state.allSessions }
-        return state.allSessions.filter { $0.title.lowercased().contains(q) }
+    /// The rail always shows every meeting; search results live in the main pane.
+    private var meetings: [MeetingSession] { state.allSessions }
+
+    private var isSearching: Bool {
+        !query.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var selected: MeetingSession? {
@@ -277,7 +280,9 @@ struct LibraryView: View {
 
     @ViewBuilder
     private var mainColumn: some View {
-        if let session = selected {
+        if isSearching {
+            searchResultsPanel
+        } else if let session = selected {
             ZStack(alignment: .topTrailing) {
                 VStack(spacing: 0) {
                     meetingHeader(session)
@@ -536,6 +541,101 @@ struct LibraryView: View {
     }
 
     // MARK: Loading + formatting
+
+    // MARK: Search results panel
+
+    private var searchResultsPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Results for \u{201C}\(query.trimmingCharacters(in: .whitespaces))\u{201D}")
+                .font(.system(size: 13)).foregroundStyle(Self.muted)
+                .padding(.horizontal, 32).padding(.top, 26).padding(.bottom, 14)
+
+            if searchHits.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 40, weight: .light)).foregroundStyle(Self.faint)
+                    Text("No results").font(.system(size: 16, weight: .semibold)).foregroundStyle(Self.light)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(searchHits, id: \.sessionID) { hit in
+                            if let session = state.allSessions.first(where: { $0.id == hit.sessionID }) {
+                                searchResultRow(session, hit: hit)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20).padding(.bottom, 16)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Self.bg)
+    }
+
+    private func searchResultRow(_ session: MeetingSession, hit: SearchHit) -> some View {
+        Button {
+            state.librarySelectedID = session.id
+            query = ""
+            searchHits = []
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(nsImage: SourceAppIcons.icon(for: session.sourceApp, title: session.title))
+                    .resizable().frame(width: 24, height: 24)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(session.title)
+                        .font(.system(size: 14.5, weight: .semibold)).foregroundStyle(Self.light)
+                        .lineLimit(1)
+                    Text(metaLine(session))
+                        .font(.system(size: 11.5)).foregroundStyle(Self.muted)
+                    highlightedSnippet(hit.snippet)
+                        .font(.system(size: 13)).foregroundStyle(Self.body)
+                        .lineLimit(2)
+                        .padding(.top, 2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 12)
+            .background(Self.card.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Convert a snippet with U+0002/U+0003 markers into highlighted Text.
+    private func highlightedSnippet(_ snippet: String) -> Text {
+        var result = Text("")
+        let chunks = snippet.components(separatedBy: SearchStore.highlightStart)
+        for (i, chunk) in chunks.enumerated() {
+            if i == 0 {
+                result = result + Text(chunk)
+                continue
+            }
+            let parts = chunk.components(separatedBy: SearchStore.highlightEnd)
+            if let match = parts.first {
+                result = result + Text(match).foregroundColor(Self.mint).bold()
+            }
+            if parts.count > 1 {
+                result = result + Text(parts.dropFirst().joined(separator: SearchStore.highlightEnd))
+            }
+        }
+        return result
+    }
+
+    private func runSearch() {
+        searchTask?.cancel()
+        let raw = query.trimmingCharacters(in: .whitespaces)
+        guard !raw.isEmpty else { searchHits = []; return }
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            if Task.isCancelled { return }
+            let hits = await state.searchMeetings(raw)
+            if Task.isCancelled { return }
+            searchHits = hits
+        }
+    }
 
     @MainActor
     private func loadSelected() async {

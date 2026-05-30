@@ -14,7 +14,10 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
     ],
     targets: [
-        .target(name: "ZMeetCore"),
+        .target(
+            name: "ZMeetCore",
+            linkerSettings: [.linkedLibrary("sqlite3")]
+        ),
         .executableTarget(
             name: "ZMeetApp",
             dependencies: [

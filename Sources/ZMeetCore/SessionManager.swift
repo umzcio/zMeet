@@ -6,6 +6,10 @@ public final class SessionManager {
     private let runner: ProcessRunner
     private let fileManager: FileManager
 
+    /// Full-text index over processed meetings. Optional: if the database can't
+    /// be opened, search is disabled but everything else works.
+    public let searchStore: SearchStore?
+
     private var appDataURL: URL {
         URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
     }
@@ -33,6 +37,9 @@ public final class SessionManager {
         self.recorder = recorder
         self.runner = runner
         self.fileManager = fileManager
+        let searchDBURL = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
+            .appendingPathComponent("search.db")
+        self.searchStore = try? SearchStore(databaseURL: searchDBURL)
     }
 
     public func start(title rawTitle: String, sourceApp: String?) throws -> MeetingSession {
@@ -126,6 +133,12 @@ public final class SessionManager {
             session.notePath = noteURL.path
             session.errorMessage = nil
             try save(session)
+            // Keep search consistent across both processing paths (this one and
+            // applyProcessedText). Index the title-free note body + transcript.
+            try? searchStore?.index(
+                sessionID: session.id, title: session.title,
+                notes: ZMeetText.noteSearchBody(noteMarkdown), transcript: transcriptMarkdown
+            )
 
             if config.gitAutoCommit {
                 _ = try? GitRepository(repoURL: outputURL).commitAll(message: "Add meeting notes: \(session.title)")
@@ -174,6 +187,13 @@ public final class SessionManager {
             session.notePath = noteURL.path
             session.errorMessage = nil
             try save(session)
+            // Index the title-free summary as the notes column (not the full
+            // rendered note, which embeds the title/frontmatter/paths) so the
+            // title lives only in the title column and rename can update it cleanly.
+            try? searchStore?.index(
+                sessionID: session.id, title: session.title,
+                notes: summary, transcript: transcript
+            )
             return session
         } catch {
             session.status = .failed
@@ -192,6 +212,10 @@ public final class SessionManager {
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         session.title = title.isEmpty ? "Untitled Meeting" : title
         try save(session)
+        // Update only the indexed title, preserving the meeting's notes/transcript
+        // in the index (a no-op if it isn't indexed). The old title leaves search;
+        // the body stays searchable.
+        try? searchStore?.updateTitle(sessionID: session.id, title: session.title)
         return session
     }
 
@@ -207,6 +231,7 @@ public final class SessionManager {
             try? fileManager.removeItem(at: folder)
         }
         try? fileManager.removeItem(at: sessionsURL.appendingPathComponent("\(id).json"))
+        try? searchStore?.remove(sessionID: id)
     }
 
     public func listSessions() throws -> [MeetingSession] {
@@ -220,6 +245,15 @@ public final class SessionManager {
         return try files
             .map(loadSession(from:))
             .sorted { $0.startedAt > $1.startedAt }
+    }
+
+    /// Processed meetings as lightweight, Sendable docs the app uses to reconcile
+    /// the search index off the main thread.
+    public func searchIndexDocuments() -> [SearchIndexDoc] {
+        let sessions = (try? listSessions()) ?? []
+        return sessions.filter { $0.status == .processed }.map {
+            SearchIndexDoc(id: $0.id, title: $0.title, notePath: $0.notePath, transcriptPath: $0.transcriptPath)
+        }
     }
 
     /// Finalizes sessions left in `.recording` by a crash or force-quit. A session

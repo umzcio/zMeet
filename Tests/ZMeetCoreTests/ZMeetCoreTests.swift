@@ -8,6 +8,30 @@ import Testing
     #expect(ZMeetText.slugify("!!!") == "untitled-meeting")
 }
 
+@Test func noteSearchBodyStripsFrontmatterHeadingsAndTranscriptLink() {
+    let note = """
+    ---
+    id: "abc"
+    title: "Weekly Sync"
+    ---
+
+    # Weekly Sync
+
+    ## Summary
+
+    We shipped the detector and agreed on next steps.
+
+    ## Transcript
+
+    [Open transcript](transcript.md)
+    """
+    let body = ZMeetText.noteSearchBody(note)
+    #expect(body.contains("We shipped the detector"))
+    #expect(!body.contains("title:"))          // frontmatter gone
+    #expect(!body.contains("# Weekly Sync"))    // heading gone
+    #expect(!body.contains("Open transcript"))  // transcript link gone
+}
+
 @Test func relativePathHandlesSiblingTrees() {
     let from = URL(fileURLWithPath: "/tmp/repo/meetings/2026/05", isDirectory: true)
     let to = URL(fileURLWithPath: "/tmp/repo/transcripts/2026/05/demo.transcript.md")
@@ -247,4 +271,36 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(!FileManager.default.fileExists(atPath: folder.path))
     #expect(try manager.listSessions().contains { $0.id == started.id } == false)
     #expect(throws: (any Error).self) { _ = try manager.session(id: started.id) }
+}
+
+@Test func processingIndexesMeetingForSearch() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Roadmap Review", sourceApp: nil)
+    _ = try manager.stop()
+    _ = try manager.applyProcessedText(
+        id: started.id,
+        transcript: "we agreed to ship the meeting detector next sprint",
+        summary: "Shipping detection."
+    )
+
+    let store = try #require(manager.searchStore)
+    // Findable by a transcript term...
+    #expect(store.search("detector", limit: 10).map(\.sessionID) == [started.id])
+    // ...and by title.
+    #expect(store.search("roadmap", limit: 10).map(\.sessionID) == [started.id])
+
+    // Rename updates the indexed title.
+    _ = try manager.setTitle(id: started.id, to: "Quarterly Planning")
+    #expect(store.search("quarterly", limit: 10).map(\.sessionID) == [started.id])
+    #expect(store.search("roadmap", limit: 10).isEmpty)
+
+    // Renaming must NOT drop the meeting's body from search.
+    #expect(store.search("detector", limit: 10).map(\.sessionID) == [started.id])
+
+    // Delete removes it.
+    try manager.delete(id: started.id)
+    #expect(store.search("detector", limit: 10).isEmpty)
 }
