@@ -28,6 +28,13 @@ final class LibraryWindowController: NSObject, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
         window.center()
+        // Esc dismisses an open in-app dialog first; only closes the window when
+        // none is showing.
+        window.onEsc = { [weak state] in
+            guard let state, state.libraryDialog != nil else { return false }
+            state.libraryDialog = nil
+            return true
+        }
         window.contentView = NSHostingView(rootView: view)
         window.isReleasedWhenClosed = false
         window.delegate = self

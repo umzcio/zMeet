@@ -17,6 +17,11 @@ final class AppState: ObservableObject {
     @Published private(set) var allSessions: [MeetingSession] = []
     /// Currently-selected meeting in the Library window (nil = newest).
     @Published var librarySelectedID: String?
+    /// Which in-app dialog (if any) is open in the Library window. Held here so the
+    /// window can intercept Esc and dismiss the dialog instead of closing.
+    @Published var libraryDialog: LibraryDialog?
+
+    enum LibraryDialog: Equatable { case rename, delete }
     @Published var draftTitle: String = ""
     @Published private(set) var lastError: String?
     @Published private(set) var micGranted: Bool = false

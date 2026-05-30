@@ -13,9 +13,7 @@ struct LibraryView: View {
     @State private var tab: Tab = .notes
     @State private var noteBlocks: [NoteBlock] = []
     @State private var transcriptText: String?
-    @State private var renaming = false
     @State private var renameText = ""
-    @State private var confirmingDelete = false
     @State private var showActions = false
 
     private let ticker = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
@@ -35,10 +33,19 @@ struct LibraryView: View {
     nonisolated static let hairline = Color.white.opacity(0.06)
 
     var body: some View {
-        HStack(spacing: 0) {
-            railColumn
-            Rectangle().fill(Self.hairline).frame(width: 1)
-            mainColumn
+        ZStack {
+            HStack(spacing: 0) {
+                railColumn
+                Rectangle().fill(Self.hairline).frame(width: 1)
+                mainColumn
+            }
+
+            if state.libraryDialog == .rename, let session = selected {
+                renameDialog(session)
+            }
+            if state.libraryDialog == .delete, let session = selected {
+                deleteDialog(session)
+            }
         }
         .frame(width: 1000, height: 680)
         .background(Self.bg)
@@ -46,6 +53,59 @@ struct LibraryView: View {
         .tint(Self.mint)
         .onReceive(ticker) { _ in audio.tick() }
         .task(id: reloadKey) { await loadSelected() }
+        .onChange(of: selected?.id) { showActions = false }
+    }
+
+    // MARK: In-app dialogs (custom, to match the app rather than system alerts)
+
+    private func renameDialog(_ session: MeetingSession) -> some View {
+        DialogScaffold(onDismiss: { state.libraryDialog = nil }) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Rename meeting")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Self.light)
+
+                DialogTextField(text: $renameText, placeholder: "Meeting title") {
+                    commitRename(session)
+                }
+
+                HStack(spacing: 10) {
+                    Spacer()
+                    DialogButton(title: "Cancel", kind: .secondary) { state.libraryDialog = nil }
+                    DialogButton(title: "Rename", kind: .primary) { commitRename(session) }
+                }
+            }
+        }
+    }
+
+    private func deleteDialog(_ session: MeetingSession) -> some View {
+        DialogScaffold(onDismiss: { state.libraryDialog = nil }) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Delete this meeting?")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Self.light)
+                Text("This removes the recording, transcript, and notes for “\(session.title)”. This can't be undone.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Self.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    Spacer()
+                    DialogButton(title: "Cancel", kind: .secondary) { state.libraryDialog = nil }
+                    DialogButton(title: "Delete", kind: .destructive) {
+                        let wasSelected = session.id
+                        state.deleteMeeting(id: session.id)
+                        if state.librarySelectedID == wasSelected { state.librarySelectedID = nil }
+                        state.libraryDialog = nil
+                    }
+                }
+            }
+        }
+    }
+
+    private func commitRename(_ session: MeetingSession) {
+        state.renameMeeting(id: session.id, to: renameText)
+        state.libraryDialog = nil
     }
 
     // MARK: Selection
@@ -136,6 +196,7 @@ struct LibraryView: View {
     private func railRow(_ session: MeetingSession) -> some View {
         let active = session.id == selected?.id
         return Button {
+            showActions = false
             state.librarySelectedID = session.id
         } label: {
             HStack(spacing: 11) {
@@ -273,21 +334,6 @@ struct LibraryView: View {
                 showActions.toggle()
             }
         }
-        .alert("Rename meeting", isPresented: $renaming) {
-            TextField("Meeting title", text: $renameText)
-            Button("Cancel", role: .cancel) {}
-            Button("Rename") { state.renameMeeting(id: session.id, to: renameText) }
-        }
-        .alert("Delete this meeting?", isPresented: $confirmingDelete) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                let wasSelected = session.id
-                state.deleteMeeting(id: session.id)
-                if state.librarySelectedID == wasSelected { state.librarySelectedID = nil }
-            }
-        } message: {
-            Text("This removes the recording, transcript, and notes for “\(session.title)”. This can't be undone.")
-        }
     }
 
     private func actionButton(_ icon: String, _ help: String, _ action: @escaping () -> Void) -> some View {
@@ -307,7 +353,7 @@ struct LibraryView: View {
     private func actionsDropdown(_ session: MeetingSession) -> some View {
         VStack(spacing: 0) {
             DropdownRow(title: "Rename…") {
-                renameText = session.title; renaming = true; showActions = false
+                renameText = session.title; showActions = false; state.libraryDialog = .rename
             }
             DropdownRow(title: session.status == .processed ? "Re-process" : "Process Notes") {
                 state.process(id: session.id); showActions = false
@@ -317,7 +363,7 @@ struct LibraryView: View {
             }
             Rectangle().fill(Self.hairline).frame(height: 1).padding(.vertical, 4)
             DropdownRow(title: "Delete…", destructive: true) {
-                confirmingDelete = true; showActions = false
+                showActions = false; state.libraryDialog = .delete
             }
         }
         .padding(.vertical, 5)
@@ -576,6 +622,90 @@ private struct DropdownRow: View {
         .buttonStyle(.plain)
         .onHover { hover = $0 }
         .padding(.horizontal, 5)
+    }
+}
+
+// MARK: - In-app dialog (custom modal, replaces system alerts)
+
+private struct DialogScaffold<Content: View>: View {
+    let onDismiss: () -> Void
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture { onDismiss() }
+            content
+                .padding(22)
+                .frame(width: 380)
+                .background(Color(red: 0.105, green: 0.124, blue: 0.116),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(LibraryView.hairline, lineWidth: 1))
+                .shadow(color: .black.opacity(0.5), radius: 30, y: 14)
+        }
+        .transition(.opacity)
+    }
+}
+
+private struct DialogTextField: View {
+    @Binding var text: String
+    let placeholder: String
+    let onSubmit: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 14))
+            .foregroundStyle(LibraryView.light)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9)
+                .stroke(focused ? LibraryView.mint : LibraryView.hairline, lineWidth: 1))
+            .focused($focused)
+            .onSubmit(onSubmit)
+            .onAppear { focused = true }
+    }
+}
+
+private struct DialogButton: View {
+    enum Kind { case primary, secondary, destructive }
+    let title: String
+    let kind: Kind
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13.5, weight: .semibold))
+                .foregroundStyle(foreground)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(background, in: RoundedRectangle(cornerRadius: 9))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+    }
+
+    private var foreground: Color {
+        switch kind {
+        case .primary:     return Color(red: 0.024, green: 0.157, blue: 0.102)
+        case .secondary:   return LibraryView.light
+        case .destructive: return .white
+        }
+    }
+
+    private var background: Color {
+        switch kind {
+        case .primary:     return LibraryView.mint.opacity(hover ? 0.88 : 1)
+        case .secondary:   return Color.white.opacity(hover ? 0.13 : 0.07)
+        case .destructive: return Color(red: 0.90, green: 0.32, blue: 0.30).opacity(hover ? 0.88 : 1)
+        }
     }
 }
 
