@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/zmeet-logo.png" alt="zMeet" width="380" />
+  <img src="assets/zmeet-logo.png" alt="zMeet" width="380" />
 </p>
 
 <p align="center">
@@ -210,10 +210,9 @@ zMeet/
 │   └── ZMeetApp/           # menu-bar app: recorder, transcription, summary, detection, UI
 ├── Tests/
 │   └── ZMeetCoreTests/     # Swift Testing suite for the engine
-├── scripts/
-│   ├── build-app.sh        # build + bundle + sign zMeet.app
-│   └── assets/             # bundled wordmark font (OFL)
-└── docs/                   # specs, plans, roadmap, branding
+└── scripts/
+    ├── build-app.sh        # build + bundle + sign zMeet.app
+    └── assets/             # app icon + bundled wordmark font (OFL)
 ```
 
 ---
@@ -221,8 +220,7 @@ zMeet/
 ## Roadmap
 
 v1.0 (the working MVP — capture → transcript → notes) is complete. Planned for v2.0: an in-app
-Library/Reader window, a Settings UI, and search. See [ROADMAP-v2.md](ROADMAP-v2.md) and
-[IMPLEMENTATION_PHASES.md](IMPLEMENTATION_PHASES.md).
+Library/Reader window to browse and read past meetings, a Settings UI, and search.
 
 ---
 

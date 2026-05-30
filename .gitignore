@@ -14,3 +14,6 @@ build/
 
 # Notary credentials (local only)
 scripts/.notary-config.local
+
+# Internal docs/specs/plans/mocks — not published
+docs/
