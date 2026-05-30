@@ -7,6 +7,8 @@ struct SettingsView: View {
     @State private var selection: Section = .general
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var inputDevices: [AudioInputs.Device] = []
+    @State private var reclaimable: Int64 = 0
+    @State private var confirmFreeUp = false
 
     // Mint-terminal palette
     static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
@@ -192,13 +194,45 @@ struct SettingsView: View {
     }
 
     private var storageSection: some View {
-        card {
-            row("Notes folder", displayPath(state.config.outputPath)) {
-                HStack(spacing: 8) {
-                    Button("Change…") { chooseOutputFolder() }
-                    Button("Reveal") { state.openOutputFolder() }
+        VStack(spacing: 14) {
+            card {
+                row("Notes folder", displayPath(state.config.outputPath)) {
+                    HStack(spacing: 8) {
+                        Button("Change…") { chooseOutputFolder() }
+                        Button("Reveal") { state.openOutputFolder() }
+                    }
                 }
             }
+            card {
+                row("Delete audio after",
+                    "Transcripts and notes are always kept.") {
+                    Picker("", selection: retentionBinding) {
+                        Text("Never").tag(0)
+                        Text("7 days").tag(7)
+                        Text("30 days").tag(30)
+                        Text("90 days").tag(90)
+                    }
+                    .labelsHidden()
+                    .frame(width: 130)
+                }
+                divider
+                row("Recorded audio", "Free up space by deleting audio for processed meetings.") {
+                    Button(reclaimable > 0 ? "Free up \(formattedBytes(reclaimable))" : "Nothing to free") {
+                        confirmFreeUp = true
+                    }
+                    .disabled(reclaimable == 0)
+                }
+            }
+        }
+        .onAppear { reclaimable = state.reclaimableAudioBytes() }
+        .alert("Free up space?", isPresented: $confirmFreeUp) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete Audio", role: .destructive) {
+                state.freeUpAllAudio()
+                reclaimable = state.reclaimableAudioBytes()
+            }
+        } message: {
+            Text("This deletes the recording for every processed meeting, keeping all transcripts and notes. This can't be undone.")
         }
     }
 
@@ -286,6 +320,15 @@ struct SettingsView: View {
     private var bitrateBinding: Binding<Int> {
         Binding(get: { state.config.audio.bitrate },
                 set: { v in state.updateConfig { $0.audio.bitrate = v } })
+    }
+
+    private var retentionBinding: Binding<Int> {
+        Binding(get: { state.config.audioRetentionDays },
+                set: { v in state.updateConfig { $0.audioRetentionDays = v } })
+    }
+
+    private func formattedBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     private func chooseOutputFolder() {
