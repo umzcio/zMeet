@@ -198,13 +198,17 @@ public final class SearchStore: @unchecked Sendable {
     }
 
     /// Full-text search, ranked best-first. Columns: 0 session_id, 1 title,
-    /// 2 notes, 3 transcript. Title is weighted heaviest.
+    /// 2 notes, 3 transcript. Title is weighted heaviest. Returns an empty array
+    /// on a query with no terms, and also (defensively) if the statement fails to
+    /// prepare — which would indicate a corrupt/missing index rather than "no
+    /// matches"; reconcile/reopen rebuilds it.
     public func search(_ query: String, limit: Int) -> [SearchHit] {
         guard let match = Self.buildMatch(query) else { return [] }
         return queue.sync {
             let sql = """
             SELECT session_id,
                    bm25(meetings_fts, 0.0, 10.0, 4.0, 1.0) AS rank,
+                   snippet(meetings_fts, 1, char(2), char(3), '…', 10) AS snip_title,
                    snippet(meetings_fts, 2, char(2), char(3), '…', 12) AS snip_notes,
                    snippet(meetings_fts, 3, char(2), char(3), '…', 14) AS snip_tx
             FROM meetings_fts
@@ -216,20 +220,26 @@ public final class SearchStore: @unchecked Sendable {
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
             defer { sqlite3_finalize(stmt) }
             sqlite3_bind_text(stmt, 1, match, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_int(stmt, 2, Int32(limit))
+            sqlite3_bind_int(stmt, 2, Int32(clamping: limit))
 
             var hits: [SearchHit] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
                 guard let idC = sqlite3_column_text(stmt, 0) else { continue }
                 let id = String(cString: idC)
                 let rank = sqlite3_column_double(stmt, 1)
-                let snipNotes = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
-                let snipTx = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? ""
-                // Prefer whichever snippet actually contains a highlighted match.
+                let snipTitle = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+                let snipNotes = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? ""
+                let snipTx = sqlite3_column_text(stmt, 4).map { String(cString: $0) } ?? ""
+                // Prefer whichever column actually contains a highlighted match
+                // (transcript → notes → title), so even a title-only hit yields a
+                // highlighted snippet. Fall back to any available context text.
                 let snippet: String
                 if snipTx.contains(Self.highlightStart) { snippet = snipTx }
                 else if snipNotes.contains(Self.highlightStart) { snippet = snipNotes }
-                else { snippet = snipTx.isEmpty ? snipNotes : snipTx }
+                else if snipTitle.contains(Self.highlightStart) { snippet = snipTitle }
+                else if !snipTx.isEmpty { snippet = snipTx }
+                else if !snipNotes.isEmpty { snippet = snipNotes }
+                else { snippet = snipTitle }
                 hits.append(SearchHit(sessionID: id, score: -rank, snippet: snippet))
             }
             return hits

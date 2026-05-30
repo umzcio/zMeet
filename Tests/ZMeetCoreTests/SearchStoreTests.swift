@@ -75,6 +75,18 @@ private func tempDBURL() -> URL {
     #expect(hit.snippet.lowercased().contains("roadmap"))
 }
 
+@Test func searchTitleOnlyMatchStillHighlights() throws {
+    let url = tempDBURL()
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let store = try SearchStore(databaseURL: url)
+    // The term appears only in the title, not in notes/transcript.
+    try store.index(sessionID: "x", title: "Roadmap planning", notes: "agenda", transcript: "general chatter")
+
+    let hit = try #require(store.search("roadmap", limit: 1).first)
+    #expect(hit.snippet.contains(SearchStore.highlightStart))
+    #expect(hit.snippet.lowercased().contains("roadmap"))
+}
+
 @Test func searchEmptyOrPunctuationOnlyReturnsNothing() throws {
     let url = tempDBURL()
     defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
