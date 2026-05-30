@@ -1,8 +1,27 @@
 import SwiftUI
+import AppKit
 import ZMeetCore
 
 struct MenuContentView: View {
     @ObservedObject var state: AppState
+
+    /// Closes the MenuBarExtra popover. The window-style popover doesn't dismiss
+    /// itself when we bring another window forward, so close it explicitly.
+    private func dismissMenuBar() {
+        for window in NSApp.windows where "\(type(of: window))".contains("MenuBarExtra") {
+            window.close()
+        }
+    }
+
+    private func openLibrary(select id: String? = nil) {
+        dismissMenuBar()
+        state.openLibrary(select: id)
+    }
+
+    private func openSettings() {
+        dismissMenuBar()
+        state.openSettings()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -30,9 +49,9 @@ struct MenuContentView: View {
             }
 
             Divider()
-            recentSection
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+            openAppRow
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
 
             Divider()
             toolbar
@@ -50,9 +69,6 @@ struct MenuContentView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.title2)
-                .foregroundStyle(state.isRecording ? .red : Self.mint)
             // Wordmark: cursive z (Dancing Script) + mono "Meet".
             // Baseline-aligned, with extra bottom room for the z's descender tail.
             HStack(alignment: .firstTextBaseline, spacing: 1) {
@@ -143,27 +159,41 @@ struct MenuContentView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Set up") { state.openOnboarding() }
+            Button("Set up") { dismissMenuBar(); state.openOnboarding() }
                 .font(.caption)
         }
     }
 
-    // MARK: Recent — short, tidy list with a chevron affordance
+    // MARK: Open the app — single row into the Library (the meeting browser)
 
-    private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("RECENT")
-                .font(.caption2).fontWeight(.semibold)
-                .foregroundStyle(.tertiary)
-
-            if state.recent.isEmpty {
-                Text("No meetings yet")
-                    .font(.caption).foregroundStyle(.secondary)
-            } else {
-                ForEach(state.recent.prefix(3), id: \.id) { session in
-                    RecentRow(session: session) { state.revealNote(session) }
+    private var openAppRow: some View {
+        Button { openLibrary() } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "rectangle.stack")
+                    .font(.body)
+                    .foregroundStyle(Self.mint)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Open zMeet").fontWeight(.medium)
+                    Text(meetingCountText)
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption).foregroundStyle(.tertiary)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var meetingCountText: String {
+        switch state.allSessions.count {
+        case 0:  return "No meetings yet"
+        case 1:  return "1 meeting"
+        case let n: return "\(n) meetings"
         }
     }
 
@@ -171,14 +201,11 @@ struct MenuContentView: View {
 
     private var toolbar: some View {
         HStack(spacing: 18) {
+            ToolbarIcon(systemName: "gearshape", help: "Settings") {
+                openSettings()
+            }
             ToolbarIcon(systemName: "folder", help: "Open zMeet folder") {
                 state.openOutputFolder()
-            }
-            ToolbarIcon(systemName: "gearshape", help: "Settings") {
-                state.openSettings()
-            }
-            ToolbarIcon(systemName: "arrow.triangle.2.circlepath", help: "Check for Updates…") {
-                state.updater.checkForUpdates()
             }
             Spacer()
             ToolbarIcon(systemName: "power", help: "Quit zMeet") {
@@ -190,57 +217,6 @@ struct MenuContentView: View {
     private func elapsed(since: Date) -> String {
         let total = Int(Date().timeIntervalSince(since))
         return String(format: "%02d:%02d", total / 60, total % 60)
-    }
-}
-
-private struct RecentRow: View {
-    let session: MeetingSession
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                Image(nsImage: SourceAppIcons.icon(for: session.sourceApp, title: session.title))
-                    .resizable()
-                    .frame(width: 18, height: 18)
-                Text(session.title).lineLimit(1)
-                Spacer()
-                statusBadge
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(helpText)
-    }
-
-    /// Status only surfaces when it's not the normal, finished case — keeps the
-    /// list clean and only draws attention when something needs it.
-    @ViewBuilder
-    private var statusBadge: some View {
-        switch session.status {
-        case .processed:
-            EmptyView()
-        case .recorded:
-            Text("not processed")
-                .font(.caption2).foregroundStyle(.secondary)
-        case .recording:
-            Text("recording")
-                .font(.caption2).foregroundStyle(.secondary)
-        case .failed:
-            Label("Failed", systemImage: "exclamationmark.triangle.fill")
-                .labelStyle(.iconOnly)
-                .font(.caption)
-                .foregroundStyle(.orange)
-        }
-    }
-
-    private var helpText: String {
-        switch session.status {
-        case .processed: return "Reveal notes in Finder"
-        case .recorded:  return "Recorded — not yet processed"
-        case .recording: return "Still marked recording (relaunch zMeet to recover)"
-        case .failed:    return session.errorMessage ?? "Processing failed"
-        }
     }
 }
 

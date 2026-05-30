@@ -29,11 +29,11 @@ bash "$ROOT/scripts/make-dmg.sh" "$VERSION"
 echo "==> [3/6] Notarize the .dmg"
 bash "$ROOT/scripts/notarize.sh" "$DMG"
 
-echo "==> [4/6] Staple the .app and repackage so the app inside the dmg is stapled too"
+echo "==> [4/6] Staple the .app, repackage, and notarize the final dmg"
 xcrun stapler staple "$APP_DIR"
 bash "$ROOT/scripts/make-dmg.sh" "$VERSION"
-xcrun stapler staple "$DMG"
-xcrun stapler validate "$DMG"
+# The repackaged dmg is a new file, so it needs its own notarization + staple.
+bash "$ROOT/scripts/notarize.sh" "$DMG"
 
 echo "==> [5/6] Generate signed appcast"
 rm -rf "$DIST"; mkdir -p "$DIST"

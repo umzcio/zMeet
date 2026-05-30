@@ -183,6 +183,32 @@ public final class SessionManager {
         }
     }
 
+    /// Renames a meeting's display title in place. The on-disk folder name (fixed
+    /// at creation time) is intentionally left unchanged so existing file paths
+    /// stay valid; only the session record's title is updated.
+    @discardableResult
+    public func setTitle(id: String, to rawTitle: String) throws -> MeetingSession {
+        var session = try loadSession(id: id)
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        session.title = title.isEmpty ? "Untitled Meeting" : title
+        try save(session)
+        return session
+    }
+
+    /// Deletes a meeting: removes its on-disk folder (recording, transcript, note)
+    /// and the session record. Missing files are ignored so a partial delete still
+    /// clears the session.
+    public func delete(id: String) throws {
+        let session = try loadSession(id: id)
+        let folder = meetingFolderURL(for: session)
+        // Only remove the folder when it sits under our output root, guarding
+        // against a stray absolute path wiping something unexpected.
+        if folder.standardizedFileURL.path.hasPrefix(outputURL.standardizedFileURL.path) {
+            try? fileManager.removeItem(at: folder)
+        }
+        try? fileManager.removeItem(at: sessionsURL.appendingPathComponent("\(id).json"))
+    }
+
     public func listSessions() throws -> [MeetingSession] {
         guard fileManager.fileExists(atPath: sessionsURL.path) else {
             return []

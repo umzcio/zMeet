@@ -1,10 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// Shows the Settings window. The app stays a menu-bar agent (.accessory) — no
-/// Dock icon — and the window is brought to the front via activation.
+/// Shows the Library / Reader window — the conversation-rail view of past
+/// meetings. The app stays a menu-bar agent (.accessory) — no Dock icon — and the
+/// window is brought to the front via activation.
 @MainActor
-final class SettingsWindowController: NSObject, NSWindowDelegate {
+final class LibraryWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
 
     func show(state: AppState) {
@@ -15,14 +16,14 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             return
         }
 
-        let view = SettingsView(state: state)
+        let view = LibraryView(state: state)
         let window = EscClosableWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 500),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        window.title = "zMeet Settings"
+        window.title = "zMeet"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true

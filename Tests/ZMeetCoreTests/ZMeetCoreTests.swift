@@ -212,3 +212,39 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     let listed = try manager.listSessions().first { $0.id == started.id }
     #expect(listed?.status == .recorded)
 }
+
+@Test func setTitleUpdatesDisplayTitleInPlace() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+    let started = try manager.start(title: "Old Name", sourceApp: nil)
+    let audioPath = started.audioPath
+
+    let renamed = try manager.setTitle(id: started.id, to: "  New Name  ")
+    #expect(renamed.title == "New Name")
+    // The on-disk folder (and audio path) is unchanged — only the title updates.
+    #expect(renamed.audioPath == audioPath)
+    #expect(try manager.session(id: started.id).title == "New Name")
+
+    // Empty/whitespace titles fall back to the default.
+    let blank = try manager.setTitle(id: started.id, to: "   ")
+    #expect(blank.title == "Untitled Meeting")
+}
+
+@Test func deleteRemovesFolderAndSession() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+    let started = try manager.start(title: "Disposable", sourceApp: nil)
+    _ = try manager.stop()
+    let folder = URL(fileURLWithPath: started.audioPath).deletingLastPathComponent()
+    #expect(FileManager.default.fileExists(atPath: folder.path))
+
+    try manager.delete(id: started.id)
+
+    #expect(!FileManager.default.fileExists(atPath: folder.path))
+    #expect(try manager.listSessions().contains { $0.id == started.id } == false)
+    #expect(throws: (any Error).self) { _ = try manager.session(id: started.id) }
+}

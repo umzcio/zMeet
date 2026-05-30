@@ -8,7 +8,7 @@ struct ZMeetApp: App {
         MenuBarExtra {
             MenuContentView(state: state)
         } label: {
-            Image(systemName: state.isRecording ? "record.circle.fill" : "mic")
+            Image(nsImage: MenuBarIcon.image(recording: state.isRecording))
         }
         .menuBarExtraStyle(.window)
     }

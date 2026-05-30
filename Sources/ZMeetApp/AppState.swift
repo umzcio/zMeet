@@ -13,6 +13,10 @@ final class AppState: ObservableObject {
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var recent: [MeetingSession] = []
+    /// Every meeting, newest first — backs the Library window.
+    @Published private(set) var allSessions: [MeetingSession] = []
+    /// Currently-selected meeting in the Library window (nil = newest).
+    @Published var librarySelectedID: String?
     @Published var draftTitle: String = ""
     @Published private(set) var lastError: String?
     @Published private(set) var micGranted: Bool = false
@@ -29,6 +33,7 @@ final class AppState: ObservableObject {
     private let modeChoicePopup = ModeChoicePopupController()
     private let onboarding = OnboardingWindowController()
     private let settingsWindow = SettingsWindowController()
+    private let libraryWindow = LibraryWindowController()
     let updater = UpdaterController()
     private var dismissedMeetingKeys: Set<String> = []
     /// True when the current recording was started from a detected meeting, so it
@@ -67,6 +72,38 @@ final class AppState: ObservableObject {
 
     func openSettings() {
         settingsWindow.show(state: self)
+    }
+
+    /// Open the Library/Reader window, optionally selecting a specific meeting.
+    func openLibrary(select id: String? = nil) {
+        reloadRecent()
+        if let id { librarySelectedID = id }
+        libraryWindow.show(state: self)
+    }
+
+    /// Rename a meeting's display title, then refresh the lists.
+    func renameMeeting(id: String, to newTitle: String) {
+        _ = try? manager.setTitle(id: id, to: newTitle)
+        reloadRecent()
+    }
+
+    /// Delete a meeting (folder + record), then refresh the lists.
+    func deleteMeeting(id: String) {
+        try? manager.delete(id: id)
+        reloadRecent()
+    }
+
+    /// Reads a meeting's note file for the reader. File IO is small and local.
+    func readNote(_ session: MeetingSession) -> String? {
+        guard let path = session.notePath,
+              let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        return text
+    }
+
+    func readTranscript(_ session: MeetingSession) -> String? {
+        guard let path = session.transcriptPath,
+              let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        return text
     }
 
     func setMicDevice(_ id: String?) {
@@ -276,6 +313,8 @@ final class AppState: ObservableObject {
     }
 
     private func reloadRecent() {
-        recent = (try? manager.listSessions().prefix(10).map { $0 }) ?? []
+        let sessions = (try? manager.listSessions()) ?? []
+        allSessions = sessions
+        recent = Array(sessions.prefix(10))
     }
 }

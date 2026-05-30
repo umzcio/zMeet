@@ -19,13 +19,12 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     }
 
     func show(state: AppState) {
-        // A menu-bar (.accessory) app can't bring a titled window to the front;
-        // become a regular app while onboarding is open, then revert on close.
-        NSApp.setActivationPolicy(.regular)
-
+        // Stay a menu-bar agent (.accessory) — no Dock icon — and bring the
+        // window to the front via activation.
         if let window {
-            window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
             return
         }
 
@@ -47,8 +46,9 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         window.contentView = NSHostingView(rootView: view)
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
         self.window = window
     }
 
@@ -58,7 +58,5 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         window = nil
-        // Revert to a menu-bar–only agent (no Dock icon) once setup is dismissed.
-        NSApp.setActivationPolicy(.accessory)
     }
 }
