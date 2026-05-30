@@ -186,6 +186,56 @@ public final class SearchStore: @unchecked Sendable {
         }
     }
 
+    /// Build an FTS5 MATCH expression: alphanumeric terms, AND-ed, with the last
+    /// term prefix-matched for as-you-type. Returns nil when there is no term.
+    static func buildMatch(_ raw: String) -> String? {
+        let parts = raw.components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        guard !parts.isEmpty else { return nil }
+        var quoted = parts.map { "\"\($0)\"" }
+        quoted[quoted.count - 1] += "*"   // prefix-match the final token
+        return quoted.joined(separator: " ")
+    }
+
+    /// Full-text search, ranked best-first. Columns: 0 session_id, 1 title,
+    /// 2 notes, 3 transcript. Title is weighted heaviest.
+    public func search(_ query: String, limit: Int) -> [SearchHit] {
+        guard let match = Self.buildMatch(query) else { return [] }
+        return queue.sync {
+            let sql = """
+            SELECT session_id,
+                   bm25(meetings_fts, 0.0, 10.0, 4.0, 1.0) AS rank,
+                   snippet(meetings_fts, 2, char(2), char(3), '…', 12) AS snip_notes,
+                   snippet(meetings_fts, 3, char(2), char(3), '…', 14) AS snip_tx
+            FROM meetings_fts
+            WHERE meetings_fts MATCH ?
+            ORDER BY rank
+            LIMIT ?;
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, match, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(stmt, 2, Int32(limit))
+
+            var hits: [SearchHit] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let idC = sqlite3_column_text(stmt, 0) else { continue }
+                let id = String(cString: idC)
+                let rank = sqlite3_column_double(stmt, 1)
+                let snipNotes = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+                let snipTx = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? ""
+                // Prefer whichever snippet actually contains a highlighted match.
+                let snippet: String
+                if snipTx.contains(Self.highlightStart) { snippet = snipTx }
+                else if snipNotes.contains(Self.highlightStart) { snippet = snipNotes }
+                else { snippet = snipTx.isEmpty ? snipNotes : snipTx }
+                hits.append(SearchHit(sessionID: id, score: -rank, snippet: snippet))
+            }
+            return hits
+        }
+    }
+
     public func indexedIDs() throws -> Set<String> {
         try queue.sync {
             var ids = Set<String>()
