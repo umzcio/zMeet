@@ -277,8 +277,11 @@ public final class SessionManager {
     @discardableResult
     private func removeAudioFile(for session: MeetingSession) -> Bool {
         let url = URL(fileURLWithPath: session.audioPath)
+        // Trailing slash on the root so a sibling dir (e.g. ".../zMeetOther") can't
+        // satisfy the prefix check against ".../zMeet".
+        let root = outputURL.standardizedFileURL.path + "/"
         guard fileManager.fileExists(atPath: url.path),
-              url.standardizedFileURL.path.hasPrefix(outputURL.standardizedFileURL.path) else { return false }
+              url.standardizedFileURL.path.hasPrefix(root) else { return false }
         do { try fileManager.removeItem(at: url); return true } catch { return false }
     }
 
