@@ -133,6 +133,12 @@ public final class SessionManager {
             session.notePath = noteURL.path
             session.errorMessage = nil
             try save(session)
+            // Keep search consistent across both processing paths (this one and
+            // applyProcessedText). Index the title-free note body + transcript.
+            try? searchStore?.index(
+                sessionID: session.id, title: session.title,
+                notes: ZMeetText.noteSearchBody(noteMarkdown), transcript: transcriptMarkdown
+            )
 
             if config.gitAutoCommit {
                 _ = try? GitRepository(repoURL: outputURL).commitAll(message: "Add meeting notes: \(session.title)")
