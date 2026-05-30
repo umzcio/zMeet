@@ -99,8 +99,8 @@ public enum ZMeetText {
         var body: [String] = []
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("#") { continue }            // headings repeat the title
             if trimmed.lowercased() == "## transcript" { break }  // tab/section covers it
+            if trimmed.hasPrefix("#") { continue }            // headings repeat the title
             body.append(line)
         }
         return body.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
