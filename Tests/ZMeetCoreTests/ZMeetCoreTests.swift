@@ -273,6 +273,21 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(throws: (any Error).self) { _ = try manager.session(id: started.id) }
 }
 
+@Test func audioRetentionDaysDefaultsToZeroAndRoundTrips() throws {
+    #expect(ZMeetConfig.default(outputPath: "/tmp/x").audioRetentionDays == 0)
+
+    var config = ZMeetConfig.default(outputPath: "/tmp/x")
+    config.audioRetentionDays = 30
+    let data = try JSONEncoder.zmeet.encode(config)
+    let decoded = try JSONDecoder.zmeet.decode(ZMeetConfig.self, from: data)
+    #expect(decoded.audioRetentionDays == 30)
+
+    // Older config.json without the key still decodes, defaulting to 0 (Never).
+    let legacy = #"{"outputPath":"/tmp/x","appDataPath":"/tmp/x/data"}"#.data(using: .utf8)!
+    let fromLegacy = try JSONDecoder.zmeet.decode(ZMeetConfig.self, from: legacy)
+    #expect(fromLegacy.audioRetentionDays == 0)
+}
+
 @Test func processingIndexesMeetingForSearch() throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
