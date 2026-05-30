@@ -234,6 +234,59 @@ public final class SessionManager {
         try? searchStore?.remove(sessionID: id)
     }
 
+    /// Purge audio for processed meetings older than `config.audioRetentionDays`.
+    /// Deletes only the recording file; transcript, notes, folder, and the session
+    /// record are kept. No-op when retention is 0 (never). Returns the count purged.
+    @discardableResult
+    public func purgeExpiredAudio(referenceDate: Date = Date()) -> Int {
+        let days = config.audioRetentionDays
+        guard days > 0 else { return 0 }
+        let cutoff = Double(days) * 86_400
+        var purged = 0
+        for session in (try? listSessions()) ?? [] where session.status == .processed {
+            let age = referenceDate.timeIntervalSince(session.endedAt ?? session.startedAt)
+            guard age > cutoff else { continue }
+            if removeAudioFile(for: session) { purged += 1 }
+        }
+        return purged
+    }
+
+    /// Manually purge a single processed meeting's audio (keeps transcript/notes).
+    /// No-op if the meeting isn't processed or has no audio file.
+    public func deleteAudio(id: String) throws {
+        let session = try loadSession(id: id)
+        guard session.status == .processed else { return }
+        _ = removeAudioFile(for: session)
+    }
+
+    /// Total bytes of audio that could be reclaimed (processed meetings only).
+    public func reclaimableAudioBytes() -> Int64 {
+        var total: Int64 = 0
+        for session in (try? listSessions()) ?? [] where session.status == .processed {
+            if let size = (try? fileManager.attributesOfItem(atPath: session.audioPath))?[.size] as? Int64 {
+                total += size
+            } else if let size = (try? fileManager.attributesOfItem(atPath: session.audioPath))?[.size] as? NSNumber {
+                total += size.int64Value
+            }
+        }
+        return total
+    }
+
+    /// Deletes a session's audio file if present and inside our output root.
+    /// Returns true if a file was actually removed.
+    @discardableResult
+    private func removeAudioFile(for session: MeetingSession) -> Bool {
+        let url = URL(fileURLWithPath: session.audioPath)
+        guard fileManager.fileExists(atPath: url.path),
+              url.standardizedFileURL.path.hasPrefix(outputURL.standardizedFileURL.path) else { return false }
+        do { try fileManager.removeItem(at: url); return true } catch { return false }
+    }
+
+    /// Test-only: overwrite a session record (e.g. to backdate it).
+    func overwriteSessionForTesting(_ session: MeetingSession) throws {
+        try save(session)
+    }
+
     public func listSessions() throws -> [MeetingSession] {
         guard fileManager.fileExists(atPath: sessionsURL.path) else {
             return []
