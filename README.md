@@ -1,5 +1,5 @@
 <p align="center">
-  <strong style="font-size: 2em;">zMeet</strong>
+  <img src="docs/assets/zmeet-logo.png" alt="zMeet" width="380" />
 </p>
 
 <p align="center">
@@ -215,25 +215,6 @@ zMeet/
 │   └── assets/             # bundled wordmark font (OFL)
 └── docs/                   # specs, plans, roadmap, branding
 ```
-
----
-
-## Design decisions
-
-**Why a menu-bar app?** Recording is a one-click, always-available action you reach for mid-meeting —
-a menu-bar agent fits that far better than a windowed app or a CLI. A signed `.app` is also what
-macOS grants persistent Microphone + Screen Recording permissions to.
-
-**Why fully on-device?** Meeting audio is sensitive. macOS now ships first-class on-device speech
-recognition and an on-device LLM, so there's no reason to send recordings to the cloud. Privacy by
-default, no API keys, no per-minute costs.
-
-**Why one folder per meeting?** Everything for a meeting — audio, transcript, notes — stays together,
-so it's trivial to find, share, or delete as a unit (the same instinct as Zoom's local recordings).
-
-**Why a separate `ZMeetCore` engine?** The session/notes logic is pure and testable; the audio and AI
-live behind protocols the app implements. The engine has no hardware dependencies, so `swift test`
-covers the core without a mic or a meeting.
 
 ---
 
