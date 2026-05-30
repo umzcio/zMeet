@@ -95,6 +95,7 @@ public final class SearchStore: @unchecked Sendable {
             // A schema we can't create (older/corrupt) — drop and recreate once.
             try? exec("DROP TABLE IF EXISTS meetings_fts;")
             try exec("""
+            CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
             CREATE VIRTUAL TABLE meetings_fts USING fts5(
                 session_id UNINDEXED,
                 title, notes, transcript,
@@ -145,17 +146,25 @@ public final class SearchStore: @unchecked Sendable {
 
     // MARK: Public API
 
-    /// Insert or replace a meeting's indexed content.
+    /// Insert or replace a meeting's indexed content. The delete+insert runs in a
+    /// transaction so a failure can't leave the meeting half-removed from the index.
     public func index(sessionID: String, title: String, notes: String, transcript: String) throws {
         try queue.sync {
-            try execStmt("DELETE FROM meetings_fts WHERE session_id = ?;") { stmt in
-                sqlite3_bind_text(stmt, 1, sessionID, -1, SQLITE_TRANSIENT)
-            }
-            try execStmt("INSERT INTO meetings_fts(session_id, title, notes, transcript) VALUES(?, ?, ?, ?);") { stmt in
-                sqlite3_bind_text(stmt, 1, sessionID, -1, SQLITE_TRANSIENT)
-                sqlite3_bind_text(stmt, 2, title, -1, SQLITE_TRANSIENT)
-                sqlite3_bind_text(stmt, 3, notes, -1, SQLITE_TRANSIENT)
-                sqlite3_bind_text(stmt, 4, transcript, -1, SQLITE_TRANSIENT)
+            try exec("BEGIN;")
+            do {
+                try execStmt("DELETE FROM meetings_fts WHERE session_id = ?;") { stmt in
+                    sqlite3_bind_text(stmt, 1, sessionID, -1, SQLITE_TRANSIENT)
+                }
+                try execStmt("INSERT INTO meetings_fts(session_id, title, notes, transcript) VALUES(?, ?, ?, ?);") { stmt in
+                    sqlite3_bind_text(stmt, 1, sessionID, -1, SQLITE_TRANSIENT)
+                    sqlite3_bind_text(stmt, 2, title, -1, SQLITE_TRANSIENT)
+                    sqlite3_bind_text(stmt, 3, notes, -1, SQLITE_TRANSIENT)
+                    sqlite3_bind_text(stmt, 4, transcript, -1, SQLITE_TRANSIENT)
+                }
+                try exec("COMMIT;")
+            } catch {
+                try? exec("ROLLBACK;")
+                throw error
             }
         }
     }

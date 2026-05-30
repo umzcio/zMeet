@@ -297,6 +297,9 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(store.search("quarterly", limit: 10).map(\.sessionID) == [started.id])
     #expect(store.search("roadmap", limit: 10).isEmpty)
 
+    // Renaming must NOT drop the meeting's body from search.
+    #expect(store.search("detector", limit: 10).map(\.sessionID) == [started.id])
+
     // Delete removes it.
     try manager.delete(id: started.id)
     #expect(store.search("detector", limit: 10).isEmpty)
