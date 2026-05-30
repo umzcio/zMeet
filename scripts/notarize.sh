@@ -1,23 +1,26 @@
 #!/bin/bash
 set -euo pipefail
 
-# Notarizes and staples a .dmg (or .app .zip) so any Mac can open it without
-# Gatekeeper warnings.
+# Notarizes a .dmg (or .zip) with Apple using an App Store Connect API key,
+# then staples the ticket. Credentials come from scripts/.notary-config.local
+# (see .notary-config.example).
 #
-# ONE-TIME SETUP (stores credentials in the keychain as profile "zmeet-notary"):
-#   xcrun notarytool store-credentials zmeet-notary \
-#       --apple-id "you@example.com" \
-#       --team-id "YOURTEAMID" \
-#       --password "app-specific-password"   # from appleid.apple.com
-#
-# Usage: scripts/notarize.sh build/zMeet-0.1.0.dmg
+# Usage: scripts/notarize.sh build/zMeet-1.0.0.dmg
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARTIFACT="${1:?usage: notarize.sh <path-to-dmg-or-zip>}"
-PROFILE="${NOTARY_PROFILE:-zmeet-notary}"
+CONFIG="$ROOT/scripts/.notary-config.local"
 
-echo "==> Submitting $ARTIFACT to Apple notary (profile: $PROFILE)"
-xcrun notarytool submit "$ARTIFACT" --keychain-profile "$PROFILE" --wait
+[ -f "$CONFIG" ] || { echo "error: $CONFIG not found (copy .notary-config.example)"; exit 1; }
+# shellcheck disable=SC1090
+source "$CONFIG"
+KEY_PATH="$(eval echo "$NOTARY_KEY")"
 
-echo "==> Stapling ticket"
+echo "==> Submitting $(basename "$ARTIFACT") to Apple notary"
+xcrun notarytool submit "$ARTIFACT" \
+    --key "$KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" \
+    --wait
+
+echo "==> Stapling"
 xcrun stapler staple "$ARTIFACT"
 xcrun stapler validate "$ARTIFACT"
 echo "==> Notarized + stapled: $ARTIFACT"

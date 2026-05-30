@@ -12,12 +12,12 @@ RES_DIR="$APP_DIR/Contents/Resources"
 FW_DIR="$APP_DIR/Contents/Frameworks"
 
 # App version (also stamped into the appcast on release).
-VERSION="0.1.0"
+VERSION="1.0.0"
 BUILD="1"
 
 # Sparkle auto-update: appcast feed URL + EdDSA public key (private key is in the
-# login keychain via generate_keys). Update FEED_URL to your published location.
-SU_FEED_URL="https://raw.githubusercontent.com/OWNER/zMeet/main/appcast.xml"
+# login keychain via generate_keys).
+SU_FEED_URL="https://raw.githubusercontent.com/umzcio/zMeet/main/appcast.xml"
 SU_PUBLIC_ED_KEY="7KQVNte/Z3ts81v6gETASf21YKulzZZTiqMpF8uv5G8="
 
 SPARKLE_FW="$ROOT/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"

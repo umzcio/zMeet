@@ -1,63 +1,250 @@
-# zMeet
+<p align="center">
+  <strong style="font-size: 2em;">zMeet</strong>
+</p>
 
-zMeet is a local-first meeting capture tool. Phase 1 is intentionally small:
+<p align="center">
+  <strong>Private, on-device meeting notes for macOS.</strong><br/>
+  Records your meetings and turns them into transcripts and AI summaries — entirely on your Mac.<br/>
+  No bot joins your call. Nothing is uploaded.
+</p>
 
-1. Start a manual meeting recording.
-2. Stop the recording.
-3. Generate transcript and note artifacts.
-4. Write Markdown into a Git-backed notes repository.
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-26%2B-2EE08A?style=flat-square&labelColor=0D110F" alt="macOS 26+" />
+  <img src="https://img.shields.io/badge/Swift-6-2EE08A?style=flat-square&labelColor=0D110F" alt="Swift 6" />
+  <img src="https://img.shields.io/badge/100%25-on--device-2EE08A?style=flat-square&labelColor=0D110F" alt="On-device" />
+  <img src="https://img.shields.io/badge/license-MIT-2EE08A?style=flat-square&labelColor=0D110F" alt="MIT" />
+</p>
 
-Auto-detection, MCP, Cloudflare tunnel access, and polished menu bar UI come later.
+---
 
-## Current Shape
+## What it is
 
-- Language: Swift 6
-- Runtime target: macOS 14+
-- Recorder: `ffmpeg` using the macOS `avfoundation` input
-- Notes: Markdown files in a Git repository
-- State: `~/.zmeet`
+zMeet is a macOS menu-bar app that records your meetings — both your microphone **and** the
+other participants' audio — then transcribes and summarizes them into Markdown notes. The entire
+pipeline runs locally: transcription uses Apple's on-device speech recognition, summaries use the
+on-device Foundation Models LLM, and the audio never leaves your machine.
 
-## Quick Start
+Unlike bot-based notetakers, **nothing joins your call** and **nothing is sent to the cloud** — it
+captures system audio and your mic directly through macOS, the same way Granola or Jamie do.
+
+---
+
+## How it works
+
+```
+Detect meeting  -->  Record  -->  Transcribe  -->  Summarize  -->  Markdown notes
+ (Zoom/Teams)       (sys+mic)     (on-device)     (on-device)    (one folder/meeting)
+```
+
+1. **Detect** — when a Zoom or Teams meeting starts, a "Take notes" popup offers to record (or start manually from the menu bar).
+2. **Record** — captures system audio + microphone, mixed into a single `.m4a`.
+3. **Transcribe** — Apple's `SpeechAnalyzer` turns the audio into a transcript, on-device.
+4. **Summarize** — Apple's Foundation Models LLM writes a structured summary (Summary / Key Points / Action Items / Decisions).
+5. **Save** — everything lands in one folder per meeting under `~/Documents/zMeet`.
+
+---
+
+## Privacy
+
+Privacy is the point, not a feature.
+
+- **Audio never leaves your Mac.** Capture, transcription, and summarization all run locally.
+- **No account, no telemetry, no network calls** in the core workflow.
+- **No bot in your meeting.** Participants don't see a "zMeet Notetaker" join — capture happens at the OS level.
+- **You own the output.** Plain Markdown + an `.m4a`, in a folder you control. Delete a meeting by deleting its folder.
+
+Transcription uses on-device Speech; summaries use on-device Foundation Models (Apple Intelligence).
+If Apple Intelligence is off, you still get a full transcript and a basic extractive summary.
+
+---
+
+## Features
+
+### Capture
+- **System audio + microphone**, mixed to a single AAC `.m4a` (ScreenCaptureKit + AVAudioEngine).
+- **Captures everyone** — the remote participants (system audio) and you (mic), in one track.
+- **Crash-safe** — a recording interrupted by a quit/crash is recovered and finalized on next launch.
+
+### Transcription & notes
+- **On-device transcription** via macOS `SpeechAnalyzer` / `SpeechTranscriber`.
+- **On-device summaries** via Apple Foundation Models — Summary, Key Points, Action Items, Decisions.
+- **Markdown output** — a readable `notes.md` with YAML frontmatter, plus the full `transcript.md`.
+- **Auto-process on stop** (configurable) — stop recording and the notes generate automatically.
+
+### Meeting detection
+- **Zoom & Teams** meeting windows are detected automatically (using the Screen Recording permission already granted for capture).
+- **"Take notes" popup** — a floating, non-intrusive prompt offering to record; always asks first, with a close button and 15-second auto-dismiss.
+
+### Menu-bar app
+- **Lives in the menu bar** — start/stop, live timer, recent meetings.
+- **Recent list** shows each meeting's source app (Zoom/Teams icon) at a glance.
+- **One click** to reveal a meeting's notes in Finder.
+
+### Output & organization
+- **One folder per meeting** under `~/Documents/zMeet`, named by date + title.
+- Each folder holds the recording, transcript, and notes together — easy to find, share, or delete.
+
+---
+
+## Requirements
+
+- **macOS 26 or newer** (uses the on-device `SpeechAnalyzer` and Foundation Models frameworks).
+- **Apple silicon.**
+- **Apple Intelligence enabled** for AI summaries (transcripts work without it).
+- A code-signing identity to build and run a signed app (a free Apple ID works for local use).
+
+---
+
+## Install / Build
+
+zMeet builds from source into a signed `.app` bundle.
 
 ```sh
-cd /Users/zach/Documents/Github/zMeet
-swift build
-.build/debug/zmeet init --repo ~/Documents/Github/zMeetNotes
-.build/debug/zmeet devices
-.build/debug/zmeet start --title "Test Meeting" --app zoom
-# talk for a few seconds
-.build/debug/zmeet stop
-.build/debug/zmeet process
+# Clone
+git clone https://github.com/umzcio/zMeet.git
+cd zMeet
+
+# Build + bundle + sign the app
+bash scripts/build-app.sh
+
+# Launch
+open build/zMeet.app
 ```
 
-By default, transcription and summarization are placeholders. Configure external commands when you are ready to wire in Whisper, Parakeet, Ollama, or cloud models.
+A microphone icon appears in your menu bar. On first recording, grant **Microphone** and
+**Screen Recording** permission (Screen Recording is required to capture the other participants'
+audio); on first processing, grant **Speech Recognition**.
 
-## Command Templates
+> The build script signs with a Developer ID by default. Set your own signing identity at the top of
+> `scripts/build-app.sh` (or use `security find-identity -p codesigning` to list available ones).
 
-`transcriptionCommand` and `summaryCommand` support placeholders:
-
-- `{id}`
-- `{title}`
-- `{audio}`
-- `{transcript}`
-- `{transcriptBase}`
-- `{summary}`
-- `{notesRepo}`
-
-Examples:
+The reusable engine (`ZMeetCore`) is a plain Swift package and is unit-tested:
 
 ```sh
-zmeet config set transcriptionCommand 'whisper-cli -f {audio} -otxt -of {transcriptBase}'
-zmeet config set summaryCommand 'cat {transcript} | ollama run llama3.2 > {summary}'
+swift test
 ```
 
-## Notes Output
+---
 
-The notes repository uses this layout:
+## How audio capture works
 
-```text
-meetings/YYYY/MM/<session-id>.md
-transcripts/YYYY/MM/<session-id>.transcript.md
+zMeet is a **local-capture** notetaker, not a bot:
+
+- **The other participants** are captured from your Mac's **system audio output** via ScreenCaptureKit.
+- **Your voice** is captured from the **microphone** via AVAudioEngine.
+- Both are mixed and encoded to one `.m4a`.
+
+Because capture happens at the OS level, muting yourself *inside* Zoom/Teams does **not** stop zMeet
+from recording your mic (the app mute only stops transmission, not the OS input). To keep something
+off the recording, use the macOS system mic mute (Control Center) — that silences the input device
+itself.
+
+---
+
+## Output layout
+
+```
+~/Documents/zMeet/
+  2026-05-26 1820 Weekly Sync/
+    recording.m4a      # mixed system + mic audio
+    transcript.md      # full on-device transcript
+    notes.md           # AI summary + frontmatter, links to the transcript
+  2026-05-27 0930 1:1 with Sam/
+    recording.m4a
+    transcript.md
+    notes.md
 ```
 
-Audio stays outside the notes repo by default under `~/.zmeet/audio`.
+Internal state (session metadata, logs) lives under `~/.zmeet`.
+
+---
+
+## Architecture
+
+```
+  zMeet.app (menu-bar, signed)
+  ├─ MenuBarExtra UI ........ start/stop, recent, permissions, "Take notes" popup
+  ├─ RecordingController .... drives the capture + processing lifecycle
+  ├─ SCKAudioRecorder ....... system audio + mic -> mixed .m4a
+  ├─ SpeechTranscription .... on-device SpeechAnalyzer -> transcript
+  ├─ MeetingSummarizer ...... on-device Foundation Models -> notes
+  └─ MeetingDetector ........ Zoom/Teams window detection
+        │
+        ▼  depends on
+  ZMeetCore (Swift package, unit-tested)
+  ├─ SessionManager ......... session lifecycle, processing, crash recovery
+  ├─ Models ................. MeetingSession, ZMeetConfig, AudioConfig
+  ├─ MeetingRecorder (proto)  the seam the app's recorder implements
+  ├─ MarkdownRenderer ....... note + transcript rendering
+  └─ ConfigStore ............ ~/.zmeet/config.json
+```
+
+The engine (`ZMeetCore`) knows nothing about audio or AI — it defines protocols (`MeetingRecorder`,
+and the transcribe/summarize entry points) that the app fills in with the macOS frameworks. That
+keeps the engine portable and testable without hardware.
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|-------|-----------|
+| **App** | SwiftUI `MenuBarExtra`, Swift 6, AppKit (floating panel) |
+| **Engine** | `ZMeetCore` — Swift package (no UI/AV dependencies), Swift Testing |
+| **Audio capture** | ScreenCaptureKit (system + mic) + AVAudioEngine (mix) → AAC `.m4a` |
+| **Transcription** | Apple `SpeechAnalyzer` / `SpeechTranscriber` (on-device) |
+| **Summarization** | Apple Foundation Models (on-device LLM) |
+| **Detection** | CoreGraphics window list (Zoom/Teams) |
+| **Packaging** | `scripts/build-app.sh` — bundle + `codesign` (hardened runtime) |
+| **Storage** | Plain files: `.m4a` + Markdown per meeting; JSON config/state in `~/.zmeet` |
+
+---
+
+## Project structure
+
+```
+zMeet/
+├── Package.swift
+├── Sources/
+│   ├── ZMeetCore/          # engine: sessions, models, rendering, config (unit-tested)
+│   └── ZMeetApp/           # menu-bar app: recorder, transcription, summary, detection, UI
+├── Tests/
+│   └── ZMeetCoreTests/     # Swift Testing suite for the engine
+├── scripts/
+│   ├── build-app.sh        # build + bundle + sign zMeet.app
+│   └── assets/             # bundled wordmark font (OFL)
+└── docs/                   # specs, plans, roadmap, branding
+```
+
+---
+
+## Design decisions
+
+**Why a menu-bar app?** Recording is a one-click, always-available action you reach for mid-meeting —
+a menu-bar agent fits that far better than a windowed app or a CLI. A signed `.app` is also what
+macOS grants persistent Microphone + Screen Recording permissions to.
+
+**Why fully on-device?** Meeting audio is sensitive. macOS now ships first-class on-device speech
+recognition and an on-device LLM, so there's no reason to send recordings to the cloud. Privacy by
+default, no API keys, no per-minute costs.
+
+**Why one folder per meeting?** Everything for a meeting — audio, transcript, notes — stays together,
+so it's trivial to find, share, or delete as a unit (the same instinct as Zoom's local recordings).
+
+**Why a separate `ZMeetCore` engine?** The session/notes logic is pure and testable; the audio and AI
+live behind protocols the app implements. The engine has no hardware dependencies, so `swift test`
+covers the core without a mic or a meeting.
+
+---
+
+## Roadmap
+
+v1.0 (the working MVP — capture → transcript → notes) is complete. Planned for v2.0: an in-app
+Library/Reader window, a Settings UI, and search. See [ROADMAP-v2.md](ROADMAP-v2.md) and
+[IMPLEMENTATION_PHASES.md](IMPLEMENTATION_PHASES.md).
+
+---
+
+## License
+
+[MIT](LICENSE) — do what you like; no warranty.

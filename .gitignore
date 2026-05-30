@@ -11,3 +11,6 @@
 
 # Built app bundle output
 build/
+
+# Notary credentials (local only)
+scripts/.notary-config.local
