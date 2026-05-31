@@ -57,7 +57,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD</string>
-    <key>LSMinimumSystemVersion</key><string>15.0</string>
+    <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>LSUIElement</key><true/>
     <key>ATSApplicationFontsPath</key><string>Fonts</string>
     <key>NSMicrophoneUsageDescription</key><string>zMeet records your microphone during meetings to create notes.</string>

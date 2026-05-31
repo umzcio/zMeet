@@ -24,9 +24,11 @@ public struct GitRepository {
     public func commitAll(message: String) throws -> ProcessResult? {
         try ensureInitialized()
 
-        let add = try runner.run(executable: "git", arguments: ["add", "meetings", "transcripts"], currentDirectory: repoURL)
+        // Stage everything under the repo (meetings live in per-meeting folders
+        // directly under the output root, not fixed "meetings"/"transcripts" dirs).
+        let add = try runner.run(executable: "git", arguments: ["add", "-A"], currentDirectory: repoURL)
         guard add.exitCode == 0 else {
-            throw ZMeetError.processFailed(command: "git add meetings transcripts", exitCode: add.exitCode, stderr: add.stderr)
+            throw ZMeetError.processFailed(command: "git add -A", exitCode: add.exitCode, stderr: add.stderr)
         }
 
         let diff = try runner.run(executable: "git", arguments: ["diff", "--cached", "--quiet"], currentDirectory: repoURL)

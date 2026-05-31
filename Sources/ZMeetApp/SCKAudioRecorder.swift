@@ -152,6 +152,14 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchec
         systemPlayer.stop()
         micPlayer.stop()
         engine.stop()
+        // Detach the nodes so the next recording's start() can re-attach cleanly.
+        // Without this, re-attaching already-attached nodes can crash on a second
+        // recording (the recorder instance is reused for the app's lifetime).
+        engine.detach(systemPlayer)
+        engine.detach(micPlayer)
+        engine.detach(captureMixer)
+        systemConverter = nil
+        micConverter = nil
         audioFile = nil  // closes/finalizes the file
         try? logHandle?.close()
         logHandle = nil

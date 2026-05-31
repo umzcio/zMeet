@@ -169,6 +169,10 @@ public final class SessionManager {
     @discardableResult
     public func applyProcessedText(id: String, transcript: String, summary: String) throws -> MeetingSession {
         var session = try loadSession(id: id)
+        // Don't finalize a session that's still recording.
+        guard session.status != .recording else {
+            throw ZMeetError.activeSessionExists(session.id)
+        }
         let transcriptURL = transcriptURL(for: session)
         let noteURL = noteURL(for: session)
         try ZMeetPaths.ensureDirectory(transcriptURL.deletingLastPathComponent())
@@ -224,10 +228,15 @@ public final class SessionManager {
     /// clears the session.
     public func delete(id: String) throws {
         let session = try loadSession(id: id)
+        // Never delete a meeting that's still recording — the recorder is writing
+        // to its folder.
+        guard session.status != .recording else {
+            throw ZMeetError.activeSessionExists(session.id)
+        }
         let folder = meetingFolderURL(for: session)
-        // Only remove the folder when it sits under our output root, guarding
-        // against a stray absolute path wiping something unexpected.
-        if folder.standardizedFileURL.path.hasPrefix(outputURL.standardizedFileURL.path) {
+        // Only remove the folder when it sits strictly under our output root
+        // (trailing slash so a sibling like ".../zMeetOther" can't match).
+        if folder.standardizedFileURL.path.hasPrefix(outputURL.standardizedFileURL.path + "/") {
             try? fileManager.removeItem(at: folder)
         }
         try? fileManager.removeItem(at: sessionsURL.appendingPathComponent("\(id).json"))
@@ -263,11 +272,8 @@ public final class SessionManager {
     public func reclaimableAudioBytes() -> Int64 {
         var total: Int64 = 0
         for session in (try? listSessions()) ?? [] where session.status == .processed {
-            if let size = (try? fileManager.attributesOfItem(atPath: session.audioPath))?[.size] as? Int64 {
-                total += size
-            } else if let size = (try? fileManager.attributesOfItem(atPath: session.audioPath))?[.size] as? NSNumber {
-                total += size.int64Value
-            }
+            let size = (try? fileManager.attributesOfItem(atPath: session.audioPath))?[.size] as? NSNumber
+            total += size?.int64Value ?? 0
         }
         return total
     }

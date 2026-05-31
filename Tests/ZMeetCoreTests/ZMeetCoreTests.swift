@@ -237,6 +237,17 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(listed?.status == .recorded)
 }
 
+@Test func deleteRefusesActivelyRecordingSession() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+    let started = try manager.start(title: "Live", sourceApp: nil)  // status .recording
+
+    #expect(throws: (any Error).self) { try manager.delete(id: started.id) }
+    #expect(try manager.session(id: started.id).status == .recording)
+    #expect(FileManager.default.fileExists(atPath: started.audioPath))
+}
+
 @Test func setTitleUpdatesDisplayTitleInPlace() throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
