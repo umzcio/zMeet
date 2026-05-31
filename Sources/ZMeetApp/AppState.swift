@@ -34,6 +34,7 @@ final class AppState: ObservableObject {
     @Published private(set) var speechGranted: Bool = false
 
     private let store = ConfigStore()
+    private let secretStore: SecretStore = KeychainSecretStore()
     private let recorder: MeetingRecorder
     @Published private(set) var config: ZMeetConfig
     private var manager: SessionManager
@@ -184,6 +185,40 @@ final class AppState: ObservableObject {
         } else {
             detector.stop()
             meetingPopup.hide()
+        }
+    }
+
+    // MARK: Cloud-summary API key (Keychain-backed)
+
+    var hasAPIKey: Bool {
+        (secretStore.read(account: SecretAccount.anthropicAPIKey)?.isEmpty == false)
+    }
+
+    func saveAPIKey(_ key: String) {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        try? secretStore.write(trimmed, account: SecretAccount.anthropicAPIKey)
+    }
+
+    func clearAPIKey() {
+        try? secretStore.delete(account: SecretAccount.anthropicAPIKey)
+    }
+
+    /// Sends one minimal request to verify the stored key. Returns nil on success
+    /// or a short error message on failure. Used by the Settings "Test key" button.
+    func testAPIKey() async -> String? {
+        guard let key = secretStore.read(account: SecretAccount.anthropicAPIKey), !key.isEmpty else {
+            return "No API key saved."
+        }
+        do {
+            _ = try await CloudSummarizer(apiKey: key).summarize(transcript: "ping", title: "Test")
+            return nil
+        } catch let CloudSummaryError.http(status) {
+            return status == 401 ? "Key rejected (401)." : "Request failed (HTTP \(status))."
+        } catch CloudSummaryError.network {
+            return "Network error — check your connection."
+        } catch {
+            return "Test failed: \(error.localizedDescription)"
         }
     }
 
@@ -344,8 +379,8 @@ final class AppState: ObservableObject {
                 // synchronous Core write happens back on the main actor.
                 let session = try manager.session(id: id)
                 let audioURL = URL(fileURLWithPath: session.audioPath)
-                let (transcript, summary) = try await produceNotes(audioURL: audioURL, title: session.title)
-                let processed = try manager.applyProcessedText(id: id, transcript: transcript, summary: summary)
+                let (transcript, summary, engine) = try await produceNotes(audioURL: audioURL, title: session.title)
+                let processed = try manager.applyProcessedText(id: id, transcript: transcript, summary: summary, engine: engine)
                 notesReadyPopup.show(title: processed.title) { [weak self] in
                     self?.revealNote(processed)
                 }
@@ -358,11 +393,24 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func produceNotes(audioURL: URL, title: String) async throws -> (transcript: String, summary: String) {
+    private func produceNotes(audioURL: URL, title: String) async throws -> (transcript: String, summary: String, engine: SummaryEngine) {
         if #available(macOS 26, *) {
             let transcript = try await SpeechTranscription().transcribe(audioURL: audioURL)
-            let summary = try await MeetingSummarizer().summarize(transcript: transcript, title: title)
-            return (transcript, summary)
+            let onDevice = MeetingSummarizer()
+            var cloud: (any Summarizer)?
+            if config.useCloudSummaries,
+               let key = secretStore.read(account: SecretAccount.anthropicAPIKey),
+               !key.isEmpty {
+                cloud = CloudSummarizer(apiKey: key)
+            }
+            let (summary, engine) = try await SummarizationPolicy().summarize(
+                transcript: transcript,
+                title: title,
+                useCloud: config.useCloudSummaries,
+                onDevice: onDevice,
+                cloud: cloud
+            )
+            return (transcript, summary, engine)
         } else {
             throw NSError(
                 domain: "zMeet", code: 1,
