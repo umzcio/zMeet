@@ -278,13 +278,22 @@ struct LibraryView: View {
         if let session = contextSession, let anchor = anchors[session.id] {
             GeometryReader { proxy in
                 let rect = proxy[anchor]
+                // Estimate the menu height to decide whether it fits below the row;
+                // if not, open it upward so it never clips at the window bottom.
+                let hasAudio = session.status == .processed
+                    && FileManager.default.fileExists(atPath: session.audioPath)
+                let rowCount = 4 + (hasAudio ? 1 : 0)
+                let menuHeight = CGFloat(rowCount) * 34 + 19
+                let belowY = rect.maxY + 2
+                let y = (belowY + menuHeight > 680 - 8)
+                    ? max(8, rect.minY - menuHeight - 2)
+                    : belowY
                 ZStack(alignment: .topLeading) {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
                         .onTapGesture { contextSession = nil }
                     actionsDropdown(session)
-                        .offset(x: min(rect.minX, 1000 - 196 - 8),
-                                y: rect.maxY + 2)
+                        .offset(x: min(rect.minX, 1000 - 196 - 8), y: y)
                 }
             }
         }
