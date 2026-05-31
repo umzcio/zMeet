@@ -17,6 +17,15 @@ import Testing
     #expect(messages.first?["content"] as? String == "hello prompt")
 }
 
+@Test func makeValidationRequestIsGetWithAuthHeadersAndNoBody() {
+    let req = AnthropicSummary.makeValidationRequest(key: "sk-test")
+    #expect(req.httpMethod == "GET")
+    #expect(req.url?.absoluteString == "https://api.anthropic.com/v1/models")
+    #expect(req.value(forHTTPHeaderField: "x-api-key") == "sk-test")
+    #expect(req.value(forHTTPHeaderField: "anthropic-version") == "2023-06-01")
+    #expect(req.httpBody == nil)
+}
+
 @Test func parseSummaryExtractsTextOn200() throws {
     let body = "{\"content\":[{\"type\":\"text\",\"text\":\"## Summary\\n- Did things\"}]}".data(using: .utf8)!
     let text = try AnthropicSummary.parseSummary(data: body, status: 200)

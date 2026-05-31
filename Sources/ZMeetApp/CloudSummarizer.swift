@@ -25,4 +25,19 @@ struct CloudSummarizer: Summarizer {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         return try AnthropicSummary.parseSummary(data: data, status: status)
     }
+
+    /// Validates the key against `GET /v1/models` — zero token cost, just an auth
+    /// check. Throws `CloudSummaryError` on a non-200 / network failure.
+    func validateKey() async throws {
+        guard !apiKey.isEmpty else { throw CloudSummaryError.missingKey }
+        let request = AnthropicSummary.makeValidationRequest(key: apiKey)
+        let response: URLResponse
+        do {
+            (_, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw CloudSummaryError.network
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else { throw CloudSummaryError.http(status: status) }
+    }
 }

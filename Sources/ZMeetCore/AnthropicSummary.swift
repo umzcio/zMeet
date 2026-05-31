@@ -14,7 +14,19 @@ public enum CloudSummaryError: Error, Equatable {
 /// URLSession call is done by `CloudSummarizer` in the app target.
 public enum AnthropicSummary {
     public static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
+    public static let modelsEndpoint = URL(string: "https://api.anthropic.com/v1/models")!
     public static let model = "claude-sonnet-4-6"
+
+    /// A zero-cost key-validation request: `GET /v1/models` authenticates the key
+    /// (200 = valid, 401 = rejected) without generating any tokens. Used by the
+    /// Settings "Test key" button instead of running a real summary.
+    public static func makeValidationRequest(key: String) -> URLRequest {
+        var req = URLRequest(url: modelsEndpoint)
+        req.httpMethod = "GET"
+        req.setValue(key, forHTTPHeaderField: "x-api-key")
+        req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        return req
+    }
 
     public static func makeRequest(key: String, prompt: String, maxTokens: Int = 1500) throws -> URLRequest {
         var req = URLRequest(url: endpoint)

@@ -15,6 +15,9 @@ final class AppState: ObservableObject {
     /// The meeting currently being (re)processed, if any. Drives the Library's
     /// per-meeting processing spinner and triggers a reader refresh on completion.
     @Published private(set) var processingSessionID: String?
+    /// Whether an Anthropic API key is stored in the Keychain. Kept in sync on
+    /// save/clear so the Settings UI observes it without a per-render Keychain read.
+    @Published private(set) var hasAPIKey: Bool = false
     @Published private(set) var recent: [MeetingSession] = []
     /// Every meeting, newest first — backs the Library window.
     @Published private(set) var allSessions: [MeetingSession] = []
@@ -70,6 +73,7 @@ final class AppState: ObservableObject {
         _ = try? manager.recoverInterruptedSessions()
         reloadRecent()
         manager.purgeExpiredAudio()
+        refreshHasAPIKey()
         refreshPermissions()
         if config.detectMeetings { startMeetingDetection() }
 
@@ -193,28 +197,33 @@ final class AppState: ObservableObject {
 
     // MARK: Cloud-summary API key (Keychain-backed)
 
-    var hasAPIKey: Bool {
-        (secretStore.read(account: SecretAccount.anthropicAPIKey)?.isEmpty == false)
+    /// Mirrors whether a key is in the Keychain, kept in sync on save/clear so the
+    /// Settings UI observes it (and doesn't hit the Keychain on every render).
+    private func refreshHasAPIKey() {
+        hasAPIKey = (secretStore.read(account: SecretAccount.anthropicAPIKey)?.isEmpty == false)
     }
 
     func saveAPIKey(_ key: String) {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         try? secretStore.write(trimmed, account: SecretAccount.anthropicAPIKey)
+        refreshHasAPIKey()
     }
 
     func clearAPIKey() {
         try? secretStore.delete(account: SecretAccount.anthropicAPIKey)
+        refreshHasAPIKey()
     }
 
-    /// Sends one minimal request to verify the stored key. Returns nil on success
-    /// or a short error message on failure. Used by the Settings "Test key" button.
+    /// Verifies the stored key against the zero-cost `GET /v1/models` endpoint.
+    /// Returns nil on success or a short error message on failure. Used by the
+    /// Settings "Test key" button.
     func testAPIKey() async -> String? {
         guard let key = secretStore.read(account: SecretAccount.anthropicAPIKey), !key.isEmpty else {
             return "No API key saved."
         }
         do {
-            _ = try await CloudSummarizer(apiKey: key).summarize(transcript: "ping", title: "Test")
+            try await CloudSummarizer(apiKey: key).validateKey()
             return nil
         } catch let CloudSummaryError.http(status) {
             return status == 401 ? "Key rejected (401)." : "Request failed (HTTP \(status))."
