@@ -27,6 +27,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
         window.center()
+        window.onEsc = { [weak state] in
+            guard let state, state.settingsMenu != nil else { return false }
+            state.settingsMenu = nil
+            return true
+        }
         window.contentView = NSHostingView(rootView: view)
         window.isReleasedWhenClosed = false
         window.delegate = self

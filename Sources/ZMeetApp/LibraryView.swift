@@ -14,8 +14,6 @@ struct LibraryView: View {
     @State private var noteBlocks: [NoteBlock] = []
     @State private var transcriptText: String?
     @State private var renameText = ""
-    @State private var showActions = false
-    @State private var contextSession: MeetingSession?
     @State private var searchHits: [SearchHit] = []
     @State private var searchTask: Task<Void, Never>?
 
@@ -64,7 +62,7 @@ struct LibraryView: View {
         .tint(Self.mint)
         .onReceive(ticker) { _ in audio.tick() }
         .task(id: reloadKey) { await loadSelected() }
-        .onChange(of: selected?.id) { showActions = false; contextSession = nil }
+        .onChange(of: selected?.id) { state.showLibraryActions = false; state.libraryContextSession = nil }
         .onChange(of: query) { runSearch() }
     }
 
@@ -231,7 +229,7 @@ struct LibraryView: View {
     private func railRow(_ session: MeetingSession) -> some View {
         let active = session.id == selected?.id
         return Button {
-            showActions = false
+            state.showLibraryActions = false
             state.librarySelectedID = session.id
         } label: {
             HStack(spacing: 11) {
@@ -259,23 +257,23 @@ struct LibraryView: View {
     }
 
     private func showContextMenu(_ session: MeetingSession) {
-        showActions = false
+        state.showLibraryActions = false
         state.librarySelectedID = session.id
-        contextSession = session
+        state.libraryContextSession = session
     }
 
     /// Close whichever actions menu is open (the ⋯ overlay and/or the rail
     /// right-click context menu).
     private func closeMenus() {
-        showActions = false
-        contextSession = nil
+        state.showLibraryActions = false
+        state.libraryContextSession = nil
     }
 
     /// The rail right-click menu: the same actions dropdown, positioned at the
     /// right-clicked row via its anchor, with a tap-catcher to dismiss.
     @ViewBuilder
     private func contextMenu(anchors: [String: Anchor<CGRect>]) -> some View {
-        if let session = contextSession, let anchor = anchors[session.id] {
+        if let session = state.libraryContextSession, let anchor = anchors[session.id] {
             GeometryReader { proxy in
                 let rect = proxy[anchor]
                 // Estimate the menu height to decide whether it fits below the row;
@@ -291,7 +289,7 @@ struct LibraryView: View {
                 ZStack(alignment: .topLeading) {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
-                        .onTapGesture { contextSession = nil }
+                        .onTapGesture { state.libraryContextSession = nil }
                     actionsDropdown(session)
                         .offset(x: min(rect.minX, 1000 - 196 - 8), y: y)
                 }
@@ -370,10 +368,10 @@ struct LibraryView: View {
                     }
                 }
 
-                if showActions {
+                if state.showLibraryActions {
                     // Tap-catcher to dismiss the in-app dropdown.
                     Color.black.opacity(0.001)
-                        .onTapGesture { showActions = false }
+                        .onTapGesture { state.showLibraryActions = false }
                     actionsDropdown(session)
                         .padding(.top, 60)
                         .padding(.trailing, 32)
@@ -413,7 +411,7 @@ struct LibraryView: View {
         HStack(spacing: 8) {
             actionButton("arrow.up.forward.app", "Reveal in Finder") { state.revealNote(session) }
             actionButton("ellipsis", "Actions") {
-                showActions.toggle()
+                state.showLibraryActions.toggle()
             }
         }
     }
@@ -826,90 +824,6 @@ private struct DropdownRow: View {
         .buttonStyle(.plain)
         .onHover { hover = $0 }
         .padding(.horizontal, 5)
-    }
-}
-
-// MARK: - In-app dialog (custom modal, replaces system alerts)
-
-private struct DialogScaffold<Content: View>: View {
-    let onDismiss: () -> Void
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.5)
-                .ignoresSafeArea()
-                .onTapGesture { onDismiss() }
-            content
-                .padding(22)
-                .frame(width: 380)
-                .background(Color(red: 0.105, green: 0.124, blue: 0.116),
-                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(LibraryView.hairline, lineWidth: 1))
-                .shadow(color: .black.opacity(0.5), radius: 30, y: 14)
-        }
-        .transition(.opacity)
-    }
-}
-
-private struct DialogTextField: View {
-    @Binding var text: String
-    let placeholder: String
-    let onSubmit: () -> Void
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        TextField(placeholder, text: $text)
-            .textFieldStyle(.plain)
-            .font(.system(size: 14))
-            .foregroundStyle(LibraryView.light)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9)
-                .stroke(focused ? LibraryView.mint : LibraryView.hairline, lineWidth: 1))
-            .focused($focused)
-            .onSubmit(onSubmit)
-            .onAppear { focused = true }
-    }
-}
-
-private struct DialogButton: View {
-    enum Kind { case primary, secondary, destructive }
-    let title: String
-    let kind: Kind
-    let action: () -> Void
-    @State private var hover = false
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 13.5, weight: .semibold))
-                .foregroundStyle(foreground)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(background, in: RoundedRectangle(cornerRadius: 9))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hover = $0 }
-    }
-
-    private var foreground: Color {
-        switch kind {
-        case .primary:     return Color(red: 0.024, green: 0.157, blue: 0.102)
-        case .secondary:   return LibraryView.light
-        case .destructive: return .white
-        }
-    }
-
-    private var background: Color {
-        switch kind {
-        case .primary:     return LibraryView.mint.opacity(hover ? 0.88 : 1)
-        case .secondary:   return Color.white.opacity(hover ? 0.13 : 0.07)
-        case .destructive: return Color(red: 0.90, green: 0.32, blue: 0.30).opacity(hover ? 0.88 : 1)
-        }
     }
 }
 
