@@ -182,7 +182,7 @@ public final class SessionManager {
     /// renders the note, and marks the session processed. Used by the app's
     /// on-device transcription/summarization path (keeps async work out of Core).
     @discardableResult
-    public func applyProcessedText(id: String, transcript: String, summary: String) throws -> MeetingSession {
+    public func applyProcessedText(id: String, transcript: String, summary: String, engine: SummaryEngine = .onDevice) throws -> MeetingSession {
         var session = try loadSession(id: id)
         // Don't finalize a session that's still recording.
         guard session.status != .recording else {
@@ -198,7 +198,8 @@ public final class SessionManager {
                 session: session,
                 transcriptURL: transcriptURL,
                 noteURL: noteURL,
-                summaryMarkdown: summary
+                summaryMarkdown: summary,
+                summaryEngine: engine
             )
             try note.write(to: noteURL, atomically: true, encoding: .utf8)
             session.status = .processed

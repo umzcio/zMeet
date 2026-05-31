@@ -358,6 +358,20 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(store.search("detector", limit: 10).isEmpty)
 }
 
+@Test func applyProcessedTextAddsEngineAttributionToNoteOnly() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+    let started = try manager.start(title: "Sync", sourceApp: nil)
+    _ = try await manager.stop()
+
+    let processed = try manager.applyProcessedText(
+        id: started.id, transcript: "hello world", summary: "## Summary\n- ok", engine: .cloud)
+
+    let note = try String(contentsOfFile: processed.notePath!, encoding: .utf8)
+    #expect(note.contains("Summary by Claude Sonnet (cloud)"))
+}
+
 /// Helper: make a processed meeting with a real audio file, dated `daysAgo`.
 private func makeProcessedMeeting(_ manager: SessionManager, title: String, daysAgo: Int) async throws -> MeetingSession {
     let started = try manager.start(title: title, sourceApp: nil)

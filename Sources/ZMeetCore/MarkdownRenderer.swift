@@ -71,7 +71,8 @@ public struct MarkdownRenderer {
         session: MeetingSession,
         transcriptURL: URL,
         noteURL: URL,
-        summaryMarkdown: String
+        summaryMarkdown: String,
+        summaryEngine: SummaryEngine = .onDevice
     ) -> String {
         let noteDirectory = noteURL.deletingLastPathComponent()
         let transcriptRelativePath = ZMeetPaths.relativePath(fromDirectory: noteDirectory, to: transcriptURL)
@@ -105,6 +106,8 @@ public struct MarkdownRenderer {
         ## Transcript
 
         [Open transcript](\(transcriptRelativePath))
+
+        _\(summaryEngine.attribution)_
         """
     }
 
