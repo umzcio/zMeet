@@ -10,8 +10,22 @@ struct SettingsView: View {
     @State private var reclaimable: Int64 = 0
     @State private var confirmFreeUp = false
     @State private var apiKeyInput = ""
-    @State private var keyTestResult: String?
+    @State private var keyTestResult: KeyTestResult?
     @State private var testingKey = false
+
+    /// Outcome of the "Test key" check. A typed result so the success styling
+    /// isn't driven by comparing display strings.
+    enum KeyTestResult: Equatable {
+        case ok
+        case failure(String)
+        var label: String {
+            switch self {
+            case .ok: "Key works."
+            case .failure(let message): message
+            }
+        }
+        var isOK: Bool { self == .ok }
+    }
     // Mint-terminal palette
     static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
     static let bg = Color(red: 0.051, green: 0.067, blue: 0.059)
@@ -317,16 +331,16 @@ struct SettingsView: View {
                     row("Test key", "Send one request to verify the key works.") {
                         HStack(spacing: 8) {
                             if let keyTestResult {
-                                Text(keyTestResult)
+                                Text(keyTestResult.label)
                                     .font(.caption)
-                                    .foregroundStyle(keyTestResult == "Key works." ? Self.mint : .orange)
+                                    .foregroundStyle(keyTestResult.isOK ? Self.mint : .orange)
                             }
                             Button(testingKey ? "Testing…" : "Test") {
                                 testingKey = true
                                 keyTestResult = nil
                                 Task {
                                     let err = await state.testAPIKey()
-                                    keyTestResult = err ?? "Key works."
+                                    keyTestResult = err.map(KeyTestResult.failure) ?? .ok
                                     testingKey = false
                                 }
                             }
