@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var inputDevices: [AudioInputs.Device] = []
     @State private var reclaimable: Int64 = 0
     @State private var confirmFreeUp = false
+    @State private var openMenu: SettingsMenu?
 
     // Mint-terminal palette
     static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
@@ -43,11 +44,87 @@ struct SettingsView: View {
             Rectangle().fill(Self.hairline).frame(width: 1)
             content
         }
+        // Floating dropdown menus, positioned at their trigger via anchor
+        // preferences, above everything with a tap-catcher to dismiss.
+        .overlayPreferenceValue(DropdownAnchorKey.self) { anchors in
+            GeometryReader { proxy in
+                if let id = openMenu, let anchor = anchors[id] {
+                    let rect = proxy[anchor]
+                    let menuWidth: CGFloat = 170
+                    ZStack(alignment: .topLeading) {
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture { openMenu = nil }
+                        dropdownMenu(for: id)
+                            .frame(width: menuWidth)
+                            .offset(x: min(max(8, rect.maxX - menuWidth), 720 - menuWidth - 8),
+                                    y: rect.maxY + 4)
+                    }
+                }
+            }
+        }
         .frame(width: 720, height: 500)
         .background(Self.bg)
         .preferredColorScheme(.dark)
         .tint(Self.mint)
         .onAppear { state.refreshPermissions() }
+    }
+
+    enum SettingsMenu: Hashable { case retention, quality }
+
+    private static let retentionOptions: [(String, Int)] =
+        [("Never", 0), ("7 days", 7), ("30 days", 30), ("90 days", 90)]
+    private static let qualityOptions: [(String, Int)] =
+        [("Standard", 128_000), ("High", 192_000), ("Maximum", 256_000)]
+
+    private func options(for id: SettingsMenu) -> [(String, Int)] {
+        id == .retention ? Self.retentionOptions : Self.qualityOptions
+    }
+
+    private func binding(for id: SettingsMenu) -> Binding<Int> {
+        id == .retention ? retentionBinding : bitrateBinding
+    }
+
+    private func currentLabel(for id: SettingsMenu) -> String {
+        let value = binding(for: id).wrappedValue
+        return options(for: id).first { $0.1 == value }?.0 ?? "—"
+    }
+
+    /// The app-styled trigger button that opens a dropdown.
+    private func dropdownTrigger(_ id: SettingsMenu) -> some View {
+        Button { openMenu = (openMenu == id ? nil : id) } label: {
+            HStack(spacing: 8) {
+                Text(currentLabel(for: id)).font(.system(size: 13))
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .frame(width: 140)
+            .background(Self.card, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Self.hairline, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .anchorPreference(key: DropdownAnchorKey.self, value: .bounds) { [id: $0] }
+    }
+
+    /// The floating dark menu list for a dropdown.
+    private func dropdownMenu(for id: SettingsMenu) -> some View {
+        let sel = binding(for: id)
+        return VStack(spacing: 0) {
+            ForEach(options(for: id).indices, id: \.self) { i in
+                let opt = options(for: id)[i]
+                DropdownMenuRow(label: opt.0, selected: sel.wrappedValue == opt.1) {
+                    sel.wrappedValue = opt.1
+                    openMenu = nil
+                }
+            }
+        }
+        .padding(.vertical, 5)
+        .background(Color(red: 0.118, green: 0.137, blue: 0.129), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Self.hairline, lineWidth: 1))
+        .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
     }
 
     // MARK: Sidebar
@@ -173,7 +250,7 @@ struct SettingsView: View {
             }
             divider
             row("Audio quality", "Higher quality means larger files.") {
-                segmentedInt(bitrateBinding, [("Standard", 128_000), ("High", 192_000), ("Maximum", 256_000)])
+                dropdownTrigger(.quality)
             }
         }
         .onAppear { inputDevices = AudioInputs.available() }
@@ -200,7 +277,7 @@ struct SettingsView: View {
             card {
                 row("Delete audio after",
                     "Transcripts and notes are always kept.") {
-                    segmentedInt(retentionBinding, [("Never", 0), ("7 days", 7), ("30 days", 30), ("90 days", 90)])
+                    dropdownTrigger(.retention)
                 }
                 divider
                 row("Recorded audio", "Free up space by deleting audio for processed meetings.") {
@@ -287,27 +364,6 @@ struct SettingsView: View {
         }
     }
 
-    /// In-app segmented pill control for a small fixed set of Int options —
-    /// replaces the native dropdown Picker so it matches the app's styling.
-    private func segmentedInt(_ selection: Binding<Int>, _ options: [(String, Int)]) -> some View {
-        HStack(spacing: 6) {
-            ForEach(options.indices, id: \.self) { i in
-                let opt = options[i]
-                let selected = selection.wrappedValue == opt.1
-                Button { selection.wrappedValue = opt.1 } label: {
-                    Text(opt.0)
-                        .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? Color(red: 0.05, green: 0.09, blue: 0.07) : Color.secondary)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 5)
-                        .background(selected ? Self.mint : Color.white.opacity(0.06), in: Capsule())
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
     private func permissionRow(_ title: String, granted: Bool) -> some View {
         row(title, nil) {
             Label(granted ? "Granted" : "Not granted",
@@ -358,5 +414,45 @@ struct SettingsView: View {
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+}
+
+// MARK: - In-app dropdown plumbing
+
+/// Carries each open-able trigger's on-screen bounds up to the body, so the
+/// floating menu can be positioned right under it.
+private struct DropdownAnchorKey: PreferenceKey {
+    static let defaultValue: [SettingsView.SettingsMenu: Anchor<CGRect>] = [:]
+    static func reduce(value: inout Value, nextValue: () -> Value) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+private struct DropdownMenuRow: View {
+    let label: String
+    let selected: Bool
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text(label)
+                    .font(.system(size: 13))
+                    .foregroundStyle(selected ? SettingsView.mint : Color.primary)
+                Spacer(minLength: 8)
+                if selected {
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(SettingsView.mint)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(hover ? Color.white.opacity(0.06) : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .padding(.horizontal, 5)
     }
 }
