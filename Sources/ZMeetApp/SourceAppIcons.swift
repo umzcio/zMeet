@@ -2,17 +2,28 @@ import AppKit
 
 /// Resolves the per-meeting glyph: the real Zoom/Teams app icon when the
 /// meeting was detected from one of those apps, otherwise a generic zMeet mark.
+@MainActor
 enum SourceAppIcons {
+    /// Cache keyed by bundle id (or "generic") so the icon isn't fetched from disk
+    /// on every SwiftUI render — these are read for every rail/search/header row.
+    private static var cache: [String: NSImage] = [:]
+
     /// Resolves the meeting glyph. Prefers the recorded `sourceApp`; when that's
     /// missing (older sessions), falls back to sniffing the title for Zoom/Teams.
     static func icon(for sourceApp: String?, title: String? = nil) -> NSImage {
-        if let id = bundleIdentifier(sourceApp: sourceApp, title: title),
-           let url = appURL(for: id) {
-            let img = NSWorkspace.shared.icon(forFile: url.path)
-            img.size = NSSize(width: 20, height: 20)
-            return img
+        if let id = bundleIdentifier(sourceApp: sourceApp, title: title) {
+            if let cached = cache[id] { return cached }
+            if let url = appURL(for: id) {
+                let img = NSWorkspace.shared.icon(forFile: url.path)
+                img.size = NSSize(width: 20, height: 20)
+                cache[id] = img
+                return img
+            }
         }
-        return genericIcon()
+        if let cached = cache["generic"] { return cached }
+        let generic = genericIcon()
+        cache["generic"] = generic
+        return generic
     }
 
     /// Map zMeet's source labels (set by the detector) to bundle ids, falling
