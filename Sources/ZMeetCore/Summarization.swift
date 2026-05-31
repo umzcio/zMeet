@@ -51,3 +51,29 @@ public enum MeetingSummaryPrompt {
         """
     }
 }
+
+/// Chooses cloud vs on-device summarization and falls back to on-device on any
+/// cloud failure, so notes are never lost. Pure orchestration — it knows nothing
+/// about the Keychain, URLSession, or FoundationModels.
+public struct SummarizationPolicy: Sendable {
+    public init() {}
+
+    public func summarize(
+        transcript: String,
+        title: String,
+        useCloud: Bool,
+        onDevice: any Summarizer,
+        cloud: (any Summarizer)?
+    ) async throws -> (markdown: String, engine: SummaryEngine) {
+        if useCloud, let cloud {
+            do {
+                let md = try await cloud.summarize(transcript: transcript, title: title)
+                return (md, .cloud)
+            } catch {
+                // Any cloud failure → silent fallback to on-device below.
+            }
+        }
+        let md = try await onDevice.summarize(transcript: transcript, title: title)
+        return (md, .onDevice)
+    }
+}
