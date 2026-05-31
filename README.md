@@ -76,9 +76,19 @@ If Apple Intelligence is off, you still get a full transcript and a basic extrac
 - **"Take notes" popup** — a floating, non-intrusive prompt offering to record; always asks first, with a close button and 15-second auto-dismiss.
 
 ### Menu-bar app
-- **Lives in the menu bar** — start/stop, live timer, recent meetings.
-- **Recent list** shows each meeting's source app (Zoom/Teams icon) at a glance.
-- **One click** to reveal a meeting's notes in Finder.
+- **Lives in the menu bar** — start/stop, live timer, one-click into the app.
+- The menu-bar icon turns into a red mic-in-waveform while recording.
+
+### Library & search
+- **Library window** — a conversation-rail view of every past meeting (grouped by date, with real Zoom/Teams icons), a reader with **Notes / Transcript** tabs, and a built-in audio player.
+- **Full-text search** across titles, notes, and transcripts (persistent SQLite FTS5 index) — find a meeting by something that was said in it.
+- **Right-click** any meeting for its actions (rename, re-process, reveal, delete audio, delete).
+
+### Settings
+- A dark, app-styled preferences window: microphone device, audio quality, meeting detection, output folder, permissions, and audio retention.
+
+### Storage management
+- **Audio retention** — optionally auto-delete recordings older than a chosen window (7 / 30 / 90 days), or free up space on demand. Transcripts and notes are always kept.
 
 ### Output & organization
 - **One folder per meeting** under `~/Documents/zMeet`, named by date + title.
@@ -212,6 +222,9 @@ zMeet/
 │   └── ZMeetCoreTests/     # Swift Testing suite for the engine
 └── scripts/
     ├── build-app.sh        # build + bundle + sign zMeet.app
+    ├── make-dmg.sh         # package a drag-to-Applications .dmg
+    ├── notarize.sh         # notarize + staple (App Store Connect API key)
+    ├── release.sh          # build → dmg → notarize → signed Sparkle appcast
     └── assets/             # app icon + bundled wordmark font (OFL)
 ```
 
@@ -219,8 +232,10 @@ zMeet/
 
 ## Roadmap
 
-v1.0 (the working MVP — capture → transcript → notes) is complete. Planned for v2.0: an in-app
-Library/Reader window to browse and read past meetings, a Settings UI, and search.
+The v2.0 goals are shipped (current release **v1.8.0**): an in-app Library/Reader window,
+a Settings UI, full-text search, audio retention/storage management, and right-click actions —
+all on top of the v1.0 capture → transcript → notes pipeline. Further ideas (noise suppression,
+optional cloud summaries, speaker diarization) are on the backlog.
 
 ---
 
