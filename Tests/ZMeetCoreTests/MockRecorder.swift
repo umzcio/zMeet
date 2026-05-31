@@ -3,7 +3,7 @@ import Foundation
 
 /// Test double for MeetingRecorder. Optionally simulates writing a non-empty
 /// audio file on start so tests can exercise the recorded-vs-failed paths.
-final class MockRecorder: MeetingRecorder {
+final class MockRecorder: MeetingRecorder, @unchecked Sendable {
     private(set) var startedURL: URL?
     private(set) var startedLogURL: URL?
     private(set) var startedAudio: AudioConfig?
@@ -32,7 +32,7 @@ final class MockRecorder: MeetingRecorder {
         }
     }
 
-    func stop() throws {
+    func stop() async throws {
         stopCount += 1
         if let stopError { throw stopError }
     }

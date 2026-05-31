@@ -144,12 +144,14 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         return out.frameLength > 0 ? out : nil
     }
 
-    func stop() throws {
+    func stop() async throws {
         log("stop")
         if let stream {
-            let sem = DispatchSemaphore(value: 0)
-            stream.stopCapture { _ in sem.signal() }
-            _ = sem.wait(timeout: .now() + 5)
+            // A stopCapture failure can leave the file truncated; log it for the
+            // session-recovery diagnostics but still tear down so the engine is
+            // left in a clean state for the next recording.
+            do { try await stream.stopCapture() }
+            catch { log("stopCapture failed: \(error)") }
         }
         stream = nil
         captureMixer.removeTap(onBus: 0)

@@ -106,7 +106,7 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(recorder.startedAudio?.captureSystemAudio == true)
 }
 
-@Test func startStopProcessFlowWithMockRecorder() throws {
+@Test func startStopProcessFlowWithMockRecorder() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
 
@@ -118,7 +118,7 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(recorder.startedURL?.path == started.audioPath)
     #expect(FileManager.default.fileExists(atPath: started.audioPath))
 
-    let stopped = try manager.stop()
+    let stopped = try await manager.stop()
     #expect(stopped.status == .recorded)
     #expect(stopped.endedAt != nil)
     #expect(recorder.stopCount == 1)
@@ -129,7 +129,7 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(FileManager.default.fileExists(atPath: processed.notePath!))
 }
 
-@Test func stopFailureMarksSessionFailed() throws {
+@Test func stopFailureMarksSessionFailed() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
 
@@ -138,8 +138,8 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     let started = try manager.start(title: "Flaky", sourceApp: nil)
 
     recorder.stopError = ZMeetError.noActiveSession  // any error
-    #expect(throws: (any Error).self) {
-        _ = try manager.stop()
+    await #expect(throws: (any Error).self) {
+        _ = try await manager.stop()
     }
 
     // The error is recorded and the session is finalized as .failed, not left .recording.
@@ -238,13 +238,13 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(text.contains("~/.zmeet/config.json"))
 }
 
-@Test func recoveryIgnoresAlreadyFinalizedSessions() throws {
+@Test func recoveryIgnoresAlreadyFinalizedSessions() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
 
     let manager = SessionManager(config: config, recorder: MockRecorder())
     let started = try manager.start(title: "Clean", sourceApp: nil)
-    _ = try manager.stop()
+    _ = try await manager.stop()
 
     let recovered = try manager.recoverInterruptedSessions()
     #expect(recovered.isEmpty)
@@ -283,13 +283,13 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(blank.title == "Untitled Meeting")
 }
 
-@Test func deleteRemovesFolderAndSession() throws {
+@Test func deleteRemovesFolderAndSession() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
 
     let manager = SessionManager(config: config, recorder: MockRecorder())
     let started = try manager.start(title: "Disposable", sourceApp: nil)
-    _ = try manager.stop()
+    _ = try await manager.stop()
     let folder = URL(fileURLWithPath: started.audioPath).deletingLastPathComponent()
     #expect(FileManager.default.fileExists(atPath: folder.path))
 
@@ -315,13 +315,13 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(fromLegacy.audioRetentionDays == 0)
 }
 
-@Test func processingIndexesMeetingForSearch() throws {
+@Test func processingIndexesMeetingForSearch() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
     let manager = SessionManager(config: config, recorder: MockRecorder())
 
     let started = try manager.start(title: "Roadmap Review", sourceApp: nil)
-    _ = try manager.stop()
+    _ = try await manager.stop()
     _ = try manager.applyProcessedText(
         id: started.id,
         transcript: "we agreed to ship the meeting detector next sprint",
@@ -348,9 +348,9 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
 }
 
 /// Helper: make a processed meeting with a real audio file, dated `daysAgo`.
-private func makeProcessedMeeting(_ manager: SessionManager, title: String, daysAgo: Int) throws -> MeetingSession {
+private func makeProcessedMeeting(_ manager: SessionManager, title: String, daysAgo: Int) async throws -> MeetingSession {
     let started = try manager.start(title: title, sourceApp: nil)
-    _ = try manager.stop()
+    _ = try await manager.stop()
     let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
     // Backdate the session so retention math sees it as old.
     var dated = processed
@@ -360,15 +360,15 @@ private func makeProcessedMeeting(_ manager: SessionManager, title: String, days
     return dated
 }
 
-@Test func purgeExpiredAudioRemovesOldProcessedAudioOnly() throws {
+@Test func purgeExpiredAudioRemovesOldProcessedAudioOnly() async throws {
     let (config0, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
     var config = config0
     config.audioRetentionDays = 30
     let manager = SessionManager(config: config, recorder: MockRecorder())
 
-    let old = try makeProcessedMeeting(manager, title: "Old", daysAgo: 60)
-    let recent = try makeProcessedMeeting(manager, title: "Recent", daysAgo: 5)
+    let old = try await makeProcessedMeeting(manager, title: "Old", daysAgo: 60)
+    let recent = try await makeProcessedMeeting(manager, title: "Recent", daysAgo: 5)
 
     let purged = manager.purgeExpiredAudio()
     #expect(purged == 1)
@@ -379,17 +379,17 @@ private func makeProcessedMeeting(_ manager: SessionManager, title: String, days
     #expect(FileManager.default.fileExists(atPath: recent.audioPath))
 }
 
-@Test func purgeNeverWhenRetentionIsZero() throws {
+@Test func purgeNeverWhenRetentionIsZero() async throws {
     let (config, root) = makeTempConfig()  // default audioRetentionDays == 0
     defer { try? FileManager.default.removeItem(at: root) }
     let manager = SessionManager(config: config, recorder: MockRecorder())
-    let old = try makeProcessedMeeting(manager, title: "Old", daysAgo: 365)
+    let old = try await makeProcessedMeeting(manager, title: "Old", daysAgo: 365)
 
     #expect(manager.purgeExpiredAudio() == 0)
     #expect(FileManager.default.fileExists(atPath: old.audioPath))
 }
 
-@Test func purgeNeverTouchesUnprocessedAudio() throws {
+@Test func purgeNeverTouchesUnprocessedAudio() async throws {
     let (config0, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
     var config = config0
@@ -397,7 +397,7 @@ private func makeProcessedMeeting(_ manager: SessionManager, title: String, days
     let manager = SessionManager(config: config, recorder: MockRecorder())
 
     let started = try manager.start(title: "Unprocessed", sourceApp: nil)
-    var stopped = try manager.stop()
+    var stopped = try await manager.stop()
     stopped.startedAt = Date().addingTimeInterval(-100 * 86_400)
     stopped.endedAt = stopped.startedAt.addingTimeInterval(60)
     try manager.overwriteSessionForTesting(stopped)
@@ -406,23 +406,23 @@ private func makeProcessedMeeting(_ manager: SessionManager, title: String, days
     #expect(FileManager.default.fileExists(atPath: stopped.audioPath))
 }
 
-@Test func deleteAudioRemovesOnlyProcessedAudio() throws {
+@Test func deleteAudioRemovesOnlyProcessedAudio() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
     let manager = SessionManager(config: config, recorder: MockRecorder())
-    let m = try makeProcessedMeeting(manager, title: "M", daysAgo: 1)
+    let m = try await makeProcessedMeeting(manager, title: "M", daysAgo: 1)
 
     try manager.deleteAudio(id: m.id)
     #expect(!FileManager.default.fileExists(atPath: m.audioPath))
     #expect(FileManager.default.fileExists(atPath: m.notePath!))
 }
 
-@Test func reclaimableAudioBytesSumsProcessedAudio() throws {
+@Test func reclaimableAudioBytesSumsProcessedAudio() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
     let manager = SessionManager(config: config, recorder: MockRecorder(audioFileSize: 100))
-    _ = try makeProcessedMeeting(manager, title: "A", daysAgo: 1)
-    _ = try makeProcessedMeeting(manager, title: "B", daysAgo: 1)
+    _ = try await makeProcessedMeeting(manager, title: "A", daysAgo: 1)
+    _ = try await makeProcessedMeeting(manager, title: "B", daysAgo: 1)
 
     #expect(manager.reclaimableAudioBytes() == 200)
 }

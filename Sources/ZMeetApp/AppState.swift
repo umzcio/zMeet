@@ -309,20 +309,29 @@ final class AppState: ObservableObject {
     }
 
     func stopRecording() {
+        // Ignore a stop when we're not recording. Because the actual stop now
+        // runs asynchronously, leaving `.recording` set here would let a second
+        // Stop click — or the detector's auto-stop firing concurrently — spawn a
+        // duplicate `manager.stop()` that finds no active session and surfaces a
+        // spurious error. Flipping phase synchronously closes that window.
+        guard isRecording else { return }
         lastError = nil
         recordingFromDetection = false
-        do {
-            let stopped = try manager.stop()
-            reloadRecent()
-            if config.autoProcessOnStop {
-                process(id: stopped.id)
-            } else {
+        phase = .processing
+        Task {
+            do {
+                let stopped = try await manager.stop()
+                reloadRecent()
+                if config.autoProcessOnStop {
+                    process(id: stopped.id)
+                } else {
+                    phase = .idle
+                }
+            } catch {
                 phase = .idle
+                lastError = error.localizedDescription
+                reloadRecent()
             }
-        } catch {
-            phase = .idle
-            lastError = error.localizedDescription
-            reloadRecent()
         }
     }
 

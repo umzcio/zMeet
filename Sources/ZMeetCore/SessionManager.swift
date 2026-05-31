@@ -91,13 +91,19 @@ public final class SessionManager {
         return session
     }
 
-    public func stop() throws -> MeetingSession {
+    // `nonisolated(nonsending)` so this runs in the caller's isolation domain
+    // (the main actor in the app, the test's context in tests) rather than
+    // hopping to a nonisolated executor. Without it, awaiting this from the
+    // @MainActor `AppState` would "send" the non-Sendable manager off-actor —
+    // a data race. The recorder seam is `Sendable`, so awaiting `recorder.stop()`
+    // below is still free to run off the caller's actor.
+    public nonisolated(nonsending) func stop() async throws -> MeetingSession {
         guard var session = try activeSession() else {
             throw ZMeetError.noActiveSession
         }
 
         do {
-            try recorder.stop()
+            try await recorder.stop()
         } catch {
             session.status = .failed
             session.errorMessage = error.localizedDescription
