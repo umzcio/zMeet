@@ -130,6 +130,9 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     /// Days after which a processed meeting's audio is purged (transcript + notes
     /// are always kept). 0 means never (default).
     public var audioRetentionDays: Int
+    /// When true, summaries are produced via the Claude API instead of the
+    /// on-device model. The API key lives in the Keychain, never here. Default off.
+    public var useCloudSummaries: Bool
 
     public init(
         outputPath: String,
@@ -141,7 +144,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         autoProcessOnStop: Bool = true,
         detectMeetings: Bool = true,
         recordingMode: RecordingMode = .remote,
-        audioRetentionDays: Int = 0
+        audioRetentionDays: Int = 0,
+        useCloudSummaries: Bool = false
     ) {
         self.outputPath = outputPath
         self.appDataPath = appDataPath
@@ -153,6 +157,7 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         self.detectMeetings = detectMeetings
         self.recordingMode = recordingMode
         self.audioRetentionDays = audioRetentionDays
+        self.useCloudSummaries = useCloudSummaries
     }
 
     /// Lenient decoding so older/partial `config.json` files still load — any
@@ -172,6 +177,7 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         detectMeetings = try c.decodeIfPresent(Bool.self, forKey: .detectMeetings) ?? true
         recordingMode = try c.decodeIfPresent(RecordingMode.self, forKey: .recordingMode) ?? .remote
         audioRetentionDays = try c.decodeIfPresent(Int.self, forKey: .audioRetentionDays) ?? 0
+        useCloudSummaries = try c.decodeIfPresent(Bool.self, forKey: .useCloudSummaries) ?? false
     }
 
     public static func `default`(
@@ -188,7 +194,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             autoProcessOnStop: true,
             detectMeetings: true,
             recordingMode: .remote,
-            audioRetentionDays: 0
+            audioRetentionDays: 0,
+            useCloudSummaries: false
         )
     }
 }
