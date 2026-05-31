@@ -12,6 +12,9 @@ final class AppState: ObservableObject {
     }
 
     @Published private(set) var phase: Phase = .idle
+    /// The meeting currently being (re)processed, if any. Drives the Library's
+    /// per-meeting processing spinner and triggers a reader refresh on completion.
+    @Published private(set) var processingSessionID: String?
     @Published private(set) var recent: [MeetingSession] = []
     /// Every meeting, newest first — backs the Library window.
     @Published private(set) var allSessions: [MeetingSession] = []
@@ -373,6 +376,11 @@ final class AppState: ObservableObject {
     func process(id: String) {
         lastError = nil
         phase = .processing
+        // Track the specific meeting so the Library can show a per-row/reader
+        // spinner and refresh the open note when this finishes — re-processing an
+        // already-`.processed` meeting doesn't change its status, so the Library
+        // can't detect completion from status alone.
+        processingSessionID = id
         Task {
             do {
                 // The async Apple speech/LLM work runs off the main actor; the
@@ -389,6 +397,7 @@ final class AppState: ObservableObject {
                 lastError = error.localizedDescription
             }
             phase = .idle
+            processingSessionID = nil
             reloadRecent()
         }
     }

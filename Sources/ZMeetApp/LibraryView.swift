@@ -156,9 +156,17 @@ struct LibraryView: View {
     }
 
     /// Reload the reader whenever the selected meeting — or its processing
-    /// status — changes (e.g. after a re-process completes).
+    /// status — changes (e.g. after a re-process completes). The trailing flag
+    /// flips when this meeting starts/finishes processing, so the reader
+    /// refreshes even when a re-process leaves the status `.processed` unchanged.
     private var reloadKey: String {
-        "\(selected?.id ?? "none")-\(selected?.status.rawValue ?? "")"
+        let processing = state.processingSessionID == selected?.id
+        return "\(selected?.id ?? "none")-\(selected?.status.rawValue ?? "")-\(processing)"
+    }
+
+    /// True while the selected meeting is being (re)processed.
+    private var selectedIsProcessing: Bool {
+        selected != nil && state.processingSessionID == selected?.id
     }
 
     // MARK: Left rail
@@ -313,17 +321,23 @@ struct LibraryView: View {
 
     @ViewBuilder
     private func railStatus(_ session: MeetingSession) -> some View {
-        switch session.status {
-        case .recording:
+        if state.processingSessionID == session.id {
+            // Being (re)processed right now — show a spinner regardless of the
+            // persisted status (a re-processed meeting stays `.processed`).
             ProgressView().controlSize(.small).scaleEffect(0.7)
-        case .failed:
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11)).foregroundStyle(.orange)
-        case .recorded:
-            Image(systemName: "circle.dashed")
-                .font(.system(size: 11)).foregroundStyle(Self.faint)
-        case .processed:
-            EmptyView()
+        } else {
+            switch session.status {
+            case .recording:
+                ProgressView().controlSize(.small).scaleEffect(0.7)
+            case .failed:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11)).foregroundStyle(.orange)
+            case .recorded:
+                Image(systemName: "circle.dashed")
+                    .font(.system(size: 11)).foregroundStyle(Self.faint)
+            case .processed:
+                EmptyView()
+            }
         }
     }
 
@@ -400,6 +414,15 @@ struct LibraryView: View {
                     .foregroundStyle(Self.muted)
             }
             Spacer()
+            if selectedIsProcessing {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small).scaleEffect(0.8)
+                    Text("Processing…").font(.system(size: 12)).foregroundStyle(Self.muted)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Self.card, in: Capsule())
+            }
             headerActions(session)
         }
         .padding(.horizontal, 32)
