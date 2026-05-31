@@ -9,6 +9,9 @@ struct SettingsView: View {
     @State private var inputDevices: [AudioInputs.Device] = []
     @State private var reclaimable: Int64 = 0
     @State private var confirmFreeUp = false
+    @State private var apiKeyInput = ""
+    @State private var keyTestResult: String?
+    @State private var testingKey = false
     // Mint-terminal palette
     static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
     static let bg = Color(red: 0.051, green: 0.067, blue: 0.059)
@@ -18,6 +21,7 @@ struct SettingsView: View {
 
     enum Section: String, CaseIterable, Identifiable {
         case general = "General"
+        case summaries = "Summaries"
         case recording = "Recording"
         case meetings = "Meetings"
         case storage = "Storage"
@@ -27,6 +31,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general: return "gearshape.fill"
+            case .summaries: return "sparkles"
             case .recording: return "waveform"
             case .meetings: return "person.2.fill"
             case .storage: return "folder.fill"
@@ -246,6 +251,7 @@ struct SettingsView: View {
 
                 switch selection {
                 case .general: generalSection
+                case .summaries: summariesSection
                 case .recording: recordingSection
                 case .meetings: meetingsSection
                 case .storage: storageSection
@@ -273,6 +279,67 @@ struct SettingsView: View {
             toggleRow("Process automatically after stopping",
                       "Transcribe and summarize as soon as you stop recording.",
                       boolBinding(\.autoProcessOnStop))
+        }
+    }
+
+    private var summariesSection: some View {
+        VStack(spacing: 14) {
+            card {
+                toggleRow("Use Claude for summaries (cloud)",
+                          "Higher-quality notes via the Claude API. Falls back to on-device automatically if it can't run.",
+                          boolBinding(\.useCloudSummaries))
+            }
+            if state.config.useCloudSummaries {
+                card {
+                    row("Anthropic API key",
+                        state.hasAPIKey ? "A key is saved in your Keychain." : "Paste your Anthropic API key (stored in the Keychain).") {
+                        EmptyView()
+                    }
+                    divider
+                    HStack(spacing: 8) {
+                        SecureField(state.hasAPIKey ? "•••• saved — paste to replace" : "sk-ant-…", text: $apiKeyInput)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Save") {
+                            state.saveAPIKey(apiKeyInput)
+                            apiKeyInput = ""
+                            keyTestResult = nil
+                        }
+                        .disabled(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("Clear") {
+                            state.clearAPIKey()
+                            apiKeyInput = ""
+                            keyTestResult = nil
+                        }
+                        .disabled(!state.hasAPIKey)
+                    }
+                    .padding(.horizontal, 16).padding(.bottom, 12)
+                    divider
+                    row("Test key", "Send one request to verify the key works.") {
+                        HStack(spacing: 8) {
+                            if let keyTestResult {
+                                Text(keyTestResult)
+                                    .font(.caption)
+                                    .foregroundStyle(keyTestResult == "Key works." ? Self.mint : .orange)
+                            }
+                            Button(testingKey ? "Testing…" : "Test") {
+                                testingKey = true
+                                keyTestResult = nil
+                                Task {
+                                    let err = await state.testAPIKey()
+                                    keyTestResult = err ?? "Key works."
+                                    testingKey = false
+                                }
+                            }
+                            .disabled(testingKey || !state.hasAPIKey)
+                        }
+                    }
+                }
+                card {
+                    row("Privacy", "When on, your transcript text and meeting title are sent to Anthropic to generate the summary. Your audio always stays on your Mac.") {
+                        EmptyView()
+                    }
+                }
+            }
         }
     }
 
