@@ -50,7 +50,7 @@ struct SettingsView: View {
             GeometryReader { proxy in
                 if let id = openMenu, let anchor = anchors[id] {
                     let rect = proxy[anchor]
-                    let menuWidth: CGFloat = 170
+                    let menuWidth: CGFloat = id == .microphone ? 230 : 160
                     ZStack(alignment: .topLeading) {
                         Color.black.opacity(0.001)
                             .contentShape(Rectangle())
@@ -70,24 +70,49 @@ struct SettingsView: View {
         .onAppear { state.refreshPermissions() }
     }
 
-    enum SettingsMenu: Hashable { case retention, quality }
+    enum SettingsMenu: Hashable { case retention, quality, microphone }
 
     private static let retentionOptions: [(String, Int)] =
         [("Never", 0), ("7 days", 7), ("30 days", 30), ("90 days", 90)]
     private static let qualityOptions: [(String, Int)] =
         [("Standard", 128_000), ("High", 192_000), ("Maximum", 256_000)]
 
-    private func options(for id: SettingsMenu) -> [(String, Int)] {
-        id == .retention ? Self.retentionOptions : Self.qualityOptions
-    }
+    /// One selectable row in a dropdown: label, whether it's the current value,
+    /// and the action to apply it.
+    private struct MenuItem { let label: String; let selected: Bool; let select: () -> Void }
 
-    private func binding(for id: SettingsMenu) -> Binding<Int> {
-        id == .retention ? retentionBinding : bitrateBinding
+    private func menuItems(for id: SettingsMenu) -> [MenuItem] {
+        switch id {
+        case .retention:
+            let cur = state.config.audioRetentionDays
+            return Self.retentionOptions.map { opt in
+                MenuItem(label: opt.0, selected: opt.1 == cur) {
+                    state.updateConfig { $0.audioRetentionDays = opt.1 }; openMenu = nil
+                }
+            }
+        case .quality:
+            let cur = state.config.audio.bitrate
+            return Self.qualityOptions.map { opt in
+                MenuItem(label: opt.0, selected: opt.1 == cur) {
+                    state.updateConfig { $0.audio.bitrate = opt.1 }; openMenu = nil
+                }
+            }
+        case .microphone:
+            let cur = state.config.audio.micDeviceID
+            var items = [MenuItem(label: "System Default", selected: cur == nil) {
+                state.setMicDevice(nil); openMenu = nil
+            }]
+            for dev in inputDevices {
+                items.append(MenuItem(label: dev.name, selected: cur == dev.id) {
+                    state.setMicDevice(dev.id); openMenu = nil
+                })
+            }
+            return items
+        }
     }
 
     private func currentLabel(for id: SettingsMenu) -> String {
-        let value = binding(for: id).wrappedValue
-        return options(for: id).first { $0.1 == value }?.0 ?? "—"
+        menuItems(for: id).first { $0.selected }?.label ?? "—"
     }
 
     /// The app-styled trigger button that opens a dropdown.
@@ -95,12 +120,13 @@ struct SettingsView: View {
         Button { openMenu = (openMenu == id ? nil : id) } label: {
             HStack(spacing: 8) {
                 Text(currentLabel(for: id)).font(.system(size: 13))
+                    .lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
-            .frame(width: 140)
+            .frame(width: id == .microphone ? 190 : 140)
             .background(Self.card, in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Self.hairline, lineWidth: 1))
             .contentShape(Rectangle())
@@ -111,14 +137,10 @@ struct SettingsView: View {
 
     /// The floating dark menu list for a dropdown.
     private func dropdownMenu(for id: SettingsMenu) -> some View {
-        let sel = binding(for: id)
+        let items = menuItems(for: id)
         return VStack(spacing: 0) {
-            ForEach(options(for: id).indices, id: \.self) { i in
-                let opt = options(for: id)[i]
-                DropdownMenuRow(label: opt.0, selected: sel.wrappedValue == opt.1) {
-                    sel.wrappedValue = opt.1
-                    openMenu = nil
-                }
+            ForEach(items.indices, id: \.self) { i in
+                DropdownMenuRow(label: items[i].label, selected: items[i].selected, action: items[i].select)
             }
         }
         .padding(.vertical, 5)
@@ -236,17 +258,7 @@ struct SettingsView: View {
     private var recordingSection: some View {
         card {
             row("Microphone", "Input device used to record.") {
-                Picker("", selection: Binding<String?>(
-                    get: { state.config.audio.micDeviceID },
-                    set: { state.setMicDevice($0) }
-                )) {
-                    Text("System Default").tag(String?.none)
-                    ForEach(inputDevices) { dev in
-                        Text(dev.name).tag(String?.some(dev.id))
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 200)
+                dropdownTrigger(.microphone)
             }
             divider
             row("Audio quality", "Higher quality means larger files.") {
@@ -379,16 +391,6 @@ struct SettingsView: View {
     private func boolBinding(_ kp: WritableKeyPath<ZMeetConfig, Bool>) -> Binding<Bool> {
         Binding(get: { state.config[keyPath: kp] },
                 set: { v in state.updateConfig { $0[keyPath: kp] = v } })
-    }
-
-    private var bitrateBinding: Binding<Int> {
-        Binding(get: { state.config.audio.bitrate },
-                set: { v in state.updateConfig { $0.audio.bitrate = v } })
-    }
-
-    private var retentionBinding: Binding<Int> {
-        Binding(get: { state.config.audioRetentionDays },
-                set: { v in state.updateConfig { $0.audioRetentionDays = v } })
     }
 
     private func formattedBytes(_ bytes: Int64) -> String {
