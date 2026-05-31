@@ -52,8 +52,11 @@ struct LibraryView: View {
             if state.libraryDialog == .deleteAudio, let session = selected {
                 deleteAudioDialog(session)
             }
-
-            contextMenuOverlay
+        }
+        // Read rail-row anchors from the whole tree (the rows live in railColumn)
+        // and float the right-click menu under the clicked row.
+        .overlayPreferenceValue(RailRowAnchorKey.self) { anchors in
+            contextMenu(anchors: anchors)
         }
         .frame(width: 1000, height: 680)
         .background(Self.bg)
@@ -271,24 +274,19 @@ struct LibraryView: View {
     /// The rail right-click menu: the same actions dropdown, positioned at the
     /// right-clicked row via its anchor, with a tap-catcher to dismiss.
     @ViewBuilder
-    private var contextMenuOverlay: some View {
-        if contextSession != nil {
-            Color.clear
-                .overlayPreferenceValue(RailRowAnchorKey.self) { anchors in
-                    GeometryReader { proxy in
-                        if let session = contextSession, let anchor = anchors[session.id] {
-                            let rect = proxy[anchor]
-                            ZStack(alignment: .topLeading) {
-                                Color.black.opacity(0.001)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { contextSession = nil }
-                                actionsDropdown(session)
-                                    .offset(x: min(rect.minX, 1000 - 196 - 8),
-                                            y: rect.maxY + 2)
-                            }
-                        }
-                    }
+    private func contextMenu(anchors: [String: Anchor<CGRect>]) -> some View {
+        if let session = contextSession, let anchor = anchors[session.id] {
+            GeometryReader { proxy in
+                let rect = proxy[anchor]
+                ZStack(alignment: .topLeading) {
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .onTapGesture { contextSession = nil }
+                    actionsDropdown(session)
+                        .offset(x: min(rect.minX, 1000 - 196 - 8),
+                                y: rect.maxY + 2)
                 }
+            }
         }
     }
 
