@@ -12,8 +12,8 @@ RES_DIR="$APP_DIR/Contents/Resources"
 FW_DIR="$APP_DIR/Contents/Frameworks"
 
 # App version (also stamped into the appcast on release).
-VERSION="1.6.0"
-BUILD="4"
+VERSION="1.7.0"
+BUILD="5"
 
 # Sparkle auto-update: appcast feed URL + EdDSA public key (private key is in the
 # login keychain via generate_keys).
