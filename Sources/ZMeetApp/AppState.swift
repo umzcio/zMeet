@@ -22,6 +22,11 @@ final class AppState: ObservableObject {
     @Published var libraryDialog: LibraryDialog?
 
     enum LibraryDialog: Equatable { case rename, delete, deleteAudio }
+    @Published var showLibraryActions = false
+    @Published var libraryContextSession: MeetingSession?
+    @Published var settingsMenu: SettingsMenuKind?
+
+    enum SettingsMenuKind: Hashable { case retention, quality, microphone }
     @Published var draftTitle: String = ""
     @Published private(set) var lastError: String?
     @Published private(set) var micGranted: Bool = false

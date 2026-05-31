@@ -9,8 +9,6 @@ struct SettingsView: View {
     @State private var inputDevices: [AudioInputs.Device] = []
     @State private var reclaimable: Int64 = 0
     @State private var confirmFreeUp = false
-    @State private var openMenu: SettingsMenu?
-
     // Mint-terminal palette
     static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
     static let bg = Color(red: 0.051, green: 0.067, blue: 0.059)
@@ -49,13 +47,13 @@ struct SettingsView: View {
             // preferences, above everything with a tap-catcher to dismiss.
             .overlayPreferenceValue(DropdownAnchorKey.self) { anchors in
                 GeometryReader { proxy in
-                    if let id = openMenu, let anchor = anchors[id] {
+                    if let id = state.settingsMenu, let anchor = anchors[id] {
                         let rect = proxy[anchor]
                         let menuWidth: CGFloat = id == .microphone ? 230 : 160
                         ZStack(alignment: .topLeading) {
                             Color.black.opacity(0.001)
                                 .contentShape(Rectangle())
-                                .onTapGesture { openMenu = nil }
+                                .onTapGesture { state.settingsMenu = nil }
                             dropdownMenu(for: id)
                                 .frame(width: menuWidth)
                                 .offset(x: min(max(8, rect.maxX - menuWidth), 720 - menuWidth - 8),
@@ -95,8 +93,6 @@ struct SettingsView: View {
         .onAppear { state.refreshPermissions() }
     }
 
-    enum SettingsMenu: Hashable { case retention, quality, microphone }
-
     private static let retentionOptions: [(String, Int)] =
         [("Never", 0), ("7 days", 7), ("30 days", 30), ("90 days", 90)]
     private static let qualityOptions: [(String, Int)] =
@@ -106,43 +102,43 @@ struct SettingsView: View {
     /// and the action to apply it.
     private struct MenuItem { let label: String; let selected: Bool; let select: () -> Void }
 
-    private func menuItems(for id: SettingsMenu) -> [MenuItem] {
+    private func menuItems(for id: AppState.SettingsMenuKind) -> [MenuItem] {
         switch id {
         case .retention:
             let cur = state.config.audioRetentionDays
             return Self.retentionOptions.map { opt in
                 MenuItem(label: opt.0, selected: opt.1 == cur) {
-                    state.updateConfig { $0.audioRetentionDays = opt.1 }; openMenu = nil
+                    state.updateConfig { $0.audioRetentionDays = opt.1 }; state.settingsMenu = nil
                 }
             }
         case .quality:
             let cur = state.config.audio.bitrate
             return Self.qualityOptions.map { opt in
                 MenuItem(label: opt.0, selected: opt.1 == cur) {
-                    state.updateConfig { $0.audio.bitrate = opt.1 }; openMenu = nil
+                    state.updateConfig { $0.audio.bitrate = opt.1 }; state.settingsMenu = nil
                 }
             }
         case .microphone:
             let cur = state.config.audio.micDeviceID
             var items = [MenuItem(label: "System Default", selected: cur == nil) {
-                state.setMicDevice(nil); openMenu = nil
+                state.setMicDevice(nil); state.settingsMenu = nil
             }]
             for dev in inputDevices {
                 items.append(MenuItem(label: dev.name, selected: cur == dev.id) {
-                    state.setMicDevice(dev.id); openMenu = nil
+                    state.setMicDevice(dev.id); state.settingsMenu = nil
                 })
             }
             return items
         }
     }
 
-    private func currentLabel(for id: SettingsMenu) -> String {
+    private func currentLabel(for id: AppState.SettingsMenuKind) -> String {
         menuItems(for: id).first { $0.selected }?.label ?? "—"
     }
 
     /// The app-styled trigger button that opens a dropdown.
-    private func dropdownTrigger(_ id: SettingsMenu) -> some View {
-        Button { openMenu = (openMenu == id ? nil : id) } label: {
+    private func dropdownTrigger(_ id: AppState.SettingsMenuKind) -> some View {
+        Button { state.settingsMenu = (state.settingsMenu == id ? nil : id) } label: {
             HStack(spacing: 8) {
                 Text(currentLabel(for: id)).font(.system(size: 13))
                     .lineLimit(1).truncationMode(.tail)
@@ -161,7 +157,7 @@ struct SettingsView: View {
     }
 
     /// The floating dark menu list for a dropdown.
-    private func dropdownMenu(for id: SettingsMenu) -> some View {
+    private func dropdownMenu(for id: AppState.SettingsMenuKind) -> some View {
         let items = menuItems(for: id)
         return VStack(spacing: 0) {
             ForEach(items.indices, id: \.self) { i in
@@ -440,7 +436,7 @@ struct SettingsView: View {
 /// Carries each open-able trigger's on-screen bounds up to the body, so the
 /// floating menu can be positioned right under it.
 private struct DropdownAnchorKey: PreferenceKey {
-    static let defaultValue: [SettingsView.SettingsMenu: Anchor<CGRect>] = [:]
+    static let defaultValue: [AppState.SettingsMenuKind: Anchor<CGRect>] = [:]
     static func reduce(value: inout Value, nextValue: () -> Value) {
         value.merge(nextValue()) { _, new in new }
     }

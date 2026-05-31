@@ -14,8 +14,6 @@ struct LibraryView: View {
     @State private var noteBlocks: [NoteBlock] = []
     @State private var transcriptText: String?
     @State private var renameText = ""
-    @State private var showActions = false
-    @State private var contextSession: MeetingSession?
     @State private var searchHits: [SearchHit] = []
     @State private var searchTask: Task<Void, Never>?
 
@@ -64,7 +62,7 @@ struct LibraryView: View {
         .tint(Self.mint)
         .onReceive(ticker) { _ in audio.tick() }
         .task(id: reloadKey) { await loadSelected() }
-        .onChange(of: selected?.id) { showActions = false; contextSession = nil }
+        .onChange(of: selected?.id) { state.showLibraryActions = false; state.libraryContextSession = nil }
         .onChange(of: query) { runSearch() }
     }
 
@@ -231,7 +229,7 @@ struct LibraryView: View {
     private func railRow(_ session: MeetingSession) -> some View {
         let active = session.id == selected?.id
         return Button {
-            showActions = false
+            state.showLibraryActions = false
             state.librarySelectedID = session.id
         } label: {
             HStack(spacing: 11) {
@@ -259,23 +257,23 @@ struct LibraryView: View {
     }
 
     private func showContextMenu(_ session: MeetingSession) {
-        showActions = false
+        state.showLibraryActions = false
         state.librarySelectedID = session.id
-        contextSession = session
+        state.libraryContextSession = session
     }
 
     /// Close whichever actions menu is open (the ⋯ overlay and/or the rail
     /// right-click context menu).
     private func closeMenus() {
-        showActions = false
-        contextSession = nil
+        state.showLibraryActions = false
+        state.libraryContextSession = nil
     }
 
     /// The rail right-click menu: the same actions dropdown, positioned at the
     /// right-clicked row via its anchor, with a tap-catcher to dismiss.
     @ViewBuilder
     private func contextMenu(anchors: [String: Anchor<CGRect>]) -> some View {
-        if let session = contextSession, let anchor = anchors[session.id] {
+        if let session = state.libraryContextSession, let anchor = anchors[session.id] {
             GeometryReader { proxy in
                 let rect = proxy[anchor]
                 // Estimate the menu height to decide whether it fits below the row;
@@ -291,7 +289,7 @@ struct LibraryView: View {
                 ZStack(alignment: .topLeading) {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
-                        .onTapGesture { contextSession = nil }
+                        .onTapGesture { state.libraryContextSession = nil }
                     actionsDropdown(session)
                         .offset(x: min(rect.minX, 1000 - 196 - 8), y: y)
                 }
@@ -370,10 +368,10 @@ struct LibraryView: View {
                     }
                 }
 
-                if showActions {
+                if state.showLibraryActions {
                     // Tap-catcher to dismiss the in-app dropdown.
                     Color.black.opacity(0.001)
-                        .onTapGesture { showActions = false }
+                        .onTapGesture { state.showLibraryActions = false }
                     actionsDropdown(session)
                         .padding(.top, 60)
                         .padding(.trailing, 32)
@@ -413,7 +411,7 @@ struct LibraryView: View {
         HStack(spacing: 8) {
             actionButton("arrow.up.forward.app", "Reveal in Finder") { state.revealNote(session) }
             actionButton("ellipsis", "Actions") {
-                showActions.toggle()
+                state.showLibraryActions.toggle()
             }
         }
     }
