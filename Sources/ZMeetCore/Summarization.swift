@@ -77,3 +77,16 @@ public struct SummarizationPolicy: Sendable {
         return (md, .onDevice)
     }
 }
+
+/// Abstracts secret storage so the app uses the Keychain while tests can inject
+/// an in-memory double.
+public protocol SecretStore: Sendable {
+    func read(account: String) -> String?
+    func write(_ value: String, account: String) throws
+    func delete(account: String) throws
+}
+
+/// Stable Keychain account names for zMeet secrets.
+public enum SecretAccount {
+    public static let anthropicAPIKey = "anthropic-api-key"
+}
