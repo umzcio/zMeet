@@ -7,6 +7,9 @@ struct SettingsView: View {
     @State private var selection: Section = .general
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var inputDevices: [AudioInputs.Device] = []
+    @State private var reclaimable: Int64 = 0
+    @State private var confirmFreeUp = false
+    @State private var openMenu: SettingsMenu?
 
     // Mint-terminal palette
     static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
@@ -41,11 +44,109 @@ struct SettingsView: View {
             Rectangle().fill(Self.hairline).frame(width: 1)
             content
         }
+        // Floating dropdown menus, positioned at their trigger via anchor
+        // preferences, above everything with a tap-catcher to dismiss.
+        .overlayPreferenceValue(DropdownAnchorKey.self) { anchors in
+            GeometryReader { proxy in
+                if let id = openMenu, let anchor = anchors[id] {
+                    let rect = proxy[anchor]
+                    let menuWidth: CGFloat = id == .microphone ? 230 : 160
+                    ZStack(alignment: .topLeading) {
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture { openMenu = nil }
+                        dropdownMenu(for: id)
+                            .frame(width: menuWidth)
+                            .offset(x: min(max(8, rect.maxX - menuWidth), 720 - menuWidth - 8),
+                                    y: rect.maxY + 4)
+                    }
+                }
+            }
+        }
         .frame(width: 720, height: 500)
         .background(Self.bg)
         .preferredColorScheme(.dark)
         .tint(Self.mint)
         .onAppear { state.refreshPermissions() }
+    }
+
+    enum SettingsMenu: Hashable { case retention, quality, microphone }
+
+    private static let retentionOptions: [(String, Int)] =
+        [("Never", 0), ("7 days", 7), ("30 days", 30), ("90 days", 90)]
+    private static let qualityOptions: [(String, Int)] =
+        [("Standard", 128_000), ("High", 192_000), ("Maximum", 256_000)]
+
+    /// One selectable row in a dropdown: label, whether it's the current value,
+    /// and the action to apply it.
+    private struct MenuItem { let label: String; let selected: Bool; let select: () -> Void }
+
+    private func menuItems(for id: SettingsMenu) -> [MenuItem] {
+        switch id {
+        case .retention:
+            let cur = state.config.audioRetentionDays
+            return Self.retentionOptions.map { opt in
+                MenuItem(label: opt.0, selected: opt.1 == cur) {
+                    state.updateConfig { $0.audioRetentionDays = opt.1 }; openMenu = nil
+                }
+            }
+        case .quality:
+            let cur = state.config.audio.bitrate
+            return Self.qualityOptions.map { opt in
+                MenuItem(label: opt.0, selected: opt.1 == cur) {
+                    state.updateConfig { $0.audio.bitrate = opt.1 }; openMenu = nil
+                }
+            }
+        case .microphone:
+            let cur = state.config.audio.micDeviceID
+            var items = [MenuItem(label: "System Default", selected: cur == nil) {
+                state.setMicDevice(nil); openMenu = nil
+            }]
+            for dev in inputDevices {
+                items.append(MenuItem(label: dev.name, selected: cur == dev.id) {
+                    state.setMicDevice(dev.id); openMenu = nil
+                })
+            }
+            return items
+        }
+    }
+
+    private func currentLabel(for id: SettingsMenu) -> String {
+        menuItems(for: id).first { $0.selected }?.label ?? "—"
+    }
+
+    /// The app-styled trigger button that opens a dropdown.
+    private func dropdownTrigger(_ id: SettingsMenu) -> some View {
+        Button { openMenu = (openMenu == id ? nil : id) } label: {
+            HStack(spacing: 8) {
+                Text(currentLabel(for: id)).font(.system(size: 13))
+                    .lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .frame(width: id == .microphone ? 190 : 140)
+            .background(Self.card, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Self.hairline, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .anchorPreference(key: DropdownAnchorKey.self, value: .bounds) { [id: $0] }
+    }
+
+    /// The floating dark menu list for a dropdown.
+    private func dropdownMenu(for id: SettingsMenu) -> some View {
+        let items = menuItems(for: id)
+        return VStack(spacing: 0) {
+            ForEach(items.indices, id: \.self) { i in
+                DropdownMenuRow(label: items[i].label, selected: items[i].selected, action: items[i].select)
+            }
+        }
+        .padding(.vertical, 5)
+        .background(Color(red: 0.118, green: 0.137, blue: 0.129), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Self.hairline, lineWidth: 1))
+        .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
     }
 
     // MARK: Sidebar
@@ -157,27 +258,11 @@ struct SettingsView: View {
     private var recordingSection: some View {
         card {
             row("Microphone", "Input device used to record.") {
-                Picker("", selection: Binding<String?>(
-                    get: { state.config.audio.micDeviceID },
-                    set: { state.setMicDevice($0) }
-                )) {
-                    Text("System Default").tag(String?.none)
-                    ForEach(inputDevices) { dev in
-                        Text(dev.name).tag(String?.some(dev.id))
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 200)
+                dropdownTrigger(.microphone)
             }
             divider
             row("Audio quality", "Higher quality means larger files.") {
-                Picker("", selection: bitrateBinding) {
-                    Text("Standard").tag(128_000)
-                    Text("High").tag(192_000)
-                    Text("Maximum").tag(256_000)
-                }
-                .labelsHidden()
-                .frame(width: 130)
+                dropdownTrigger(.quality)
             }
         }
         .onAppear { inputDevices = AudioInputs.available() }
@@ -192,13 +277,38 @@ struct SettingsView: View {
     }
 
     private var storageSection: some View {
-        card {
-            row("Notes folder", displayPath(state.config.outputPath)) {
-                HStack(spacing: 8) {
-                    Button("Change…") { chooseOutputFolder() }
-                    Button("Reveal") { state.openOutputFolder() }
+        VStack(spacing: 14) {
+            card {
+                row("Notes folder", displayPath(state.config.outputPath)) {
+                    HStack(spacing: 8) {
+                        Button("Change…") { chooseOutputFolder() }
+                        Button("Reveal") { state.openOutputFolder() }
+                    }
                 }
             }
+            card {
+                row("Delete audio after",
+                    "Transcripts and notes are always kept.") {
+                    dropdownTrigger(.retention)
+                }
+                divider
+                row("Recorded audio", "Free up space by deleting audio for processed meetings.") {
+                    Button(reclaimable > 0 ? "Free up \(formattedBytes(reclaimable))" : "Nothing to free") {
+                        confirmFreeUp = true
+                    }
+                    .disabled(reclaimable == 0)
+                }
+            }
+        }
+        .onAppear { reclaimable = state.reclaimableAudioBytes() }
+        .alert("Free up space?", isPresented: $confirmFreeUp) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete Audio", role: .destructive) {
+                state.freeUpAllAudio()
+                reclaimable = state.reclaimableAudioBytes()
+            }
+        } message: {
+            Text("This deletes the recording for every processed meeting, keeping all transcripts and notes. This can't be undone.")
         }
     }
 
@@ -283,9 +393,8 @@ struct SettingsView: View {
                 set: { v in state.updateConfig { $0[keyPath: kp] = v } })
     }
 
-    private var bitrateBinding: Binding<Int> {
-        Binding(get: { state.config.audio.bitrate },
-                set: { v in state.updateConfig { $0.audio.bitrate = v } })
+    private func formattedBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     private func chooseOutputFolder() {
@@ -307,5 +416,45 @@ struct SettingsView: View {
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+}
+
+// MARK: - In-app dropdown plumbing
+
+/// Carries each open-able trigger's on-screen bounds up to the body, so the
+/// floating menu can be positioned right under it.
+private struct DropdownAnchorKey: PreferenceKey {
+    static let defaultValue: [SettingsView.SettingsMenu: Anchor<CGRect>] = [:]
+    static func reduce(value: inout Value, nextValue: () -> Value) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+private struct DropdownMenuRow: View {
+    let label: String
+    let selected: Bool
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text(label)
+                    .font(.system(size: 13))
+                    .foregroundStyle(selected ? SettingsView.mint : Color.primary)
+                Spacer(minLength: 8)
+                if selected {
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(SettingsView.mint)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(hover ? Color.white.opacity(0.06) : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .padding(.horizontal, 5)
     }
 }

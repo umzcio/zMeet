@@ -127,6 +127,9 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     public var detectMeetings: Bool
     /// Remembered recording mode (remote vs in-person) for the quick switch.
     public var recordingMode: RecordingMode
+    /// Days after which a processed meeting's audio is purged (transcript + notes
+    /// are always kept). 0 means never (default).
+    public var audioRetentionDays: Int
 
     public init(
         outputPath: String,
@@ -137,7 +140,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         gitAutoCommit: Bool = false,
         autoProcessOnStop: Bool = true,
         detectMeetings: Bool = true,
-        recordingMode: RecordingMode = .remote
+        recordingMode: RecordingMode = .remote,
+        audioRetentionDays: Int = 0
     ) {
         self.outputPath = outputPath
         self.appDataPath = appDataPath
@@ -148,6 +152,7 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         self.autoProcessOnStop = autoProcessOnStop
         self.detectMeetings = detectMeetings
         self.recordingMode = recordingMode
+        self.audioRetentionDays = audioRetentionDays
     }
 
     /// Lenient decoding so older/partial `config.json` files still load — any
@@ -166,6 +171,7 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         autoProcessOnStop = try c.decodeIfPresent(Bool.self, forKey: .autoProcessOnStop) ?? true
         detectMeetings = try c.decodeIfPresent(Bool.self, forKey: .detectMeetings) ?? true
         recordingMode = try c.decodeIfPresent(RecordingMode.self, forKey: .recordingMode) ?? .remote
+        audioRetentionDays = try c.decodeIfPresent(Int.self, forKey: .audioRetentionDays) ?? 0
     }
 
     public static func `default`(
@@ -181,7 +187,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             gitAutoCommit: false,
             autoProcessOnStop: true,
             detectMeetings: true,
-            recordingMode: .remote
+            recordingMode: .remote,
+            audioRetentionDays: 0
         )
     }
 }

@@ -21,7 +21,7 @@ final class AppState: ObservableObject {
     /// window can intercept Esc and dismiss the dialog instead of closing.
     @Published var libraryDialog: LibraryDialog?
 
-    enum LibraryDialog: Equatable { case rename, delete }
+    enum LibraryDialog: Equatable { case rename, delete, deleteAudio }
     @Published var draftTitle: String = ""
     @Published private(set) var lastError: String?
     @Published private(set) var micGranted: Bool = false
@@ -60,6 +60,7 @@ final class AppState: ObservableObject {
         // Finalize any session interrupted by a previous crash/quit.
         _ = try? manager.recoverInterruptedSessions()
         reloadRecent()
+        manager.purgeExpiredAudio()
         refreshPermissions()
         if config.detectMeetings { startMeetingDetection() }
 
@@ -97,6 +98,25 @@ final class AppState: ObservableObject {
     func deleteMeeting(id: String) {
         try? manager.delete(id: id)
         reloadRecent()
+    }
+
+    /// Manually purge a single meeting's audio (keeps transcript + notes).
+    func deleteAudio(id: String) {
+        try? manager.deleteAudio(id: id)
+        reloadRecent()
+    }
+
+    /// Purge audio for ALL processed meetings (the Settings "Free up space now").
+    func freeUpAllAudio() {
+        for session in allSessions where session.status == .processed {
+            try? manager.deleteAudio(id: session.id)
+        }
+        reloadRecent()
+    }
+
+    /// Bytes of audio reclaimable right now (processed meetings).
+    func reclaimableAudioBytes() -> Int64 {
+        manager.reclaimableAudioBytes()
     }
 
     /// Reads a meeting's note file for the reader. File IO is small and local.
@@ -308,6 +328,7 @@ final class AppState: ObservableObject {
                 notesReadyPopup.show(title: processed.title) { [weak self] in
                     self?.revealNote(processed)
                 }
+                manager.purgeExpiredAudio()
             } catch {
                 lastError = error.localizedDescription
             }

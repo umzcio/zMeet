@@ -48,6 +48,9 @@ struct LibraryView: View {
             if state.libraryDialog == .delete, let session = selected {
                 deleteDialog(session)
             }
+            if state.libraryDialog == .deleteAudio, let session = selected {
+                deleteAudioDialog(session)
+            }
         }
         .frame(width: 1000, height: 680)
         .background(Self.bg)
@@ -99,6 +102,29 @@ struct LibraryView: View {
                         let wasSelected = session.id
                         state.deleteMeeting(id: session.id)
                         if state.librarySelectedID == wasSelected { state.librarySelectedID = nil }
+                        state.libraryDialog = nil
+                    }
+                }
+            }
+        }
+    }
+
+    private func deleteAudioDialog(_ session: MeetingSession) -> some View {
+        DialogScaffold(onDismiss: { state.libraryDialog = nil }) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Delete audio for this meeting?")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Self.light)
+                Text("Removes the recording for \u{201C}\(session.title)\u{201D} to save space. The transcript and notes are kept. This can't be undone.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Self.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Spacer()
+                    DialogButton(title: "Cancel", kind: .secondary) { state.libraryDialog = nil }
+                        .keyboardShortcut(.cancelAction)
+                    DialogButton(title: "Delete Audio", kind: .destructive) {
+                        state.deleteAudio(id: session.id)
                         state.libraryDialog = nil
                     }
                 }
@@ -288,8 +314,10 @@ struct LibraryView: View {
                     meetingHeader(session)
                     tabBar
                     reader(session)
-                    if session.status == .processed || FileManager.default.fileExists(atPath: session.audioPath) {
+                    if FileManager.default.fileExists(atPath: session.audioPath) {
                         playerBar(session)
+                    } else if session.status == .processed {
+                        audioRemovedCaption
                     }
                 }
 
@@ -365,6 +393,12 @@ struct LibraryView: View {
             }
             DropdownRow(title: "Reveal in Finder") {
                 state.revealNote(session); showActions = false
+            }
+            if session.status == .processed,
+               FileManager.default.fileExists(atPath: session.audioPath) {
+                DropdownRow(title: "Delete audio…") {
+                    showActions = false; state.libraryDialog = .deleteAudio
+                }
             }
             Rectangle().fill(Self.hairline).frame(height: 1).padding(.vertical, 4)
             DropdownRow(title: "Delete…", destructive: true) {
@@ -494,6 +528,16 @@ struct LibraryView: View {
     }
 
     // MARK: Audio player
+
+    private var audioRemovedCaption: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "speaker.slash").font(.system(size: 13)).foregroundStyle(Self.faint)
+            Text("Audio removed to save space").font(.system(size: 12.5)).foregroundStyle(Self.muted)
+            Spacer()
+        }
+        .padding(.horizontal, 32).padding(.vertical, 16)
+        .overlay(Rectangle().fill(Self.hairline).frame(height: 1), alignment: .top)
+    }
 
     @ViewBuilder
     private func playerBar(_ session: MeetingSession) -> some View {
