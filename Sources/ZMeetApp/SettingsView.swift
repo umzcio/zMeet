@@ -173,13 +173,7 @@ struct SettingsView: View {
             }
             divider
             row("Audio quality", "Higher quality means larger files.") {
-                Picker("", selection: bitrateBinding) {
-                    Text("Standard").tag(128_000)
-                    Text("High").tag(192_000)
-                    Text("Maximum").tag(256_000)
-                }
-                .labelsHidden()
-                .frame(width: 130)
+                segmentedInt(bitrateBinding, [("Standard", 128_000), ("High", 192_000), ("Maximum", 256_000)])
             }
         }
         .onAppear { inputDevices = AudioInputs.available() }
@@ -206,14 +200,7 @@ struct SettingsView: View {
             card {
                 row("Delete audio after",
                     "Transcripts and notes are always kept.") {
-                    Picker("", selection: retentionBinding) {
-                        Text("Never").tag(0)
-                        Text("7 days").tag(7)
-                        Text("30 days").tag(30)
-                        Text("90 days").tag(90)
-                    }
-                    .labelsHidden()
-                    .frame(width: 130)
+                    segmentedInt(retentionBinding, [("Never", 0), ("7 days", 7), ("30 days", 30), ("90 days", 90)])
                 }
                 divider
                 row("Recorded audio", "Free up space by deleting audio for processed meetings.") {
@@ -297,6 +284,27 @@ struct SettingsView: View {
     private func toggleRow(_ title: String, _ subtitle: String, _ binding: Binding<Bool>) -> some View {
         row(title, subtitle) {
             Toggle("", isOn: binding).labelsHidden().toggleStyle(.switch).tint(Self.mint)
+        }
+    }
+
+    /// In-app segmented pill control for a small fixed set of Int options —
+    /// replaces the native dropdown Picker so it matches the app's styling.
+    private func segmentedInt(_ selection: Binding<Int>, _ options: [(String, Int)]) -> some View {
+        HStack(spacing: 6) {
+            ForEach(options.indices, id: \.self) { i in
+                let opt = options[i]
+                let selected = selection.wrappedValue == opt.1
+                Button { selection.wrappedValue = opt.1 } label: {
+                    Text(opt.0)
+                        .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? Color(red: 0.05, green: 0.09, blue: 0.07) : Color.secondary)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(selected ? Self.mint : Color.white.opacity(0.06), in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
