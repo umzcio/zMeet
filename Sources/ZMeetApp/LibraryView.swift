@@ -15,6 +15,7 @@ struct LibraryView: View {
     @State private var transcriptText: String?
     @State private var renameText = ""
     @State private var showActions = false
+    @State private var contextSession: MeetingSession?
     @State private var searchHits: [SearchHit] = []
     @State private var searchTask: Task<Void, Never>?
 
@@ -51,6 +52,8 @@ struct LibraryView: View {
             if state.libraryDialog == .deleteAudio, let session = selected {
                 deleteAudioDialog(session)
             }
+
+            contextMenuOverlay
         }
         .frame(width: 1000, height: 680)
         .background(Self.bg)
@@ -248,6 +251,45 @@ struct LibraryView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(RightClickCatcher { showContextMenu(session) })
+        .anchorPreference(key: RailRowAnchorKey.self, value: .bounds) { [session.id: $0] }
+    }
+
+    private func showContextMenu(_ session: MeetingSession) {
+        showActions = false
+        state.librarySelectedID = session.id
+        contextSession = session
+    }
+
+    /// Close whichever actions menu is open (the ⋯ overlay and/or the rail
+    /// right-click context menu).
+    private func closeMenus() {
+        showActions = false
+        contextSession = nil
+    }
+
+    /// The rail right-click menu: the same actions dropdown, positioned at the
+    /// right-clicked row via its anchor, with a tap-catcher to dismiss.
+    @ViewBuilder
+    private var contextMenuOverlay: some View {
+        if contextSession != nil {
+            Color.clear
+                .overlayPreferenceValue(RailRowAnchorKey.self) { anchors in
+                    GeometryReader { proxy in
+                        if let session = contextSession, let anchor = anchors[session.id] {
+                            let rect = proxy[anchor]
+                            ZStack(alignment: .topLeading) {
+                                Color.black.opacity(0.001)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { contextSession = nil }
+                                actionsDropdown(session)
+                                    .offset(x: min(rect.minX, 1000 - 196 - 8),
+                                            y: rect.maxY + 2)
+                            }
+                        }
+                    }
+                }
+        }
     }
 
     /// The leading glyph for a rail row: the real Zoom/Teams app icon when known,
@@ -386,23 +428,23 @@ struct LibraryView: View {
     private func actionsDropdown(_ session: MeetingSession) -> some View {
         VStack(spacing: 0) {
             DropdownRow(title: "Rename…") {
-                renameText = session.title; showActions = false; state.libraryDialog = .rename
+                renameText = session.title; closeMenus(); state.libraryDialog = .rename
             }
             DropdownRow(title: session.status == .processed ? "Re-process" : "Process Notes") {
-                state.process(id: session.id); showActions = false
+                state.process(id: session.id); closeMenus()
             }
             DropdownRow(title: "Reveal in Finder") {
-                state.revealNote(session); showActions = false
+                state.revealNote(session); closeMenus()
             }
             if session.status == .processed,
                FileManager.default.fileExists(atPath: session.audioPath) {
                 DropdownRow(title: "Delete audio…") {
-                    showActions = false; state.libraryDialog = .deleteAudio
+                    closeMenus(); state.libraryDialog = .deleteAudio
                 }
             }
             Rectangle().fill(Self.hairline).frame(height: 1).padding(.vertical, 4)
             DropdownRow(title: "Delete…", destructive: true) {
-                showActions = false; state.libraryDialog = .delete
+                closeMenus(); state.libraryDialog = .delete
             }
         }
         .padding(.vertical, 5)
@@ -742,6 +784,17 @@ struct LibraryView: View {
     static let dateFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; return f
     }()
+}
+
+// MARK: - Rail row anchor preference key
+
+/// Carries each rail row's bounds up to the body so the right-click context menu
+/// can be positioned under the clicked row.
+private struct RailRowAnchorKey: PreferenceKey {
+    static let defaultValue: [String: Anchor<CGRect>] = [:]
+    static func reduce(value: inout Value, nextValue: () -> Value) {
+        value.merge(nextValue()) { _, new in new }
+    }
 }
 
 // MARK: - In-app dropdown row
