@@ -8,7 +8,7 @@ import ZMeetCore
 /// both to a canonical PCM format, mixes them through an AVAudioEngine, and
 /// writes the mix to an AAC `.m4a`. The main mixer is muted so nothing plays
 /// back to the speakers (no feedback); a capture mixer is tapped at full level.
-final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchecked Sendable {
+final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private var stream: SCStream?
     private let engine = AVAudioEngine()
     private let systemPlayer = AVAudioPlayerNode()
@@ -85,7 +85,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchec
         config.height = 2
         config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
 
-        let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+        let stream = SCStream(filter: filter, configuration: config, delegate: self)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
         if audio.captureMicrophone {
             try stream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: queue)
@@ -93,6 +93,10 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, @unchec
         self.stream = stream
         try await stream.startCapture()
         log("capture started (system=\(audio.captureSystemAudio) mic=\(audio.captureMicrophone))")
+    }
+
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        log("stream stopped with error: \(error)")
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {

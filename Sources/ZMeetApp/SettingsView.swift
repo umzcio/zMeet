@@ -39,26 +39,51 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-            Rectangle().fill(Self.hairline).frame(width: 1)
-            content
-        }
-        // Floating dropdown menus, positioned at their trigger via anchor
-        // preferences, above everything with a tap-catcher to dismiss.
-        .overlayPreferenceValue(DropdownAnchorKey.self) { anchors in
-            GeometryReader { proxy in
-                if let id = openMenu, let anchor = anchors[id] {
-                    let rect = proxy[anchor]
-                    let menuWidth: CGFloat = id == .microphone ? 230 : 160
-                    ZStack(alignment: .topLeading) {
-                        Color.black.opacity(0.001)
-                            .contentShape(Rectangle())
-                            .onTapGesture { openMenu = nil }
-                        dropdownMenu(for: id)
-                            .frame(width: menuWidth)
-                            .offset(x: min(max(8, rect.maxX - menuWidth), 720 - menuWidth - 8),
-                                    y: rect.maxY + 4)
+        ZStack {
+            HStack(spacing: 0) {
+                sidebar
+                Rectangle().fill(Self.hairline).frame(width: 1)
+                content
+            }
+            // Floating dropdown menus, positioned at their trigger via anchor
+            // preferences, above everything with a tap-catcher to dismiss.
+            .overlayPreferenceValue(DropdownAnchorKey.self) { anchors in
+                GeometryReader { proxy in
+                    if let id = openMenu, let anchor = anchors[id] {
+                        let rect = proxy[anchor]
+                        let menuWidth: CGFloat = id == .microphone ? 230 : 160
+                        ZStack(alignment: .topLeading) {
+                            Color.black.opacity(0.001)
+                                .contentShape(Rectangle())
+                                .onTapGesture { openMenu = nil }
+                            dropdownMenu(for: id)
+                                .frame(width: menuWidth)
+                                .offset(x: min(max(8, rect.maxX - menuWidth), 720 - menuWidth - 8),
+                                        y: rect.maxY + 4)
+                        }
+                    }
+                }
+            }
+
+            if confirmFreeUp {
+                DialogScaffold(onDismiss: { confirmFreeUp = false }) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Free up space?")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text("This deletes the recording for every processed meeting, keeping all transcripts and notes. This can't be undone.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 10) {
+                            Spacer()
+                            DialogButton(title: "Cancel", kind: .secondary) { confirmFreeUp = false }
+                            DialogButton(title: "Delete Audio", kind: .destructive) {
+                                state.freeUpAllAudio()
+                                reclaimable = state.reclaimableAudioBytes()
+                                confirmFreeUp = false
+                            }
+                        }
                     }
                 }
             }
@@ -301,15 +326,6 @@ struct SettingsView: View {
             }
         }
         .onAppear { reclaimable = state.reclaimableAudioBytes() }
-        .alert("Free up space?", isPresented: $confirmFreeUp) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete Audio", role: .destructive) {
-                state.freeUpAllAudio()
-                reclaimable = state.reclaimableAudioBytes()
-            }
-        } message: {
-            Text("This deletes the recording for every processed meeting, keeping all transcripts and notes. This can't be undone.")
-        }
     }
 
     private var permissionsSection: some View {
