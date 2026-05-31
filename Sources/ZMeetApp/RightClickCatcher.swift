@@ -23,6 +23,11 @@ struct RightClickCatcher: NSViewRepresentable {
         }
         @available(*, unavailable) required init?(coder: NSCoder) { nil }
 
+        // Transparent to hit-testing so it never intercepts clicks — left-clicks
+        // pass straight through to the SwiftUI row button beneath. Right-clicks
+        // are caught by the global event monitor below, independent of layering.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
         // Cleanup happens here (not deinit) when the view leaves its window —
         // a nonisolated deinit can't touch the non-Sendable monitor under Swift 6.
         override func viewDidMoveToWindow() {
