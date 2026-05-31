@@ -1,11 +1,12 @@
 import Foundation
 import FoundationModels
+import ZMeetCore
 
 /// Summarizes a transcript into structured Markdown notes using macOS 26's
 /// on-device Foundation Models LLM. Falls back to a simple extractive summary
 /// when Apple Intelligence is unavailable. Stateless / Sendable.
 @available(macOS 26, *)
-struct MeetingSummarizer: Sendable {
+struct MeetingSummarizer: Summarizer {
     /// On-device context is limited, so cap the transcript fed to the model.
     private let maxTranscriptCharacters = 12_000
 
@@ -20,29 +21,7 @@ struct MeetingSummarizer: Sendable {
             ? "\n\n_(Transcript was truncated for summarization.)_"
             : ""
 
-        let prompt = """
-        You are writing meeting notes for a meeting titled "\(title)".
-        Using only the transcript below, produce concise notes in Markdown with \
-        exactly these sections and headers:
-
-        ## Summary
-        (2–4 sentences.)
-
-        ## Key Points
-        (Bulleted.)
-
-        ## Action Items
-        (Bulleted; include an owner if the transcript names one.)
-
-        ## Decisions
-        (Bulleted.)
-
-        If a section has nothing, write "- None". Do not invent content that is \
-        not supported by the transcript.
-
-        Transcript:
-        \(clipped)
-        """
+        let prompt = MeetingSummaryPrompt.build(transcript: clipped, title: title)
 
         do {
             let response = try await LanguageModelSession().respond(to: prompt)
