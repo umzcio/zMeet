@@ -1,7 +1,7 @@
 import Foundation
 
 public final class SessionManager {
-    private let config: ZMeetConfig
+    private var config: ZMeetConfig
     private let recorder: MeetingRecorder
     private let runner: ProcessRunner
     private let fileManager: FileManager
@@ -40,6 +40,15 @@ public final class SessionManager {
         let searchDBURL = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
             .appendingPathComponent("search.db")
         self.searchStore = try? SearchStore(databaseURL: searchDBURL)
+    }
+
+    /// Apply a new configuration in place. Lets callers propagate settings
+    /// changes without recreating the manager (which would reopen the search
+    /// DB). Callers MUST recreate the manager instead when appDataPath or
+    /// outputPath change, since those determine the on-disk layout and the
+    /// search DB location.
+    public func updateConfig(_ newConfig: ZMeetConfig) {
+        config = newConfig
     }
 
     public func start(title rawTitle: String, sourceApp: String?) throws -> MeetingSession {

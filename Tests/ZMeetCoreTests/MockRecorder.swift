@@ -6,6 +6,7 @@ import Foundation
 final class MockRecorder: MeetingRecorder {
     private(set) var startedURL: URL?
     private(set) var startedLogURL: URL?
+    private(set) var startedAudio: AudioConfig?
     private(set) var stopCount = 0
     var createsAudioFile: Bool
     var audioFileSize: Int
@@ -21,6 +22,7 @@ final class MockRecorder: MeetingRecorder {
         if let startError { throw startError }
         startedURL = url
         startedLogURL = logURL
+        startedAudio = audio
         if createsAudioFile {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),

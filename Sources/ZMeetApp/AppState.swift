@@ -169,9 +169,16 @@ final class AppState: ObservableObject {
     /// Mutate + persist config, then apply side-effects (recorder uses the new
     /// config; meeting detection turns on/off).
     func updateConfig(_ mutate: (inout ZMeetConfig) -> Void) {
+        let oldAppData = config.appDataPath
+        let oldOutput = config.outputPath
         mutate(&config)
         try? store.write(config)
-        manager = SessionManager(config: config, recorder: recorder)
+        if config.appDataPath != oldAppData || config.outputPath != oldOutput {
+            // Storage layout / search DB location changed — rebuild the manager.
+            manager = SessionManager(config: config, recorder: recorder)
+        } else {
+            manager.updateConfig(config)
+        }
         if config.detectMeetings {
             startMeetingDetection()
         } else {
@@ -225,18 +232,18 @@ final class AppState: ObservableObject {
     func startRecording(mode: RecordingMode, sourceApp: String? = nil) {
         lastError = nil
         meetingPopup.hide()
-        // Apply the chosen mode (remote captures system audio, in-person doesn't)
-        // and remember it.
-        updateConfig {
-            $0.recordingMode = mode
-            $0.audio.captureSystemAudio = (mode == .remote)
-        }
         Task {
             let ok = await requestPermissions()
             guard ok else {
                 lastError = "Microphone and Screen Recording permission are required. Grant them in System Settings → Privacy & Security, then try again."
                 Permissions.openScreenRecordingSettings()
                 return
+            }
+            // Permissions confirmed — now commit the chosen mode (remote captures
+            // system audio, in-person doesn't) and persist it.
+            updateConfig {
+                $0.recordingMode = mode
+                $0.audio.captureSystemAudio = (mode == .remote)
             }
             do {
                 _ = try manager.start(title: draftTitle, sourceApp: sourceApp)

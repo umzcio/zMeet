@@ -90,6 +90,22 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     return (config, root)
 }
 
+@Test func updateConfigPropagatesAudioWithoutRecreation() throws {
+    var (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    config.audio.captureSystemAudio = false
+    let recorder = MockRecorder()
+    let manager = SessionManager(config: config, recorder: recorder)
+
+    // Flip an audio field via the live manager (no recreation).
+    config.audio.captureSystemAudio = true
+    manager.updateConfig(config)
+
+    _ = try manager.start(title: "Demo", sourceApp: nil)
+
+    #expect(recorder.startedAudio?.captureSystemAudio == true)
+}
+
 @Test func startStopProcessFlowWithMockRecorder() throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
