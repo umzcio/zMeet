@@ -61,7 +61,7 @@ struct LibraryView: View {
         .tint(Self.mint)
         .onReceive(ticker) { _ in audio.tick() }
         .task(id: reloadKey) { await loadSelected() }
-        .onChange(of: selected?.id) { showActions = false }
+        .onChange(of: selected?.id) { showActions = false; contextSession = nil }
         .onChange(of: query) { runSearch() }
     }
 
