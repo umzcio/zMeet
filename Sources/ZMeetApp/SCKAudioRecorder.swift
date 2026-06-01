@@ -57,6 +57,9 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         try engine.start()
         systemPlayer.play()
         micPlayer.play()
+        // Mic-only pre-mix gain (1.0 = unchanged). Scales just the mic node's
+        // contribution into the capture mixer; system audio is unaffected.
+        micPlayer.volume = audio.micGain
 
         Task {
             do { try await self.startStream(audio: audio) }
