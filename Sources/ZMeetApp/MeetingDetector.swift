@@ -19,6 +19,12 @@ final class MeetingDetector {
     private var timer: Timer?
     private(set) var current: DetectedMeeting?
 
+    /// Consecutive scans with no meeting detected before we treat it as ended.
+    /// At the 4s scan interval this is ~24s, so transient gaps (Teams password /
+    /// waiting room, brief title changes) don't stop a detection-started recording.
+    private let disappearThreshold = 6
+    private var missCount = 0
+
     /// Called when the detected meeting changes (a meeting starts → non-nil,
     /// or ends → nil).
     var onChange: ((DetectedMeeting?) -> Void)?
@@ -34,13 +40,24 @@ final class MeetingDetector {
     func stop() {
         timer?.invalidate()
         timer = nil
+        missCount = 0
     }
 
     private func scan() {
         let detected = Self.detectMeeting()
-        if detected != current {
-            current = detected
-            onChange?(detected)
+        if let detected {
+            missCount = 0
+            if detected != current {
+                current = detected
+                onChange?(detected)
+            }
+        } else if current != nil {
+            missCount += 1
+            if missCount >= disappearThreshold {
+                current = nil
+                missCount = 0
+                onChange?(nil)
+            }
         }
     }
 
