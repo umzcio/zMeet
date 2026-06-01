@@ -785,7 +785,17 @@ struct LibraryView: View {
                      Self.timeFormatter.string(from: session.startedAt)]
         if let dur = durationShort(session) { parts.append(dur) }
         parts.append(MeetingSource.of(session).label)
+        if let m = modeLabel(session.mode) { parts.append(m) }
         return parts.joined(separator: " · ")
+    }
+
+    private func modeLabel(_ mode: RecordingMode?) -> String? {
+        switch mode {
+        case .remote: "Remote"
+        case .hybrid: "Hybrid"
+        case .inPerson: "In-person"
+        case nil: nil
+        }
     }
 
     private func durationShort(_ session: MeetingSession) -> String? {
