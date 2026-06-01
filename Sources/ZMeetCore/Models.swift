@@ -113,6 +113,48 @@ public struct CaptureProfile: Codable, Equatable, Sendable {
     }
 }
 
+/// The three per-mode capture presets. A struct (not a dictionary) so it serializes
+/// to clean keyed JSON; the subscript gives dictionary-like access by mode.
+public struct CaptureProfiles: Codable, Equatable, Sendable {
+    public var remote: CaptureProfile
+    public var hybrid: CaptureProfile
+    public var inPerson: CaptureProfile
+
+    public init(remote: CaptureProfile, hybrid: CaptureProfile, inPerson: CaptureProfile) {
+        self.remote = remote
+        self.hybrid = hybrid
+        self.inPerson = inPerson
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        remote = try c.decodeIfPresent(CaptureProfile.self, forKey: .remote) ?? .default(for: .remote)
+        hybrid = try c.decodeIfPresent(CaptureProfile.self, forKey: .hybrid) ?? .default(for: .hybrid)
+        inPerson = try c.decodeIfPresent(CaptureProfile.self, forKey: .inPerson) ?? .default(for: .inPerson)
+    }
+
+    public static func defaults() -> CaptureProfiles {
+        CaptureProfiles(remote: .default(for: .remote), hybrid: .default(for: .hybrid), inPerson: .default(for: .inPerson))
+    }
+
+    public subscript(mode: RecordingMode) -> CaptureProfile {
+        get {
+            switch mode {
+            case .remote: remote
+            case .hybrid: hybrid
+            case .inPerson: inPerson
+            }
+        }
+        set {
+            switch mode {
+            case .remote: remote = newValue
+            case .hybrid: hybrid = newValue
+            case .inPerson: inPerson = newValue
+            }
+        }
+    }
+}
+
 public struct AudioConfig: Codable, Equatable, Sendable {
     public var captureSystemAudio: Bool
     public var captureMicrophone: Bool
@@ -175,6 +217,9 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     /// When true, recordings get an offline background-noise cleanup pass after
     /// the meeting stops (high-pass + downward expander). Default off.
     public var noiseSuppression: Bool
+    /// Per-mode capture presets. Applied to the live config when a recording starts
+    /// in that mode (see AppState.startRecording).
+    public var profiles: CaptureProfiles
 
     public init(
         outputPath: String,
@@ -188,7 +233,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         recordingMode: RecordingMode = .remote,
         audioRetentionDays: Int = 0,
         useCloudSummaries: Bool = false,
-        noiseSuppression: Bool = false
+        noiseSuppression: Bool = false,
+        profiles: CaptureProfiles = .defaults()
     ) {
         self.outputPath = outputPath
         self.appDataPath = appDataPath
@@ -202,7 +248,11 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         self.audioRetentionDays = audioRetentionDays
         self.useCloudSummaries = useCloudSummaries
         self.noiseSuppression = noiseSuppression
+        self.profiles = profiles
     }
+
+    /// Per-mode capture preset for the given recording mode.
+    public func profile(for mode: RecordingMode) -> CaptureProfile { profiles[mode] }
 
     /// Lenient decoding so older/partial `config.json` files still load — any
     /// missing key falls back to its default instead of failing the whole load.
@@ -223,6 +273,21 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         audioRetentionDays = try c.decodeIfPresent(Int.self, forKey: .audioRetentionDays) ?? 0
         useCloudSummaries = try c.decodeIfPresent(Bool.self, forKey: .useCloudSummaries) ?? false
         noiseSuppression = try c.decodeIfPresent(Bool.self, forKey: .noiseSuppression) ?? false
+        // `audio` and `noiseSuppression` are decoded above so they're available to
+        // migrate legacy global capture settings into per-mode profiles below.
+        if let decodedProfiles = try c.decodeIfPresent(CaptureProfiles.self, forKey: .profiles) {
+            profiles = decodedProfiles
+        } else {
+            let base = CaptureProfile(
+                captureSystemAudio: true,
+                micDeviceID: audio.micDeviceID,
+                micGain: audio.micGain,
+                noiseSuppression: noiseSuppression
+            )
+            var inPerson = base
+            inPerson.captureSystemAudio = false
+            profiles = CaptureProfiles(remote: base, hybrid: base, inPerson: inPerson)
+        }
     }
 
     public static func `default`(
@@ -241,7 +306,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             recordingMode: .remote,
             audioRetentionDays: 0,
             useCloudSummaries: false,
-            noiseSuppression: false
+            noiseSuppression: false,
+            profiles: .defaults()
         )
     }
 }
