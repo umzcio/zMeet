@@ -401,6 +401,10 @@ struct SettingsView: View {
             row("Audio quality", "Higher quality means larger files. (Applies to all modes.)") {
                 dropdownTrigger(.quality)
             }
+            divider
+            toggleRow("Label speakers (You vs Others)",
+                      "Tags who spoke in remote/hybrid transcripts (your mic vs the other participants). Adds processing time.",
+                      boolBinding(\.labelSpeakers))
         }
         .onAppear { inputDevices = AudioInputs.available() }
     }
