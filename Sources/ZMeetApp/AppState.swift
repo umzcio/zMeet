@@ -292,6 +292,7 @@ final class AppState: ObservableObject {
                 $0.audio.micDeviceID = p.micDeviceID
                 $0.audio.micGain = p.micGain
                 $0.noiseSuppression = p.noiseSuppression
+                $0.audio.separateTracks = ($0.labelSpeakers && p.captureSystemAudio)
             }
             do {
                 _ = try manager.start(title: draftTitle, sourceApp: sourceApp, mode: mode)
@@ -421,9 +422,30 @@ final class AppState: ObservableObject {
         }
     }
 
+    @available(macOS 26, *)
+    private func transcribeForNotes(audioURL: URL) async throws -> String {
+        let folder = audioURL.deletingLastPathComponent()
+        let micURL = folder.appendingPathComponent("mic.m4a")
+        let systemURL = folder.appendingPathComponent("system.m4a")
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: micURL.path), fm.fileExists(atPath: systemURL.path) else {
+            return try await SpeechTranscription().transcribe(audioURL: audioURL)
+        }
+        // Diarize: transcribe each side (sequential — one shared speech model),
+        // interleave, then drop the transient tracks.
+        let you = try await SpeechTranscription().transcribeSegments(audioURL: micURL)
+        let others = try await SpeechTranscription().transcribeSegments(audioURL: systemURL)
+        let labeled = Diarizer().merge(you: you, others: others)
+        try? fm.removeItem(at: micURL)
+        try? fm.removeItem(at: systemURL)
+        return labeled.isEmpty
+            ? try await SpeechTranscription().transcribe(audioURL: audioURL)
+            : labeled
+    }
+
     private func produceNotes(audioURL: URL, title: String) async throws -> (transcript: String, summary: String, engine: SummaryEngine) {
         if #available(macOS 26, *) {
-            let transcript = try await SpeechTranscription().transcribe(audioURL: audioURL)
+            let transcript = try await transcribeForNotes(audioURL: audioURL)
             let onDevice = MeetingSummarizer()
             var cloud: (any Summarizer)?
             if config.useCloudSummaries,
