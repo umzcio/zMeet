@@ -25,14 +25,20 @@ struct ModeChoiceView: View {
                 choiceCard(
                     mode: .remote,
                     icon: "wifi",
-                    title: "Remote / Hybrid",
-                    detail: "Capture the other participants (system audio) and your microphone."
+                    title: "Remote",
+                    detail: "You're at your desk. Capture the other participants (system audio) and your microphone."
+                )
+                choiceCard(
+                    mode: .hybrid,
+                    icon: "person.2.wave.2.fill",
+                    title: "Hybrid",
+                    detail: "You're in a room with remote participants. Capture system audio and the room mic."
                 )
                 choiceCard(
                     mode: .inPerson,
                     icon: "person.2.fill",
                     title: "In-person",
-                    detail: "Capture the room through the microphone only."
+                    detail: "Everyone's in the room. Capture the room through the microphone only."
                 )
             }
             .padding(.horizontal, 22)
@@ -43,7 +49,7 @@ struct ModeChoiceView: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 18)
         }
-        .frame(width: 460)
+        .frame(width: 680)
         .background(Self.bg)
         .preferredColorScheme(.dark)
     }
