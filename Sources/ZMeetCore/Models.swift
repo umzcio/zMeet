@@ -77,7 +77,40 @@ public struct MeetingSession: Codable, Equatable, Sendable {
 /// system audio plus the mic; In-person records the room via the mic only.
 public enum RecordingMode: String, Codable, Equatable, Sendable {
     case remote
+    case hybrid
     case inPerson
+}
+
+/// Per-mode capture settings. Stored as presets in ZMeetConfig.profiles and copied
+/// into the live AudioConfig + noiseSuppression when recording starts in that mode.
+public struct CaptureProfile: Codable, Equatable, Sendable {
+    public var captureSystemAudio: Bool
+    public var micDeviceID: String?
+    public var micGain: Float
+    public var noiseSuppression: Bool
+
+    public init(captureSystemAudio: Bool, micDeviceID: String?, micGain: Float, noiseSuppression: Bool) {
+        self.captureSystemAudio = captureSystemAudio
+        self.micDeviceID = micDeviceID
+        self.micGain = micGain
+        self.noiseSuppression = noiseSuppression
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        captureSystemAudio = try c.decodeIfPresent(Bool.self, forKey: .captureSystemAudio) ?? true
+        micDeviceID = try c.decodeIfPresent(String.self, forKey: .micDeviceID)
+        micGain = try c.decodeIfPresent(Float.self, forKey: .micGain) ?? 1.0
+        noiseSuppression = try c.decodeIfPresent(Bool.self, forKey: .noiseSuppression) ?? false
+    }
+
+    public static func `default`(for mode: RecordingMode) -> CaptureProfile {
+        switch mode {
+        case .remote:   CaptureProfile(captureSystemAudio: true,  micDeviceID: nil, micGain: 1.0, noiseSuppression: true)
+        case .hybrid:   CaptureProfile(captureSystemAudio: true,  micDeviceID: nil, micGain: 2.0, noiseSuppression: true)
+        case .inPerson: CaptureProfile(captureSystemAudio: false, micDeviceID: nil, micGain: 2.0, noiseSuppression: false)
+        }
+    }
 }
 
 public struct AudioConfig: Codable, Equatable, Sendable {
