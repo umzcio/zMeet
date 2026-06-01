@@ -5,6 +5,7 @@ import ZMeetCore
 struct SettingsView: View {
     @ObservedObject var state: AppState
     @State private var selection: Section = .general
+    @State private var editingMode: RecordingMode = .remote
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var inputDevices: [AudioInputs.Device] = []
     @State private var reclaimable: Int64 = 0
@@ -142,22 +143,28 @@ struct SettingsView: View {
                     state.updateConfig { $0.audio.bitrate = opt.1 }; state.settingsMenu = nil
                 }
             }
+        case .captureMode:
+            return Self.modeOptions.map { opt in
+                MenuItem(label: opt.0, selected: opt.1 == editingMode) {
+                    editingMode = opt.1; state.settingsMenu = nil
+                }
+            }
         case .microphone:
-            let cur = state.config.audio.micDeviceID
+            let cur = state.config.profiles[editingMode].micDeviceID
             var items = [MenuItem(label: "System Default", selected: cur == nil) {
-                state.setMicDevice(nil); state.settingsMenu = nil
+                state.updateConfig { $0.profiles[editingMode].micDeviceID = nil }; state.settingsMenu = nil
             }]
             for dev in inputDevices {
                 items.append(MenuItem(label: dev.name, selected: cur == dev.id) {
-                    state.setMicDevice(dev.id); state.settingsMenu = nil
+                    state.updateConfig { $0.profiles[editingMode].micDeviceID = dev.id }; state.settingsMenu = nil
                 })
             }
             return items
         case .micGain:
-            let cur = state.config.audio.micGain
+            let cur = state.config.profiles[editingMode].micGain
             return Self.gainOptions.map { opt in
                 MenuItem(label: opt.0, selected: opt.1 == cur) {
-                    state.updateConfig { $0.audio.micGain = opt.1 }; state.settingsMenu = nil
+                    state.updateConfig { $0.profiles[editingMode].micGain = opt.1 }; state.settingsMenu = nil
                 }
             }
         }
@@ -371,20 +378,28 @@ struct SettingsView: View {
 
     private var recordingSection: some View {
         card {
+            row("Mode", "Settings below apply to this mode; pick a mode when you start recording.") {
+                dropdownTrigger(.captureMode)
+            }
+            divider
+            toggleRow("Capture system audio",
+                      "Record the other participants (off for fully in-person meetings).",
+                      profileBool(\.captureSystemAudio))
+            divider
             row("Microphone", "Input device used to record.") {
                 dropdownTrigger(.microphone)
             }
             divider
-            row("Audio quality", "Higher quality means larger files.") {
-                dropdownTrigger(.quality)
+            row("Mic gain", "Boost a quiet microphone for in-person recordings. High levels can clip a loud mic.") {
+                dropdownTrigger(.micGain)
             }
             divider
             toggleRow("Reduce background noise",
-                      "Cleans up steady background noise (fans, hum) in your recordings after each meeting.",
-                      boolBinding(\.noiseSuppression))
+                      "Cleans up steady background noise (fans, hum) after each meeting.",
+                      profileBool(\.noiseSuppression))
             divider
-            row("Mic gain", "Boost a quiet microphone for in-person recordings. High levels can clip a loud mic.") {
-                dropdownTrigger(.micGain)
+            row("Audio quality", "Higher quality means larger files. (Applies to all modes.)") {
+                dropdownTrigger(.quality)
             }
         }
         .onAppear { inputDevices = AudioInputs.available() }
@@ -505,6 +520,14 @@ struct SettingsView: View {
         Binding(get: { state.config[keyPath: kp] },
                 set: { v in state.updateConfig { $0[keyPath: kp] = v } })
     }
+
+    private func profileBool(_ kp: WritableKeyPath<CaptureProfile, Bool>) -> Binding<Bool> {
+        Binding(get: { state.config.profiles[editingMode][keyPath: kp] },
+                set: { v in state.updateConfig { $0.profiles[editingMode][keyPath: kp] = v } })
+    }
+    private static let modeOptions: [(String, RecordingMode)] = [
+        ("Remote", .remote), ("Hybrid", .hybrid), ("In-person", .inPerson),
+    ]
 
     private func formattedBytes(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
