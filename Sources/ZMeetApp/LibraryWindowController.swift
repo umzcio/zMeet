@@ -47,9 +47,11 @@ final class LibraryWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         self.window = window
+        AppActivation.windowOpened()
     }
 
     func windowWillClose(_ notification: Notification) {
         window = nil
+        AppActivation.windowClosed()
     }
 }

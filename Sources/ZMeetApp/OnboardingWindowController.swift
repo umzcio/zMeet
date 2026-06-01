@@ -50,6 +50,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         self.window = window
+        AppActivation.windowOpened()
     }
 
     func close() {
@@ -58,5 +59,6 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         window = nil
+        AppActivation.windowClosed()
     }
 }
