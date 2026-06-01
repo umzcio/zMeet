@@ -345,6 +345,20 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(decoded.noiseSuppression == true)
 }
 
+@Test func labelSpeakersAndSeparateTracksDefaultFalseAndRoundTrip() throws {
+    let config = ZMeetConfig.default(outputPath: "/tmp/zmeet-output")
+    #expect(config.labelSpeakers == false)
+    #expect(config.audio.separateTracks == false)
+
+    var c = config
+    c.labelSpeakers = true
+    c.audio.separateTracks = true
+    let data = try JSONEncoder.zmeet.encode(c)
+    let decoded = try JSONDecoder.zmeet.decode(ZMeetConfig.self, from: data)
+    #expect(decoded.labelSpeakers == true)
+    #expect(decoded.audio.separateTracks == true)
+}
+
 @Test func processingIndexesMeetingForSearch() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }

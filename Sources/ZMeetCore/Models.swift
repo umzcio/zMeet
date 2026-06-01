@@ -169,6 +169,10 @@ public struct AudioConfig: Codable, Equatable, Sendable {
     /// Linear gain multiplier applied to the microphone signal pre-mix
     /// (1.0 = unchanged). Boosts a quiet mic for in-person recordings.
     public var micGain: Float
+    /// When true, the recorder also writes per-stream mic.m4a/system.m4a tracks
+    /// (set at record time when speaker labeling is on and the mode captures system
+    /// audio). Transient — consumed and deleted by processing.
+    public var separateTracks: Bool
 
     public init(
         captureSystemAudio: Bool = true,
@@ -176,7 +180,8 @@ public struct AudioConfig: Codable, Equatable, Sendable {
         sampleRate: Int = 48_000,
         bitrate: Int = 128_000,
         micDeviceID: String? = nil,
-        micGain: Float = 1.0
+        micGain: Float = 1.0,
+        separateTracks: Bool = false
     ) {
         self.captureSystemAudio = captureSystemAudio
         self.captureMicrophone = captureMicrophone
@@ -184,6 +189,7 @@ public struct AudioConfig: Codable, Equatable, Sendable {
         self.bitrate = bitrate
         self.micDeviceID = micDeviceID
         self.micGain = micGain
+        self.separateTracks = separateTracks
     }
 
     public init(from decoder: Decoder) throws {
@@ -194,6 +200,7 @@ public struct AudioConfig: Codable, Equatable, Sendable {
         bitrate = try c.decodeIfPresent(Int.self, forKey: .bitrate) ?? 128_000
         micDeviceID = try c.decodeIfPresent(String.self, forKey: .micDeviceID)
         micGain = try c.decodeIfPresent(Float.self, forKey: .micGain) ?? 1.0
+        separateTracks = try c.decodeIfPresent(Bool.self, forKey: .separateTracks) ?? false
     }
 }
 
@@ -223,6 +230,9 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     /// Per-mode capture presets. Applied to the live config when a recording starts
     /// in that mode (see AppState.startRecording).
     public var profiles: CaptureProfiles
+    /// Label transcripts by speaker side (mic = "You", system = "Others") for
+    /// remote/hybrid recordings. Default off.
+    public var labelSpeakers: Bool
 
     public init(
         outputPath: String,
@@ -237,7 +247,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         audioRetentionDays: Int = 0,
         useCloudSummaries: Bool = false,
         noiseSuppression: Bool = false,
-        profiles: CaptureProfiles = .defaults()
+        profiles: CaptureProfiles = .defaults(),
+        labelSpeakers: Bool = false
     ) {
         self.outputPath = outputPath
         self.appDataPath = appDataPath
@@ -252,6 +263,7 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         self.useCloudSummaries = useCloudSummaries
         self.noiseSuppression = noiseSuppression
         self.profiles = profiles
+        self.labelSpeakers = labelSpeakers
     }
 
     /// Per-mode capture preset for the given recording mode.
@@ -291,6 +303,7 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             inPerson.captureSystemAudio = false
             profiles = CaptureProfiles(remote: base, hybrid: base, inPerson: inPerson)
         }
+        labelSpeakers = try c.decodeIfPresent(Bool.self, forKey: .labelSpeakers) ?? false
     }
 
     public static func `default`(
@@ -310,7 +323,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             audioRetentionDays: 0,
             useCloudSummaries: false,
             noiseSuppression: false,
-            profiles: .defaults()
+            profiles: .defaults(),
+            labelSpeakers: false
         )
     }
 }
