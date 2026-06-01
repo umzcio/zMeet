@@ -1,29 +1,31 @@
 import AppKit
 
-/// Renders the menu-bar status icon. Idle is a plain mic (template image that
-/// adapts to light/dark menu bars); recording is a mic wrapped in a waveform,
-/// tinted red as a live indicator.
+/// Renders the menu-bar status icon. Idle = plain template mic; recording = red
+/// mic-in-waveform; processing = mint wand (notes being generated).
 enum MenuBarIcon {
-    static func image(recording: Bool) -> NSImage {
-        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+    enum State { case idle, recording, processing }
 
-        if recording {
+    static func image(for state: State) -> NSImage {
+        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+        switch state {
+        case .idle:
+            let mic = symbol("mic.fill", fallback: "mic").withSymbolConfiguration(config) ?? symbol("mic.fill", fallback: "mic")
+            mic.isTemplate = true
+            return mic
+        case .recording:
             let base = symbol(recordingSymbolName, fallback: "mic.fill")
-            // Red, non-template so the tint survives in the menu bar.
-            let red = base.withSymbolConfiguration(
-                config.applying(.init(paletteColors: [.systemRed]))
-            ) ?? base
+            let red = base.withSymbolConfiguration(config.applying(.init(paletteColors: [.systemRed]))) ?? base
             red.isTemplate = false
             return red
+        case .processing:
+            let base = symbol("wand.and.stars", fallback: "gearshape.fill")
+            let mint = NSColor(red: 0.180, green: 0.878, blue: 0.541, alpha: 1)
+            let tinted = base.withSymbolConfiguration(config.applying(.init(paletteColors: [mint]))) ?? base
+            tinted.isTemplate = false
+            return tinted
         }
-
-        let mic = symbol("mic.fill", fallback: "mic")
-            .withSymbolConfiguration(config) ?? symbol("mic.fill", fallback: "mic")
-        mic.isTemplate = true
-        return mic
     }
 
-    /// The first available "mic + waveform" symbol across macOS versions.
     private static var recordingSymbolName: String {
         for name in ["waveform.badge.mic", "mic.and.signal.meter.fill", "mic.fill"] {
             if NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil { return name }

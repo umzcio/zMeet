@@ -265,6 +265,14 @@ final class AppState: ObservableObject {
         return false
     }
 
+    var iconState: MenuBarIcon.State {
+        switch phase {
+        case .recording: return .recording
+        case .processing: return .processing
+        case .idle: return .idle
+        }
+    }
+
     /// Manual start: ask remote vs in-person first, then record.
     func requestManualStart() {
         modeChoicePopup.show { [weak self] mode in
