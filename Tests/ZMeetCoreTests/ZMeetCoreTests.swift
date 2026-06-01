@@ -76,6 +76,14 @@ import Testing
     #expect(decoded == session)
 }
 
+@Test func startStampsRecordingModeOnSession() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+    let started = try manager.start(title: "Room", sourceApp: nil, mode: .inPerson)
+    #expect(started.mode == .inPerson)
+}
+
 private func makeTempConfig() -> (ZMeetConfig, URL) {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("zmeet-tests-\(UUID().uuidString)", isDirectory: true)

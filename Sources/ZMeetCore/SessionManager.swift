@@ -51,7 +51,7 @@ public final class SessionManager {
         config = newConfig
     }
 
-    public func start(title rawTitle: String, sourceApp: String?) throws -> MeetingSession {
+    public func start(title rawTitle: String, sourceApp: String?, mode: RecordingMode? = nil) throws -> MeetingSession {
         if let active = try activeSession() {
             throw ZMeetError.activeSessionExists(active.id)
         }
@@ -77,6 +77,7 @@ public final class SessionManager {
             id: id,
             title: title,
             sourceApp: sourceApp,
+            mode: mode,
             startedAt: startedAt,
             endedAt: nil,
             status: .recording,

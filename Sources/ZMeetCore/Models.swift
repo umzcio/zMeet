@@ -37,6 +37,7 @@ public struct MeetingSession: Codable, Equatable, Sendable {
     public var id: String
     public var title: String
     public var sourceApp: String?
+    public var mode: RecordingMode?
     public var startedAt: Date
     public var endedAt: Date?
     public var status: SessionStatus
@@ -50,6 +51,7 @@ public struct MeetingSession: Codable, Equatable, Sendable {
         id: String,
         title: String,
         sourceApp: String?,
+        mode: RecordingMode? = nil,
         startedAt: Date,
         endedAt: Date?,
         status: SessionStatus,
@@ -62,6 +64,7 @@ public struct MeetingSession: Codable, Equatable, Sendable {
         self.id = id
         self.title = title
         self.sourceApp = sourceApp
+        self.mode = mode
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.status = status
