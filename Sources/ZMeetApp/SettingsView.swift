@@ -116,6 +116,11 @@ struct SettingsView: View {
         [("Never", 0), ("7 days", 7), ("30 days", 30), ("90 days", 90)]
     private static let qualityOptions: [(String, Int)] =
         [("Standard", 128_000), ("High", 192_000), ("Maximum", 256_000)]
+    static let gainOptions: [(String, Float)] = [
+        ("Normal", 1.0),
+        ("+6 dB", 2.0),
+        ("+12 dB", 4.0),
+    ]
 
     /// One selectable row in a dropdown: label, whether it's the current value,
     /// and the action to apply it.
@@ -148,6 +153,13 @@ struct SettingsView: View {
                 })
             }
             return items
+        case .micGain:
+            let cur = state.config.audio.micGain
+            return Self.gainOptions.map { opt in
+                MenuItem(label: opt.0, selected: opt.1 == cur) {
+                    state.updateConfig { $0.audio.micGain = opt.1 }; state.settingsMenu = nil
+                }
+            }
         }
     }
 
@@ -370,6 +382,10 @@ struct SettingsView: View {
             toggleRow("Reduce background noise",
                       "Cleans up steady background noise (fans, hum) in your recordings after each meeting.",
                       boolBinding(\.noiseSuppression))
+            divider
+            row("Mic gain", "Boost a quiet microphone for in-person recordings. High levels can clip a loud mic.") {
+                dropdownTrigger(.micGain)
+            }
         }
         .onAppear { inputDevices = AudioInputs.available() }
     }

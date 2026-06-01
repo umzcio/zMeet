@@ -32,7 +32,7 @@ final class AppState: ObservableObject {
     @Published var libraryContextSession: MeetingSession?
     @Published var settingsMenu: SettingsMenuKind?
 
-    enum SettingsMenuKind: Hashable { case retention, quality, microphone }
+    enum SettingsMenuKind: Hashable { case retention, quality, microphone, micGain }
     @Published var draftTitle: String = ""
     @Published private(set) var lastError: String?
     @Published private(set) var micGranted: Bool = false
