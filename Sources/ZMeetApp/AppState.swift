@@ -368,6 +368,15 @@ final class AppState: ObservableObject {
         Task {
             do {
                 let stopped = try await manager.stop()
+                // Best-effort offline noise cleanup (in place). A failure keeps the
+                // original recording and must never block notes or surface an error.
+                if config.noiseSuppression {
+                    do {
+                        try await AudioCleanup().clean(fileURL: URL(fileURLWithPath: stopped.audioPath))
+                    } catch {
+                        print("AudioCleanup failed, keeping original: \(error)")
+                    }
+                }
                 reloadRecent()
                 if config.autoProcessOnStop {
                     process(id: stopped.id)

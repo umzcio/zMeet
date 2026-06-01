@@ -366,6 +366,10 @@ struct SettingsView: View {
             row("Audio quality", "Higher quality means larger files.") {
                 dropdownTrigger(.quality)
             }
+            divider
+            toggleRow("Reduce background noise",
+                      "Cleans up steady background noise (fans, hum) in your recordings after each meeting.",
+                      boolBinding(\.noiseSuppression))
         }
         .onAppear { inputDevices = AudioInputs.available() }
     }
