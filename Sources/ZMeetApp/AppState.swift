@@ -289,11 +289,15 @@ final class AppState: ObservableObject {
             // Permissions confirmed — now commit the chosen mode (remote captures
             // system audio, in-person doesn't) and persist it.
             updateConfig {
+                let p = $0.profiles[mode]
                 $0.recordingMode = mode
-                $0.audio.captureSystemAudio = (mode == .remote)
+                $0.audio.captureSystemAudio = p.captureSystemAudio
+                $0.audio.micDeviceID = p.micDeviceID
+                $0.audio.micGain = p.micGain
+                $0.noiseSuppression = p.noiseSuppression
             }
             do {
-                _ = try manager.start(title: draftTitle, sourceApp: sourceApp)
+                _ = try manager.start(title: draftTitle, sourceApp: sourceApp, mode: mode)
                 phase = .recording(since: Date())
                 recordingFromDetection = (sourceApp != nil)
                 draftTitle = ""
