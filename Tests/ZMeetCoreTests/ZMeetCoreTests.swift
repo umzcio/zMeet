@@ -432,7 +432,7 @@ private func makeProcessedMeeting(_ manager: SessionManager, title: String, days
     config.audioRetentionDays = 1
     let manager = SessionManager(config: config, recorder: MockRecorder())
 
-    let started = try manager.start(title: "Unprocessed", sourceApp: nil)
+    _ = try manager.start(title: "Unprocessed", sourceApp: nil)
     var stopped = try await manager.stop()
     stopped.startedAt = Date().addingTimeInterval(-100 * 86_400)
     stopped.endedAt = stopped.startedAt.addingTimeInterval(60)
