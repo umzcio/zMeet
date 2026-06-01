@@ -475,6 +475,25 @@ private func makeProcessedMeeting(_ manager: SessionManager, title: String, days
     #expect(FileManager.default.fileExists(atPath: m.notePath!))
 }
 
+@Test func deleteAudioAlsoRemovesDiarizationTracks() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+    let m = try await makeProcessedMeeting(manager, title: "Tracked", daysAgo: 1)
+
+    // Simulate leftover dual-track files in the meeting folder.
+    let folder = URL(fileURLWithPath: m.audioPath).deletingLastPathComponent()
+    let mic = folder.appendingPathComponent("mic.m4a")
+    let system = folder.appendingPathComponent("system.m4a")
+    FileManager.default.createFile(atPath: mic.path, contents: Data("m".utf8))
+    FileManager.default.createFile(atPath: system.path, contents: Data("s".utf8))
+
+    try manager.deleteAudio(id: m.id)
+    #expect(!FileManager.default.fileExists(atPath: m.audioPath))
+    #expect(!FileManager.default.fileExists(atPath: mic.path))
+    #expect(!FileManager.default.fileExists(atPath: system.path))
+}
+
 @Test func reclaimableAudioBytesSumsProcessedAudio() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }

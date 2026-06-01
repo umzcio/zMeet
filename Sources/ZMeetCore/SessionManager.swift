@@ -303,8 +303,14 @@ public final class SessionManager {
         // Trailing slash on the root so a sibling dir (e.g. ".../zMeetOther") can't
         // satisfy the prefix check against ".../zMeet".
         let root = outputURL.standardizedFileURL.path + "/"
-        guard fileManager.fileExists(atPath: url.path),
-              url.standardizedFileURL.path.hasPrefix(root) else { return false }
+        guard url.standardizedFileURL.path.hasPrefix(root) else { return false }
+        // Also drop any leftover diarization tracks in the meeting folder (best-effort)
+        // so deleting/purging audio reclaims them too, not just the mixed recording.
+        let folder = url.deletingLastPathComponent()
+        for track in ["mic.m4a", "system.m4a"] {
+            try? fileManager.removeItem(at: folder.appendingPathComponent(track))
+        }
+        guard fileManager.fileExists(atPath: url.path) else { return false }
         do { try fileManager.removeItem(at: url); return true } catch { return false }
     }
 

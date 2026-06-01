@@ -432,15 +432,21 @@ final class AppState: ObservableObject {
             return try await SpeechTranscription().transcribe(audioURL: audioURL)
         }
         // Diarize: transcribe each side (sequential — one shared speech model),
-        // interleave, then drop the transient tracks.
-        let you = try await SpeechTranscription().transcribeSegments(audioURL: micURL)
-        let others = try await SpeechTranscription().transcribeSegments(audioURL: systemURL)
-        let labeled = Diarizer().merge(you: you, others: others)
-        try? fm.removeItem(at: micURL)
-        try? fm.removeItem(at: systemURL)
-        return labeled.isEmpty
-            ? try await SpeechTranscription().transcribe(audioURL: audioURL)
-            : labeled
+        // interleave, then drop the transient tracks. A corrupt/unfinalized track
+        // (e.g. from a killed recording) must not block notes — drop the tracks and
+        // fall back to the mixed recording.
+        do {
+            let you = try await SpeechTranscription().transcribeSegments(audioURL: micURL)
+            let others = try await SpeechTranscription().transcribeSegments(audioURL: systemURL)
+            let labeled = Diarizer().merge(you: you, others: others)
+            try? fm.removeItem(at: micURL)
+            try? fm.removeItem(at: systemURL)
+            if !labeled.isEmpty { return labeled }
+        } catch {
+            try? fm.removeItem(at: micURL)
+            try? fm.removeItem(at: systemURL)
+        }
+        return try await SpeechTranscription().transcribe(audioURL: audioURL)
     }
 
     private func produceNotes(audioURL: URL, title: String) async throws -> (transcript: String, summary: String, engine: SummaryEngine) {
