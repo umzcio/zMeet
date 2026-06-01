@@ -50,6 +50,37 @@ public enum MeetingSummaryPrompt {
         \(transcript)
         """
     }
+
+    /// Reduce step: synthesize per-portion notes (from `build` on each chunk) into
+    /// one coherent, de-duplicated set of meeting notes.
+    public static func reduce(parts: [String], title: String) -> String {
+        let joined = parts.enumerated()
+            .map { "### Part \($0.offset + 1)\n\($0.element)" }
+            .joined(separator: "\n\n")
+        return """
+        You are combining notes taken from sequential portions of a meeting titled \
+        "\(title)". Merge the per-portion notes below into ONE coherent set of notes \
+        in Markdown with exactly these sections and headers:
+
+        ## Summary
+        (2–4 sentences covering the whole meeting.)
+
+        ## Key Points
+        (Bulleted; merge and deduplicate across portions.)
+
+        ## Action Items
+        (Bulleted; include an owner if named; deduplicate.)
+
+        ## Decisions
+        (Bulleted; deduplicate.)
+
+        If a section has nothing, write "- None". Do not invent content that is not \
+        present in the per-portion notes.
+
+        Per-portion notes:
+        \(joined)
+        """
+    }
 }
 
 /// Chooses cloud vs on-device summarization and falls back to on-device on any

@@ -67,3 +67,15 @@ private struct ThrowingSummarizer: Summarizer {
     #expect(md == "local")
     #expect(engine == .onDevice)
 }
+
+@Test func reducePromptHasSectionsAndParts() {
+    let prompt = MeetingSummaryPrompt.reduce(parts: ["## Summary\n- Alpha", "## Summary\n- Beta"], title: "Sync")
+    #expect(prompt.contains("## Summary"))
+    #expect(prompt.contains("## Key Points"))
+    #expect(prompt.contains("## Action Items"))
+    #expect(prompt.contains("## Decisions"))
+    #expect(prompt.contains("Sync"))
+    #expect(prompt.contains("Alpha"))
+    #expect(prompt.contains("Beta"))
+    #expect(prompt.contains("Do not invent"))
+}
