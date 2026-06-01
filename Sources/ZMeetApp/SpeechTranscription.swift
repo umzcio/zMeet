@@ -1,6 +1,8 @@
 import Foundation
 import AVFoundation
 import Speech
+import CoreMedia
+import ZMeetCore
 
 /// On-device transcription using macOS 26's SpeechAnalyzer + SpeechTranscriber.
 /// Stateless (a value type), so it's trivially Sendable and safe to call from
@@ -38,6 +40,30 @@ struct SpeechTranscription: Sendable {
         let attributed = try await collector.value
         let plain = String(attributed.characters).trimmingCharacters(in: .whitespacesAndNewlines)
         return plain.isEmpty ? "(No speech detected in the recording.)" : plain
+    }
+
+    func transcribeSegments(audioURL: URL) async throws -> [TranscriptSegment] {
+        guard await ensureAuthorized() else { throw TranscriptionError.notAuthorized }
+        let locale = bestLocale()
+        let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
+        if let installation = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+            try await installation.downloadAndInstall()
+        }
+        let audioFile = try AVAudioFile(forReading: audioURL)
+        let analyzer = SpeechAnalyzer(modules: [transcriber])
+
+        let collector = Task { () -> [TranscriptSegment] in
+            var segments: [TranscriptSegment] = []
+            for try await result in transcriber.results {
+                let text = String(result.text.characters)
+                let start = result.range.start.seconds
+                segments.append(TranscriptSegment(text: text, start: start))
+            }
+            return segments
+        }
+        _ = try await analyzer.analyzeSequence(from: audioFile)
+        try await analyzer.finalizeAndFinishThroughEndOfInput()
+        return try await collector.value
     }
 
     private func bestLocale() -> Locale {
