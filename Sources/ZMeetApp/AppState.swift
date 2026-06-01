@@ -170,10 +170,6 @@ final class AppState: ObservableObject {
         }.value
     }
 
-    func setMicDevice(_ id: String?) {
-        updateConfig { $0.audio.micDeviceID = id }
-    }
-
     /// Mutate + persist config, then apply side-effects (recorder uses the new
     /// config; meeting detection turns on/off).
     func updateConfig(_ mutate: (inout ZMeetConfig) -> Void) {
@@ -286,8 +282,9 @@ final class AppState: ObservableObject {
                 Permissions.openScreenRecordingSettings()
                 return
             }
-            // Permissions confirmed — now commit the chosen mode (remote captures
-            // system audio, in-person doesn't) and persist it.
+            // Permissions confirmed — apply the chosen mode's capture profile to
+            // the live config (system audio, mic device, gain, noise suppression)
+            // and persist it.
             updateConfig {
                 let p = $0.profiles[mode]
                 $0.recordingMode = mode
