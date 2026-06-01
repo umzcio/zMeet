@@ -15,6 +15,8 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     private let micPlayer = AVAudioPlayerNode()
     private let captureMixer = AVAudioMixerNode()
     private var audioFile: AVAudioFile?
+    private var micFile: AVAudioFile?
+    private var systemFile: AVAudioFile?
     private var logHandle: FileHandle?
     private let queue = DispatchQueue(label: "edu.umontana.zmeet.capture")
 
@@ -40,6 +42,20 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
             AVNumberOfChannelsKey: canonical.channelCount,
             AVEncoderBitRateKey: audio.bitrate
         ])
+
+        if audio.separateTracks {
+            let folder = url.deletingLastPathComponent()
+            let trackSettings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: canonical.sampleRate,
+                AVNumberOfChannelsKey: canonical.channelCount,
+                AVEncoderBitRateKey: audio.bitrate,
+            ]
+            // Best-effort: a track-file failure must never abort the recording.
+            micFile = try? AVAudioFile(forWriting: folder.appendingPathComponent("mic.m4a"), settings: trackSettings)
+            systemFile = try? AVAudioFile(forWriting: folder.appendingPathComponent("system.m4a"), settings: trackSettings)
+            log("separate tracks: mic=\(micFile != nil) system=\(systemFile != nil)")
+        }
 
         engine.attach(systemPlayer)
         engine.attach(micPlayer)
@@ -108,10 +124,12 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         switch type {
         case .audio:
             if let out = convert(pcm, using: &systemConverter, label: "system") {
+                if let systemFile { try? systemFile.write(from: out) }
                 systemPlayer.scheduleBuffer(out, completionHandler: nil)
             }
         case .microphone:
             if let out = convert(pcm, using: &micConverter, label: "mic") {
+                if let micFile { try? micFile.write(from: out) }
                 micPlayer.scheduleBuffer(out, completionHandler: nil)
             }
         default:
@@ -170,6 +188,8 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         systemConverter = nil
         micConverter = nil
         audioFile = nil  // closes/finalizes the file
+        micFile = nil       // finalize/close the track files
+        systemFile = nil
         try? logHandle?.close()
         logHandle = nil
     }
