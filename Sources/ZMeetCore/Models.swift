@@ -88,19 +88,24 @@ public struct AudioConfig: Codable, Equatable, Sendable {
     /// Preferred microphone input device (Core Audio / AVCaptureDevice unique id).
     /// `nil` uses the system default input.
     public var micDeviceID: String?
+    /// Linear gain multiplier applied to the microphone signal pre-mix
+    /// (1.0 = unchanged). Boosts a quiet mic for in-person recordings.
+    public var micGain: Float
 
     public init(
         captureSystemAudio: Bool = true,
         captureMicrophone: Bool = true,
         sampleRate: Int = 48_000,
         bitrate: Int = 128_000,
-        micDeviceID: String? = nil
+        micDeviceID: String? = nil,
+        micGain: Float = 1.0
     ) {
         self.captureSystemAudio = captureSystemAudio
         self.captureMicrophone = captureMicrophone
         self.sampleRate = sampleRate
         self.bitrate = bitrate
         self.micDeviceID = micDeviceID
+        self.micGain = micGain
     }
 
     public init(from decoder: Decoder) throws {
@@ -110,6 +115,7 @@ public struct AudioConfig: Codable, Equatable, Sendable {
         sampleRate = try c.decodeIfPresent(Int.self, forKey: .sampleRate) ?? 48_000
         bitrate = try c.decodeIfPresent(Int.self, forKey: .bitrate) ?? 128_000
         micDeviceID = try c.decodeIfPresent(String.self, forKey: .micDeviceID)
+        micGain = try c.decodeIfPresent(Float.self, forKey: .micGain) ?? 1.0
     }
 }
 

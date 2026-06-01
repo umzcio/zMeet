@@ -462,3 +462,14 @@ private func makeProcessedMeeting(_ manager: SessionManager, title: String, days
 
     #expect(manager.reclaimableAudioBytes() == 200)
 }
+
+@Test func micGainDefaultsToUnityAndRoundTrips() throws {
+    let config = ZMeetConfig.default(outputPath: "/tmp/zmeet-output")
+    #expect(config.audio.micGain == 1.0)
+
+    var enabled = config
+    enabled.audio.micGain = 2.0
+    let data = try JSONEncoder.zmeet.encode(enabled)
+    let decoded = try JSONDecoder.zmeet.decode(ZMeetConfig.self, from: data)
+    #expect(decoded.audio.micGain == 2.0)
+}
