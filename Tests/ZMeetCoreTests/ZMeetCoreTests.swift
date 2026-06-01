@@ -326,6 +326,17 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(decoded.useCloudSummaries == true)
 }
 
+@Test func noiseSuppressionDefaultsToFalseAndRoundTrips() throws {
+    let config = ZMeetConfig.default(outputPath: "/tmp/zmeet-output")
+    #expect(config.noiseSuppression == false)
+
+    var enabled = config
+    enabled.noiseSuppression = true
+    let data = try JSONEncoder.zmeet.encode(enabled)
+    let decoded = try JSONDecoder.zmeet.decode(ZMeetConfig.self, from: data)
+    #expect(decoded.noiseSuppression == true)
+}
+
 @Test func processingIndexesMeetingForSearch() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }

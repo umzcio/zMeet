@@ -133,6 +133,9 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     /// When true, summaries are produced via the Claude API instead of the
     /// on-device model. The API key lives in the Keychain, never here. Default off.
     public var useCloudSummaries: Bool
+    /// When true, recordings get an offline background-noise cleanup pass after
+    /// the meeting stops (high-pass + downward expander). Default off.
+    public var noiseSuppression: Bool
 
     public init(
         outputPath: String,
@@ -145,7 +148,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         detectMeetings: Bool = true,
         recordingMode: RecordingMode = .remote,
         audioRetentionDays: Int = 0,
-        useCloudSummaries: Bool = false
+        useCloudSummaries: Bool = false,
+        noiseSuppression: Bool = false
     ) {
         self.outputPath = outputPath
         self.appDataPath = appDataPath
@@ -158,6 +162,7 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         self.recordingMode = recordingMode
         self.audioRetentionDays = audioRetentionDays
         self.useCloudSummaries = useCloudSummaries
+        self.noiseSuppression = noiseSuppression
     }
 
     /// Lenient decoding so older/partial `config.json` files still load — any
@@ -178,6 +183,7 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         recordingMode = try c.decodeIfPresent(RecordingMode.self, forKey: .recordingMode) ?? .remote
         audioRetentionDays = try c.decodeIfPresent(Int.self, forKey: .audioRetentionDays) ?? 0
         useCloudSummaries = try c.decodeIfPresent(Bool.self, forKey: .useCloudSummaries) ?? false
+        noiseSuppression = try c.decodeIfPresent(Bool.self, forKey: .noiseSuppression) ?? false
     }
 
     public static func `default`(
@@ -195,7 +201,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             detectMeetings: true,
             recordingMode: .remote,
             audioRetentionDays: 0,
-            useCloudSummaries: false
+            useCloudSummaries: false,
+            noiseSuppression: false
         )
     }
 }
