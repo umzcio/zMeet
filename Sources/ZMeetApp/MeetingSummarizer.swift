@@ -3,12 +3,14 @@ import FoundationModels
 import ZMeetCore
 
 /// Summarizes a transcript into structured Markdown notes using macOS 26's
-/// on-device Foundation Models LLM. Falls back to a simple extractive summary
+/// on-device Foundation Models LLM via map-reduce (so long meetings are fully
+/// covered, not just their opening). Falls back to a simple extractive summary
 /// when Apple Intelligence is unavailable. Stateless / Sendable.
 @available(macOS 26, *)
 struct MeetingSummarizer: Summarizer {
-    /// On-device context is limited, so cap the transcript fed to the model.
-    private let maxTranscriptCharacters = 12_000
+    /// Per-chunk budget, kept under the on-device model's context limit with room
+    /// for the surrounding prompt.
+    private let maxChunkCharacters = 10_000
 
     func summarize(transcript: String, title: String) async throws -> String {
         let model = SystemLanguageModel.default
@@ -16,18 +18,45 @@ struct MeetingSummarizer: Summarizer {
             return Self.extractiveFallback(transcript: transcript)
         }
 
-        let clipped = String(transcript.prefix(maxTranscriptCharacters))
-        let truncatedNote = transcript.count > maxTranscriptCharacters
-            ? "\n\n_(Transcript was truncated for summarization.)_"
-            : ""
-
-        let prompt = MeetingSummaryPrompt.build(transcript: clipped, title: title)
-
+        let chunks = TranscriptChunker().chunk(transcript, maxCharacters: maxChunkCharacters)
         do {
-            let response = try await LanguageModelSession().respond(to: prompt)
-            return response.content + truncatedNote
+            // Short meeting (or empty): single pass, current behavior.
+            guard chunks.count > 1 else {
+                let prompt = MeetingSummaryPrompt.build(transcript: chunks.first ?? transcript, title: title)
+                return try await respond(to: prompt)
+            }
+            // Map: summarize each chunk.
+            var parts: [String] = []
+            for chunk in chunks {
+                parts.append(try await respond(to: MeetingSummaryPrompt.build(transcript: chunk, title: title)))
+            }
+            // Reduce (hierarchically if the joined parts exceed one chunk budget).
+            return try await reduce(parts: parts, title: title)
         } catch {
             return Self.extractiveFallback(transcript: transcript)
+        }
+    }
+
+    private func respond(to prompt: String) async throws -> String {
+        try await LanguageModelSession().respond(to: prompt).content
+    }
+
+    /// Collapse per-portion notes into one set, reducing in rounds when the joined
+    /// notes are themselves too large for a single pass.
+    private func reduce(parts: [String], title: String) async throws -> String {
+        var parts = parts
+        let chunker = TranscriptChunker()
+        while true {
+            if parts.count == 1 { return parts[0] }
+            let groups = chunker.group(parts, maxCharacters: maxChunkCharacters)
+            if groups.count == 1 {
+                return try await respond(to: MeetingSummaryPrompt.reduce(parts: parts, title: title))
+            }
+            var reduced: [String] = []
+            for group in groups {
+                reduced.append(try await respond(to: MeetingSummaryPrompt.reduce(parts: group, title: title)))
+            }
+            parts = reduced
         }
     }
 
