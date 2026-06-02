@@ -233,6 +233,10 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     /// Label transcripts by speaker side (mic = "You", system = "Others") for
     /// remote/hybrid recordings. Default off.
     public var labelSpeakers: Bool
+    /// Publish a linked copy of each processed meeting into an Obsidian vault.
+    public var publishToObsidian: Bool
+    /// Folder path of the Obsidian vault to publish into (nil = none chosen).
+    public var obsidianVaultPath: String?
 
     public init(
         outputPath: String,
@@ -248,7 +252,9 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         useCloudSummaries: Bool = false,
         noiseSuppression: Bool = false,
         profiles: CaptureProfiles = .defaults(),
-        labelSpeakers: Bool = false
+        labelSpeakers: Bool = false,
+        publishToObsidian: Bool = false,
+        obsidianVaultPath: String? = nil
     ) {
         self.outputPath = outputPath
         self.appDataPath = appDataPath
@@ -264,6 +270,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         self.noiseSuppression = noiseSuppression
         self.profiles = profiles
         self.labelSpeakers = labelSpeakers
+        self.publishToObsidian = publishToObsidian
+        self.obsidianVaultPath = obsidianVaultPath
     }
 
     /// Per-mode capture preset for the given recording mode.
@@ -304,6 +312,8 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             profiles = CaptureProfiles(remote: base, hybrid: base, inPerson: inPerson)
         }
         labelSpeakers = try c.decodeIfPresent(Bool.self, forKey: .labelSpeakers) ?? false
+        publishToObsidian = try c.decodeIfPresent(Bool.self, forKey: .publishToObsidian) ?? false
+        obsidianVaultPath = try c.decodeIfPresent(String.self, forKey: .obsidianVaultPath)
     }
 
     public static func `default`(
@@ -324,7 +334,9 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             useCloudSummaries: false,
             noiseSuppression: false,
             profiles: .defaults(),
-            labelSpeakers: false
+            labelSpeakers: false,
+            publishToObsidian: false,
+            obsidianVaultPath: nil
         )
     }
 }
