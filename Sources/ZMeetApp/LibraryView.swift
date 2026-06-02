@@ -538,6 +538,7 @@ struct LibraryView: View {
                     block.view
                 }
             }
+            .textSelection(.enabled)
         }
     }
 
