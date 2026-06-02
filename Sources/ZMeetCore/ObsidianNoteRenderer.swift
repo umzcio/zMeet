@@ -7,13 +7,18 @@ public enum ObsidianNoteRenderer {
                                 entities: MeetingEntities, transcriptNoteName: String) -> String {
         let date = ZMeetDates.displayDate(session.startedAt)
         let duration = session.endedAt.map { durationString($0.timeIntervalSince(session.startedAt)) } ?? ""
-        let source = session.sourceApp ?? "Unknown"
+        // For an in-person meeting there's no capturing app; label it as such rather
+        // than "Unknown".
+        let source = session.sourceApp ?? (session.mode == .inPerson ? "In person" : "Unknown")
         let mode = session.mode?.rawValue ?? ""
 
         var fm: [String] = ["---", "date: \(date)", "source: \(yaml(source))"]
         if !duration.isEmpty { fm.append("duration: \(yaml(duration))") }
         if !mode.isEmpty { fm.append("mode: \(yaml(mode))") }
-        if !entities.people.isEmpty { fm.append("attendees: [\(entities.people.map(yaml).joined(separator: ", "))]") }
+        // These are people *referenced* in the meeting (extracted from the discussion),
+        // NOT a verified attendee list — a transcript can't know who was actually
+        // present. Keep the key honest so notes don't claim attendance.
+        if !entities.people.isEmpty { fm.append("people: [\(entities.people.map(yaml).joined(separator: ", "))]") }
         fm.append("tags: [meeting]")
         fm.append("---")
 

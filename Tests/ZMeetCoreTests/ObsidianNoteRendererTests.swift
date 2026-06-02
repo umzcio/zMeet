@@ -17,10 +17,24 @@ private func sampleSession() -> MeetingSession {
     #expect(note.hasPrefix("---\n"))
     #expect(note.contains("source: \"Microsoft Teams\""))
     #expect(note.contains("# Weekly Sync"))
+    // People referenced are recorded under "people" — NOT "attendees" (a transcript
+    // can't know who was actually present).
+    #expect(note.contains("people: [\"Jonathan\"]"))
+    #expect(!note.contains("attendees:"))
     #expect(note.contains("[[Jonathan]]"))
     #expect(note.contains("[[Japan Trip]]"))
     #expect(note.contains("[[flights]]"))
     #expect(note.contains("[[2026-06-01 Weekly Sync — Transcript]]"))
+}
+
+@Test func inPersonMeetingSourceIsLabeledNotUnknown() {
+    let session = MeetingSession(id: "x", title: "Room chat", sourceApp: nil, mode: .inPerson,
+        startedAt: Date(timeIntervalSince1970: 1_780_000_000), endedAt: nil, status: .processed,
+        audioPath: "", transcriptPath: nil, notePath: nil, recorderLogPath: nil, errorMessage: nil)
+    let note = ObsidianNoteRenderer.mainNote(session: session, summary: "body",
+        entities: MeetingEntities(), transcriptNoteName: "T")
+    #expect(note.contains("source: \"In person\""))
+    #expect(!note.contains("Unknown"))
 }
 
 @Test func mainNoteOmitsEmptyLinkSections() {

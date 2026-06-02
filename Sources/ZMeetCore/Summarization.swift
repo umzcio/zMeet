@@ -38,13 +38,16 @@ public enum MeetingSummaryPrompt {
         (Bulleted.)
 
         ## Action Items
-        (Bulleted; include an owner if the transcript names one.)
+        (Bulleted. Add an owner only when the transcript clearly names who is \
+        responsible; otherwise state the action with no owner. Never guess an owner \
+        or use vague labels like "the speaker" or "someone's manager".)
 
         ## Decisions
         (Bulleted.)
 
         If a section has nothing, write "- None". Do not invent content that is \
-        not supported by the transcript.
+        not supported by the transcript. Do not assume who attended; only attribute \
+        statements or actions to a person when the transcript clearly names them.
 
         Transcript:
         \(transcript)
@@ -69,7 +72,8 @@ public enum MeetingSummaryPrompt {
         (Bulleted; merge and deduplicate across portions.)
 
         ## Action Items
-        (Bulleted; include an owner if named; deduplicate.)
+        (Bulleted; deduplicate. Keep an owner only when one was clearly named; never \
+        invent or guess one.)
 
         ## Decisions
         (Bulleted; deduplicate.)
@@ -101,6 +105,20 @@ public enum MeetingSummaryPrompt {
 
         TRANSCRIPT:
         \(clippedTranscript)
+        """
+    }
+
+    /// Asks the model for a short, specific title for a meeting that has no real one
+    /// (e.g. in-person / manual recordings), derived from its notes.
+    public static func titlePrompt(summary: String) -> String {
+        let clipped = String(summary.prefix(4_000))
+        return """
+        Write a short, specific title (3–7 words) for the meeting these notes \
+        describe. Plain text only — no quotes, no markdown, no trailing punctuation, \
+        and do not include the word "Meeting". Reply with the title and nothing else.
+
+        Notes:
+        \(clipped)
         """
     }
 }
