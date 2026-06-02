@@ -587,12 +587,16 @@ final class AppState: ObservableObject {
               let rawPath = config.obsidianVaultPath, !rawPath.isEmpty,
               FileManager.default.fileExists(atPath: ZMeetPaths.expandTilde(rawPath)),
               obsidianBackfill == nil else { return }
+        let vault = URL(fileURLWithPath: ZMeetPaths.expandTilde(rawPath))
         let sessions = ((try? manager.listSessions()) ?? []).filter { $0.status == .processed }
         obsidianBackfill = BackfillProgress(done: 0, total: sessions.count)
         Task {
             var done = 0
             for session in sessions {
-                if let notes = onDiskNotes(for: session) {
+                // Skip meetings already imported into THIS vault under their current
+                // name — so re-running the backfill only picks up new/renamed/missing
+                // meetings instead of re-publishing (and re-extracting) everything.
+                if !isAlreadyPublished(session, in: vault), let notes = onDiskNotes(for: session) {
                     await publishToObsidianIfEnabled(session: session, transcript: notes.transcript, summary: notes.summary)
                 }
                 done += 1
@@ -600,6 +604,15 @@ final class AppState: ObservableObject {
             }
             obsidianBackfill = nil
         }
+    }
+
+    /// True when the meeting's note already exists in the vault under its current name
+    /// (tracked via obsidianBaseName + a file-existence check, so switching vaults or
+    /// renaming a meeting correctly re-publishes).
+    private func isAlreadyPublished(_ session: MeetingSession, in vault: URL) -> Bool {
+        let names = ObsidianVaultFiles.names(for: session)
+        return session.obsidianBaseName == names.mainNoteName
+            && FileManager.default.fileExists(atPath: vault.appendingPathComponent(names.main).path)
     }
 
     /// Reads a processed meeting's transcript and summary back off disk (the summary is
