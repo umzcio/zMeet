@@ -169,10 +169,6 @@ public final class SessionManager {
         }
     }
 
-    public func status() throws -> MeetingSession? {
-        try activeSession()
-    }
-
     /// Returns the session with the given id (callers need its audio path/title
     /// before producing a transcript).
     public func session(id: String) throws -> MeetingSession {

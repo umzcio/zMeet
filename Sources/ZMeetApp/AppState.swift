@@ -58,7 +58,7 @@ final class AppState: ObservableObject {
     /// can be auto-stopped when that meeting ends.
     private var recordingFromDetection = false
 
-    init(recorder: MeetingRecorder = StubRecorder()) {
+    init(recorder: MeetingRecorder) {
         // Load config, or bootstrap a fresh one if missing/old-schema.
         let loaded: ZMeetConfig
         if let existing = try? store.load() {
