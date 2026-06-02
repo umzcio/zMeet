@@ -50,4 +50,31 @@ public struct MarkdownRenderer {
         """
     }
 
+    /// Extracts just the summary body from a note produced by `renderProcessedNote`:
+    /// drops the YAML frontmatter, the leading "# Title" heading, and everything from
+    /// the "## Transcript" section onward (the transcript link + engine attribution).
+    /// Lets the Obsidian backfill reuse a meeting's existing summary without
+    /// re-summarizing. Defensive: tolerates a missing frontmatter or transcript section.
+    public func summaryBody(fromProcessedNote note: String) -> String {
+        var lines = note.components(separatedBy: "\n")
+        // Strip a leading YAML frontmatter block ("---" … "---").
+        if lines.first == "---", let close = lines.dropFirst().firstIndex(of: "---") {
+            lines.removeSubrange(0...close)
+        }
+        // Cut from the Transcript section onward. Exact match (not hasPrefix) so a
+        // summary heading like "## Transcript of the call" isn't mistaken for it —
+        // renderProcessedNote always writes "## Transcript" as a standalone line.
+        if let transcript = lines.firstIndex(of: "## Transcript") {
+            lines.removeSubrange(transcript...)
+        }
+        // Drop leading blank lines and the "# Title" heading.
+        while let first = lines.first, first.trimmingCharacters(in: .whitespaces).isEmpty {
+            lines.removeFirst()
+        }
+        if let first = lines.first, first.hasPrefix("# ") {
+            lines.removeFirst()
+        }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
 }

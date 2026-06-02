@@ -20,6 +20,10 @@ final class AppState: ObservableObject {
     /// second process(id:) for the same meeting — the Obsidian publish continues
     /// after the UI returns to idle, so processingSessionID alone can't gate it.
     private var inFlightSessionIDs: Set<String> = []
+    /// Progress of a "publish all to Obsidian" backfill, while one is running (nil
+    /// otherwise). Drives the Settings button label + disabled state.
+    @Published private(set) var obsidianBackfill: BackfillProgress?
+    struct BackfillProgress: Equatable { var done: Int; var total: Int }
     /// Whether an Anthropic API key is stored in the Keychain. Kept in sync on
     /// save/clear so the Settings UI observes it without a per-render Keychain read.
     @Published private(set) var hasAPIKey: Bool = false
@@ -572,6 +576,42 @@ final class AppState: ObservableObject {
         } catch {
             print("zMeet: Obsidian publish failed: \(error.localizedDescription)")
         }
+    }
+
+    /// Backfills every already-processed meeting into the Obsidian vault, reusing the
+    /// transcript + summary already on disk (no re-transcribing / re-summarizing) and
+    /// adding the graph links. Best-effort and idempotent; meetings with no readable
+    /// transcript/notes are skipped. Drives `obsidianBackfill` for the Settings UI.
+    func publishAllToObsidian() {
+        guard config.publishToObsidian,
+              let rawPath = config.obsidianVaultPath, !rawPath.isEmpty,
+              FileManager.default.fileExists(atPath: ZMeetPaths.expandTilde(rawPath)),
+              obsidianBackfill == nil else { return }
+        let sessions = ((try? manager.listSessions()) ?? []).filter { $0.status == .processed }
+        obsidianBackfill = BackfillProgress(done: 0, total: sessions.count)
+        Task {
+            var done = 0
+            for session in sessions {
+                if let notes = onDiskNotes(for: session) {
+                    await publishToObsidianIfEnabled(session: session, transcript: notes.transcript, summary: notes.summary)
+                }
+                done += 1
+                obsidianBackfill = BackfillProgress(done: done, total: sessions.count)
+            }
+            obsidianBackfill = nil
+        }
+    }
+
+    /// Reads a processed meeting's transcript and summary back off disk (the summary is
+    /// recovered from the rendered note). Returns nil if either isn't readable.
+    private func onDiskNotes(for session: MeetingSession) -> (transcript: String, summary: String)? {
+        guard let transcriptPath = session.transcriptPath,
+              let notePath = session.notePath,
+              let transcript = try? String(contentsOf: URL(fileURLWithPath: transcriptPath), encoding: .utf8),
+              let note = try? String(contentsOf: URL(fileURLWithPath: notePath), encoding: .utf8) else { return nil }
+        let summary = MarkdownRenderer().summaryBody(fromProcessedNote: note)
+        guard !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return (transcript, summary)
     }
 
     /// Folder picker for choosing an Obsidian vault manually (mirrors the notes-

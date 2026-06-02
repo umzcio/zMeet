@@ -407,6 +407,16 @@ struct SettingsView: View {
                     row("Vault", state.config.obsidianVaultPath.map(displayPath) ?? "No vault selected") {
                         dropdownTrigger(.obsidianVault)
                     }
+                    divider
+                    row("Backfill", "Publish all existing meetings into the vault. Reuses each meeting's saved transcript and notes.") {
+                        if let progress = state.obsidianBackfill {
+                            Text("Publishing \(progress.done) of \(progress.total)…")
+                                .font(.system(size: 13)).foregroundStyle(.secondary)
+                        } else {
+                            Button("Publish all to vault") { state.publishAllToObsidian() }
+                                .disabled(state.config.obsidianVaultPath?.isEmpty != false)
+                        }
+                    }
                 }
             }
         }
