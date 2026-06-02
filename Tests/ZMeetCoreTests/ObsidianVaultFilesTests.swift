@@ -45,6 +45,17 @@ import Testing
     #expect(!ObsidianVaultFiles.names(for: s).main.contains("  "))
 }
 
+@Test func legacyBaseNameIsDateOnlyAndDiffersFromCurrent() {
+    // The pre-1.12.1 (date-only) name must differ from the current date+time name
+    // so the upgrade cleanup actually removes the old orphaned pair.
+    let s = MeetingSession(id: "x", title: "Weekly Sync", sourceApp: nil,
+        startedAt: Date(timeIntervalSince1970: 1_780_000_000), endedAt: nil, status: .processed,
+        audioPath: "", transcriptPath: nil, notePath: nil, recorderLogPath: nil, errorMessage: nil)
+    let legacy = ObsidianVaultFiles.legacyBaseName(for: s)
+    #expect(legacy == "\(ZMeetDates.displayDate(s.startedAt)) Weekly Sync")
+    #expect(legacy != ObsidianVaultFiles.names(for: s).mainNoteName)
+}
+
 @Test func removeDeletesBothPublishedFiles() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("vault-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
