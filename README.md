@@ -85,6 +85,7 @@ Two **opt-in** features step outside the default local-only path, and only when 
 - **Publish to a vault** — write a linked copy of each processed meeting into an Obsidian vault, turning your notes into a connected "network brain."
 - **Linked notes** — each meeting becomes a Markdown note with frontmatter (date, source, duration, mode, attendees) and `[[wikilinks]]` for the people, projects, and topics it surfaced, so the graph connects meetings that share them — plus a companion transcript note.
 - **Auto-detected vaults** — your existing Obsidian vaults appear in a dropdown (or pick a folder manually).
+- **Backfill** — a "Publish all to vault" button exports every meeting already in your Library into the vault at once (reusing their saved transcripts + notes), so a fresh vault fills with your whole history.
 - **Local files, no account** — zMeet writes plain Markdown straight into the vault folder. Idempotent (re-processing overwrites in place) and best-effort (never blocks or fails your notes). Sync the vault yourself (Drive, iCloud, Git, Obsidian Sync) and chat with it via Obsidian's own MCP.
 
 ### Meeting detection
