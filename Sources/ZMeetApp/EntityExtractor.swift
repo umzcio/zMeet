@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModels
 import ZMeetCore
 
 /// Extracts linkable entities (people/projects/topics) for the Obsidian export by
@@ -12,37 +11,9 @@ struct EntityExtractor {
 
     func extract(summary: String, transcript: String) async -> MeetingEntities {
         let prompt = MeetingSummaryPrompt.extractEntities(summary: summary, transcript: transcript)
-        guard let raw = await runModel(prompt: prompt) else { return MeetingEntities() }
+        guard let raw = await LLMRunner(useCloud: useCloud, apiKey: apiKey).run(prompt: prompt) else {
+            return MeetingEntities()
+        }
         return EntityParser.parse(raw)
-    }
-
-    /// Returns raw model text, or nil on any failure.
-    private func runModel(prompt: String) async -> String? {
-        if useCloud, let key = apiKey, !key.isEmpty {
-            return await runCloud(prompt: prompt, key: key)
-        }
-        return await runOnDevice(prompt: prompt)
-    }
-
-    private func runCloud(prompt: String, key: String) async -> String? {
-        do {
-            let request = try AnthropicSummary.makeRequest(key: key, prompt: prompt)
-            let (data, response) = try await URLSession.shared.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            return try AnthropicSummary.parseSummary(data: data, status: status)
-        } catch {
-            return nil
-        }
-    }
-
-    private func runOnDevice(prompt: String) async -> String? {
-        guard #available(macOS 26, *) else { return nil }
-        let model = SystemLanguageModel.default
-        guard case .available = model.availability else { return nil }
-        do {
-            return try await LanguageModelSession().respond(to: prompt).content
-        } catch {
-            return nil
-        }
     }
 }
