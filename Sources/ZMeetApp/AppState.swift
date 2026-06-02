@@ -24,6 +24,9 @@ final class AppState: ObservableObject {
     /// otherwise). Drives the Settings button label + disabled state.
     @Published private(set) var obsidianBackfill: BackfillProgress?
     struct BackfillProgress: Equatable { var done: Int; var total: Int }
+    /// Outcome of the most recent backfill (e.g. "All 5 meetings are already in the
+    /// vault."), shown in Settings until the next run. nil = no run this session.
+    @Published private(set) var obsidianBackfillMessage: String?
     /// Whether an Anthropic API key is stored in the Keychain. Kept in sync on
     /// save/clear so the Settings UI observes it without a per-render Keychain read.
     @Published private(set) var hasAPIKey: Bool = false
@@ -589,21 +592,37 @@ final class AppState: ObservableObject {
               obsidianBackfill == nil else { return }
         let vault = URL(fileURLWithPath: ZMeetPaths.expandTilde(rawPath))
         let sessions = ((try? manager.listSessions()) ?? []).filter { $0.status == .processed }
+        obsidianBackfillMessage = nil
         obsidianBackfill = BackfillProgress(done: 0, total: sessions.count)
         Task {
-            var done = 0
+            var done = 0, published = 0, skipped = 0
             for session in sessions {
                 // Skip meetings already imported into THIS vault under their current
                 // name — so re-running the backfill only picks up new/renamed/missing
                 // meetings instead of re-publishing (and re-extracting) everything.
-                if !isAlreadyPublished(session, in: vault), let notes = onDiskNotes(for: session) {
+                if isAlreadyPublished(session, in: vault) {
+                    skipped += 1
+                } else if let notes = onDiskNotes(for: session) {
                     await publishToObsidianIfEnabled(session: session, transcript: notes.transcript, summary: notes.summary)
+                    published += 1
+                } else {
+                    skipped += 1  // no readable transcript/notes on disk
                 }
                 done += 1
                 obsidianBackfill = BackfillProgress(done: done, total: sessions.count)
             }
             obsidianBackfill = nil
+            obsidianBackfillMessage = Self.backfillSummary(published: published, skipped: skipped, total: sessions.count)
         }
+    }
+
+    /// Human-readable outcome of a backfill run for the Settings UI.
+    private static func backfillSummary(published: Int, skipped: Int, total: Int) -> String {
+        func meetings(_ n: Int) -> String { "\(n) meeting\(n == 1 ? "" : "s")" }
+        if total == 0 { return "No processed meetings to publish yet." }
+        if published == 0 { return "All \(meetings(total)) already in the vault." }
+        if skipped == 0 { return "Published \(meetings(published)) to the vault." }
+        return "Published \(meetings(published)); \(meetings(skipped)) already in the vault."
     }
 
     /// True when the meeting's note already exists in the vault under its current name
