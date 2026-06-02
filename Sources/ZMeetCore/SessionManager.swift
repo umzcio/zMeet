@@ -3,7 +3,6 @@ import Foundation
 public final class SessionManager {
     private var config: ZMeetConfig
     private let recorder: MeetingRecorder
-    private let runner: ProcessRunner
     private let fileManager: FileManager
 
     /// Full-text index over processed meetings. Optional: if the database can't
@@ -30,12 +29,10 @@ public final class SessionManager {
     public init(
         config: ZMeetConfig,
         recorder: MeetingRecorder,
-        runner: ProcessRunner = ProcessRunner(),
         fileManager: FileManager = .default
     ) {
         self.config = config
         self.recorder = recorder
-        self.runner = runner
         self.fileManager = fileManager
         let searchDBURL = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
             .appendingPathComponent("search.db")
@@ -119,60 +116,6 @@ public final class SessionManager {
         return session
     }
 
-    @discardableResult
-    public func process(id requestedID: String? = nil) throws -> MeetingSession {
-        try ensureRuntimeDirectories()
-        var session = try loadSessionForProcessing(id: requestedID)
-
-        if session.status == .recording {
-            throw ZMeetError.activeSessionExists(session.id)
-        }
-
-        let transcriptURL = transcriptURL(for: session)
-        let noteURL = noteURL(for: session)
-        try ZMeetPaths.ensureDirectory(transcriptURL.deletingLastPathComponent())
-        try ZMeetPaths.ensureDirectory(noteURL.deletingLastPathComponent())
-
-        do {
-            let transcriptMarkdown = try transcribe(session: session, transcriptURL: transcriptURL)
-            let summaryMarkdown = try summarize(session: session, transcriptURL: transcriptURL, transcriptMarkdown: transcriptMarkdown)
-            let noteMarkdown = MarkdownRenderer().renderNote(
-                session: session,
-                transcriptURL: transcriptURL,
-                noteURL: noteURL,
-                summaryMarkdown: summaryMarkdown
-            )
-
-            try noteMarkdown.write(to: noteURL, atomically: true, encoding: .utf8)
-            session.status = .processed
-            session.transcriptPath = transcriptURL.path
-            session.notePath = noteURL.path
-            session.errorMessage = nil
-            try save(session)
-            // Keep search consistent across both processing paths (this one and
-            // applyProcessedText). Index the title-free note body + transcript.
-            try? searchStore?.index(
-                sessionID: session.id, title: session.title,
-                notes: ZMeetText.noteSearchBody(noteMarkdown), transcript: transcriptMarkdown
-            )
-
-            if config.gitAutoCommit {
-                _ = try? GitRepository(repoURL: outputURL).commitAll(message: "Add meeting notes: \(session.title)")
-            }
-
-            return session
-        } catch {
-            session.status = .failed
-            session.errorMessage = error.localizedDescription
-            try? save(session)
-            throw error
-        }
-    }
-
-    public func status() throws -> MeetingSession? {
-        try activeSession()
-    }
-
     /// Returns the session with the given id (callers need its audio path/title
     /// before producing a transcript).
     public func session(id: String) throws -> MeetingSession {
@@ -215,6 +158,9 @@ public final class SessionManager {
                 sessionID: session.id, title: session.title,
                 notes: summary, transcript: transcript
             )
+            if config.gitAutoCommit {
+                _ = try? GitRepository(repoURL: outputURL).commitAll(message: "Add meeting notes: \(session.title)")
+            }
             return session
         } catch {
             session.status = .failed
@@ -237,6 +183,16 @@ public final class SessionManager {
         // in the index (a no-op if it isn't indexed). The old title leaves search;
         // the body stays searchable.
         try? searchStore?.updateTitle(sessionID: session.id, title: session.title)
+        return session
+    }
+
+    /// Records the base filename last published to the Obsidian vault, so a later
+    /// republish under a different name (after a rename) can remove the old pair.
+    @discardableResult
+    public func setObsidianBaseName(id: String, to base: String) throws -> MeetingSession {
+        var session = try loadSession(id: id)
+        session.obsidianBaseName = base
+        try save(session)
         return session
     }
 
@@ -365,104 +321,6 @@ public final class SessionManager {
         }
 
         return recovered
-    }
-
-    private func transcribe(session: MeetingSession, transcriptURL: URL) throws -> String {
-        let values = commandValues(session: session, transcriptURL: transcriptURL, summaryURL: nil)
-
-        if let commandTemplate = config.transcriptionCommand,
-           !commandTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let command = ZMeetText.expandCommandTemplate(commandTemplate, values: values)
-            let result = try runner.runShell(command, currentDirectory: meetingFolderURL(for: session))
-            guard result.exitCode == 0 else {
-                throw ZMeetError.processFailed(command: command, exitCode: result.exitCode, stderr: result.stderr)
-            }
-
-            if fileManager.fileExists(atPath: transcriptURL.path) {
-                return try String(contentsOf: transcriptURL, encoding: .utf8)
-            }
-
-            if !result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                try result.stdout.write(to: transcriptURL, atomically: true, encoding: .utf8)
-                return result.stdout
-            }
-
-            throw ZMeetError.processFailed(
-                command: command,
-                exitCode: result.exitCode,
-                stderr: "Transcription command succeeded but did not write \(transcriptURL.path) or stdout."
-            )
-        }
-
-        let placeholder = MarkdownRenderer().renderTranscriptPlaceholder(session: session)
-        try placeholder.write(to: transcriptURL, atomically: true, encoding: .utf8)
-        return placeholder
-    }
-
-    private func summarize(session: MeetingSession, transcriptURL: URL, transcriptMarkdown: String) throws -> String {
-        let summaryURL = appDataURL
-            .appendingPathComponent("summaries", isDirectory: true)
-            .appendingPathComponent("\(session.id).summary.md")
-        try ZMeetPaths.ensureDirectory(summaryURL.deletingLastPathComponent())
-
-        if let commandTemplate = config.summaryCommand,
-           !commandTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let command = ZMeetText.expandCommandTemplate(
-                commandTemplate,
-                values: commandValues(session: session, transcriptURL: transcriptURL, summaryURL: summaryURL)
-            )
-            let result = try runner.runShell(command, currentDirectory: meetingFolderURL(for: session))
-            guard result.exitCode == 0 else {
-                throw ZMeetError.processFailed(command: command, exitCode: result.exitCode, stderr: result.stderr)
-            }
-
-            if fileManager.fileExists(atPath: summaryURL.path) {
-                return try String(contentsOf: summaryURL, encoding: .utf8)
-            }
-
-            if !result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                try result.stdout.write(to: summaryURL, atomically: true, encoding: .utf8)
-                return result.stdout
-            }
-        }
-
-        let defaultSummary = MarkdownRenderer().renderDefaultSummary(session: session, transcriptMarkdown: transcriptMarkdown)
-        try defaultSummary.write(to: summaryURL, atomically: true, encoding: .utf8)
-        return defaultSummary
-    }
-
-    private func commandValues(session: MeetingSession, transcriptURL: URL, summaryURL: URL?) -> [String: String] {
-        var values = [
-            "id": session.id,
-            "title": session.title,
-            "audio": session.audioPath,
-            "transcript": transcriptURL.path,
-            "transcriptBase": transcriptURL.deletingPathExtension().path,
-            "meetingDir": meetingFolderURL(for: session).path,
-            "output": outputURL.path
-        ]
-
-        if let summaryURL {
-            values["summary"] = summaryURL.path
-        }
-
-        return values
-    }
-
-    private func loadSessionForProcessing(id requestedID: String?) throws -> MeetingSession {
-        if let requestedID {
-            return try loadSession(id: requestedID)
-        }
-
-        if let active = try activeSession() {
-            return active
-        }
-
-        if let latestRecorded = try listSessions().first(where: { $0.status == .recorded || $0.status == .failed || $0.status == .processed }) {
-            return latestRecorded
-        }
-
-        throw ZMeetError.noActiveSession
     }
 
     private func activeSession() throws -> MeetingSession? {

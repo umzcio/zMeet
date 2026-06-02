@@ -72,10 +72,6 @@ public enum ZMeetText {
         return cleaned.isEmpty ? "Untitled Meeting" : cleaned
     }
 
-    public static func shellQuote(_ value: String) -> String {
-        "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
-    }
-
     public static func yamlQuote(_ value: String) -> String {
         let escaped = value
             .replacingOccurrences(of: "\\", with: "\\\\")
@@ -106,13 +102,6 @@ public enum ZMeetText {
         return body.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    public static func expandCommandTemplate(_ template: String, values: [String: String]) -> String {
-        var command = template
-        for (key, value) in values {
-            command = command.replacingOccurrences(of: "{\(key)}", with: shellQuote(value))
-        }
-        return command
-    }
 }
 
 public enum ZMeetDates {
