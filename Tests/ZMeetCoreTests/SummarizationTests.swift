@@ -68,6 +68,15 @@ private struct ThrowingSummarizer: Summarizer {
     #expect(engine == .onDevice)
 }
 
+@Test func extractEntitiesPromptRequestsLabeledFormat() {
+    let p = MeetingSummaryPrompt.extractEntities(summary: "We discussed flights.", transcript: "Jonathan: ...")
+    #expect(p.contains("PEOPLE:"))
+    #expect(p.contains("PROJECTS:"))
+    #expect(p.contains("TOPICS:"))
+    #expect(p.lowercased().contains("none"))
+    #expect(p.contains("flights"))
+}
+
 @Test func reducePromptHasSectionsAndParts() {
     let prompt = MeetingSummaryPrompt.reduce(parts: ["## Summary\n- Alpha", "## Summary\n- Beta"], title: "Sync")
     #expect(prompt.contains("## Summary"))
