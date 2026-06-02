@@ -61,8 +61,10 @@ public struct MarkdownRenderer {
         if lines.first == "---", let close = lines.dropFirst().firstIndex(of: "---") {
             lines.removeSubrange(0...close)
         }
-        // Cut from the Transcript section onward.
-        if let transcript = lines.firstIndex(where: { $0.hasPrefix("## Transcript") }) {
+        // Cut from the Transcript section onward. Exact match (not hasPrefix) so a
+        // summary heading like "## Transcript of the call" isn't mistaken for it —
+        // renderProcessedNote always writes "## Transcript" as a standalone line.
+        if let transcript = lines.firstIndex(of: "## Transcript") {
             lines.removeSubrange(transcript...)
         }
         // Drop leading blank lines and the "# Title" heading.

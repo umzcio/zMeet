@@ -31,6 +31,14 @@ private func processedNote(summary: String) -> String {
     #expect(body == "Just a body.")
 }
 
+@Test func summaryBodyDoesNotTruncateSummaryContainingTranscriptHeading() {
+    // A summary section that merely starts with "## Transcript…" must not be mistaken
+    // for the appended transcript-link section.
+    let summary = "## Transcript of the meeting\n\n- Key point.\n\n## Decisions\n\n- Ship it."
+    let body = MarkdownRenderer().summaryBody(fromProcessedNote: processedNote(summary: summary))
+    #expect(body == summary)
+}
+
 @Test func summaryBodyToleratesNoFrontmatterOrTranscript() {
     #expect(MarkdownRenderer().summaryBody(fromProcessedNote: "# Title\n\nBody only.") == "Body only.")
     #expect(MarkdownRenderer().summaryBody(fromProcessedNote: "Plain text.") == "Plain text.")
