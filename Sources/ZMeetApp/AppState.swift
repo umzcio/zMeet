@@ -115,8 +115,17 @@ final class AppState: ObservableObject {
 
     /// Rename a meeting's display title, then refresh the lists.
     func renameMeeting(id: String, to newTitle: String) {
-        _ = try? manager.setTitle(id: id, to: newTitle)
+        guard let renamed = try? manager.setTitle(id: id, to: newTitle) else { return }
         reloadRecent()
+        // If this meeting was published to Obsidian, re-publish under the new name so
+        // the vault note is renamed and the old one is cleaned up — best-effort,
+        // background, using the transcript + summary already on disk.
+        guard config.publishToObsidian, renamed.status == .processed else { return }
+        Task {
+            if let notes = onDiskNotes(for: renamed) {
+                await publishToObsidianIfEnabled(session: renamed, transcript: notes.transcript, summary: notes.summary)
+            }
+        }
     }
 
     /// Delete a meeting (folder + record), then refresh the lists.
@@ -434,6 +443,19 @@ final class AppState: ObservableObject {
                 // synchronous Core write happens back on the main actor.
                 let session = try manager.session(id: id)
                 let (transcript, summary, engine) = try await produceNotes(session: session)
+                // Give untitled meetings (in-person / manual) a descriptive title from
+                // their notes, before the note is written + published so it carries
+                // through. Best-effort; never overwrites a real/user-set title. You can
+                // still rename afterward (Library → Rename), which republishes cleanly.
+                if Self.needsAutoTitle(session.title) {
+                    let generated = await TitleGenerator(
+                        useCloud: config.useCloudSummaries,
+                        apiKey: secretStore.read(account: SecretAccount.anthropicAPIKey)
+                    ).title(summary: summary)
+                    if let generated, !generated.isEmpty {
+                        _ = try? manager.setTitle(id: id, to: generated)
+                    }
+                }
                 let processed = try manager.applyProcessedText(id: id, transcript: transcript, summary: summary, engine: engine)
                 notesReadyPopup.show(title: processed.title) { [weak self] in
                     self?.revealNote(processed)
@@ -455,6 +477,14 @@ final class AppState: ObservableObject {
             }
             inFlightSessionIDs.remove(id)
         }
+    }
+
+    /// Whether a meeting should get an auto-generated title: only when it has no real
+    /// one (blank or the "Untitled Meeting" placeholder), so a user-set or detected
+    /// title is never overwritten.
+    private static func needsAutoTitle(_ title: String) -> Bool {
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty || t == "Untitled Meeting"
     }
 
     @available(macOS 26, *)
