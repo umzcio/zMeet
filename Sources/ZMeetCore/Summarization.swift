@@ -81,6 +81,28 @@ public enum MeetingSummaryPrompt {
         \(joined)
         """
     }
+
+    /// Asks the model to extract linkable entities in a strict line format that
+    /// EntityParser reads. Clip inputs so it fits the on-device budget too.
+    public static func extractEntities(summary: String, transcript: String) -> String {
+        let clippedTranscript = String(transcript.prefix(8_000))
+        return """
+        From the meeting notes and transcript below, list the real entities worth \
+        linking. Output EXACTLY three lines in this format and nothing else:
+
+        PEOPLE: comma-separated names of people actually mentioned (or "none")
+        PROJECTS: comma-separated named projects/initiatives (or "none")
+        TOPICS: comma-separated recurring topics/themes (or "none")
+
+        Use only names/projects/topics actually present. Do not invent.
+
+        NOTES:
+        \(summary)
+
+        TRANSCRIPT:
+        \(clippedTranscript)
+        """
+    }
 }
 
 /// Chooses cloud vs on-device summarization and falls back to on-device on any

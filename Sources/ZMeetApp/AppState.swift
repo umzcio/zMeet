@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 import AVFoundation
 import ZMeetCore
 
@@ -32,7 +33,7 @@ final class AppState: ObservableObject {
     @Published var libraryContextSession: MeetingSession?
     @Published var settingsMenu: SettingsMenuKind?
 
-    enum SettingsMenuKind: Hashable { case retention, quality, microphone, micGain, captureMode }
+    enum SettingsMenuKind: Hashable { case retention, quality, microphone, micGain, captureMode, obsidianVault }
     @Published var draftTitle: String = ""
     @Published private(set) var lastError: String?
     @Published private(set) var micGranted: Bool = false
@@ -417,6 +418,7 @@ final class AppState: ObservableObject {
                 let audioURL = URL(fileURLWithPath: session.audioPath)
                 let (transcript, summary, engine) = try await produceNotes(audioURL: audioURL, title: session.title)
                 let processed = try manager.applyProcessedText(id: id, transcript: transcript, summary: summary, engine: engine)
+                await publishToObsidianIfEnabled(session: processed, transcript: transcript, summary: summary)
                 notesReadyPopup.show(title: processed.title) { [weak self] in
                     self?.revealNote(processed)
                 }
@@ -480,6 +482,54 @@ final class AppState: ObservableObject {
                 domain: "zMeet", code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "On-device transcription requires macOS 26 or newer."]
             )
+        }
+    }
+
+    /// Publishes a linked copy of the meeting (main note + companion transcript) into
+    /// the configured Obsidian vault. Best-effort: gated on the opt-in flag + an
+    /// existing vault folder; any failure is logged and never blocks notes or surfaces
+    /// as a user error. Idempotent — re-processing overwrites the same two files.
+    private func publishToObsidianIfEnabled(session: MeetingSession, transcript: String, summary: String) async {
+        guard config.publishToObsidian,
+              let rawPath = config.obsidianVaultPath, !rawPath.isEmpty else { return }
+        let vault = URL(fileURLWithPath: ZMeetPaths.expandTilde(rawPath))
+        guard FileManager.default.fileExists(atPath: vault.path) else {
+            print("zMeet: Obsidian vault not found at \(vault.path); skipping publish.")
+            return
+        }
+        let entities = await EntityExtractor(
+            useCloud: config.useCloudSummaries,
+            apiKey: secretStore.read(account: SecretAccount.anthropicAPIKey)
+        ).extract(summary: summary, transcript: transcript)
+        let names = ObsidianVaultFiles.names(for: session)
+        let main = ObsidianNoteRenderer.mainNote(
+            session: session, summary: summary, entities: entities,
+            transcriptNoteName: names.transcriptNoteName)
+        let tx = ObsidianNoteRenderer.transcriptNote(
+            session: session, transcript: transcript, mainNoteName: names.mainNoteName)
+        do {
+            try ObsidianVaultFiles.write(
+                main: main, transcript: tx,
+                mainName: names.main, transcriptName: names.transcript, into: vault)
+        } catch {
+            print("zMeet: Obsidian publish failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Folder picker for choosing an Obsidian vault manually (mirrors the notes-
+    /// folder picker). Writes the chosen path into config.
+    func chooseObsidianVault() {
+        settingsMenu = nil
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = false
+        panel.prompt = "Choose"
+        if let cur = config.obsidianVaultPath, !cur.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: ZMeetPaths.expandTilde(cur))
+        }
+        if panel.runModal() == .OK, let url = panel.url {
+            updateConfig { $0.obsidianVaultPath = url.path }
         }
     }
 

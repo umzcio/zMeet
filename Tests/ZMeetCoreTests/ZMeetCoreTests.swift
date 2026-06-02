@@ -48,6 +48,17 @@ import Testing
     #expect(config.autoProcessOnStop == true)
 }
 
+@Test func obsidianConfigDefaultsAndRoundTrips() throws {
+    let c0 = ZMeetConfig.default(outputPath: "/tmp/zmeet-output")
+    #expect(c0.publishToObsidian == false)
+    #expect(c0.obsidianVaultPath == nil)
+    var c = c0; c.publishToObsidian = true; c.obsidianVaultPath = "/tmp/Vault"
+    let data = try JSONEncoder.zmeet.encode(c)
+    let decoded = try JSONDecoder.zmeet.decode(ZMeetConfig.self, from: data)
+    #expect(decoded.publishToObsidian == true)
+    #expect(decoded.obsidianVaultPath == "/tmp/Vault")
+}
+
 @Test func configRoundTrips() throws {
     let config = ZMeetConfig.default(outputPath: "/tmp/zmeet-output")
     let data = try JSONEncoder.zmeet.encode(config)
