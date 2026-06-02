@@ -413,8 +413,14 @@ struct SettingsView: View {
                             Text("Publishing \(progress.done) of \(progress.total)…")
                                 .font(.system(size: 13)).foregroundStyle(.secondary)
                         } else {
-                            Button("Publish all to vault") { state.publishAllToObsidian() }
-                                .disabled(state.config.obsidianVaultPath?.isEmpty != false)
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Button("Publish all to vault") { state.publishAllToObsidian() }
+                                    .disabled(state.config.obsidianVaultPath?.isEmpty != false)
+                                if let message = state.obsidianBackfillMessage {
+                                    Text(message).font(.caption).foregroundStyle(Self.mint)
+                                        .multilineTextAlignment(.trailing)
+                                }
+                            }
                         }
                     }
                 }
