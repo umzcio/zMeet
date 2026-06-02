@@ -48,10 +48,6 @@ public struct ProcessRunner {
         return ProcessResult(exitCode: process.terminationStatus, stdout: stdout, stderr: stderr)
     }
 
-    public func runShell(_ command: String, currentDirectory: URL? = nil) throws -> ProcessResult {
-        try run(executable: "/bin/zsh", arguments: ["-lc", command], currentDirectory: currentDirectory)
-    }
-
     private func resolveExecutable(_ executable: String, arguments: [String]) -> (executableURL: URL, arguments: [String]) {
         if executable.contains("/") {
             return (URL(fileURLWithPath: executable), arguments)

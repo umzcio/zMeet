@@ -11,6 +11,14 @@ public enum ObsidianVaultFiles {
         let safeTitle = sanitizeFilename(session.title.isEmpty ? "Untitled Meeting" : session.title)
         return "\(stamp) \(safeTitle)"
     }
+    /// The pre-1.12.1 base name (date-only, no time component). Used once on upgrade
+    /// to remove a note published under the old scheme before republishing under the
+    /// new date+time scheme, so the vault doesn't keep an orphaned duplicate.
+    public static func legacyBaseName(for session: MeetingSession) -> String {
+        let date = ZMeetDates.displayDate(session.startedAt)
+        let safeTitle = sanitizeFilename(session.title.isEmpty ? "Untitled Meeting" : session.title)
+        return "\(date) \(safeTitle)"
+    }
     public static func names(for session: MeetingSession) -> (main: String, transcript: String, mainNoteName: String, transcriptNoteName: String) {
         let base = baseName(for: session)
         return ("\(base).md", "\(base) — Transcript.md", base, "\(base) — Transcript")

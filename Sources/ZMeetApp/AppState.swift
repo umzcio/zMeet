@@ -16,6 +16,10 @@ final class AppState: ObservableObject {
     /// The meeting currently being (re)processed, if any. Drives the Library's
     /// per-meeting processing spinner and triggers a reader refresh on completion.
     @Published private(set) var processingSessionID: String?
+    /// Meeting ids whose process+publish lifecycle is still running. Guards against a
+    /// second process(id:) for the same meeting — the Obsidian publish continues
+    /// after the UI returns to idle, so processingSessionID alone can't gate it.
+    private var inFlightSessionIDs: Set<String> = []
     /// Whether an Anthropic API key is stored in the Keychain. Kept in sync on
     /// save/clear so the Settings UI observes it without a per-render Keychain read.
     @Published private(set) var hasAPIKey: Bool = false
@@ -403,6 +407,11 @@ final class AppState: ObservableObject {
     }
 
     func process(id: String) {
+        // Ignore a duplicate (re)process for a meeting whose process+publish is still
+        // running — the publish continues after the UI returns to idle, so without
+        // this two runs could race on the same notes + vault files.
+        guard !inFlightSessionIDs.contains(id) else { return }
+        inFlightSessionIDs.insert(id)
         lastError = nil
         phase = .processing
         // Track the specific meeting so the Library can show a per-row/reader
@@ -437,6 +446,7 @@ final class AppState: ObservableObject {
             if let toPublish {
                 await publishToObsidianIfEnabled(session: toPublish.session, transcript: toPublish.transcript, summary: toPublish.summary)
             }
+            inFlightSessionIDs.remove(id)
         }
     }
 
@@ -534,10 +544,19 @@ final class AppState: ObservableObject {
             apiKey: secretStore.read(account: SecretAccount.anthropicAPIKey)
         ).extract(summary: summary, transcript: transcript)
         let names = ObsidianVaultFiles.names(for: session)
-        // If the meeting was renamed since the last publish, its filename changed —
-        // remove the old pair so the vault doesn't keep an orphaned, stale note.
-        if let previous = session.obsidianBaseName, previous != names.mainNoteName {
-            ObsidianVaultFiles.remove(baseName: previous, from: vault)
+        // Remove a stale prior pair so the vault doesn't keep an orphaned note:
+        if let previous = session.obsidianBaseName {
+            // …published before under a now-different name (the meeting was renamed).
+            if previous != names.mainNoteName {
+                ObsidianVaultFiles.remove(baseName: previous, from: vault)
+            }
+        } else {
+            // …or first publish since upgrading from v1.12.0, which named files
+            // date-only (no time). Remove that legacy pair if it differs.
+            let legacy = ObsidianVaultFiles.legacyBaseName(for: session)
+            if legacy != names.mainNoteName {
+                ObsidianVaultFiles.remove(baseName: legacy, from: vault)
+            }
         }
         let main = ObsidianNoteRenderer.mainNote(
             session: session, summary: summary, entities: entities,
