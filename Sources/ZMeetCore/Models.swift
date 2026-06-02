@@ -216,8 +216,6 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     public var outputPath: String
     public var appDataPath: String
     public var audio: AudioConfig
-    public var transcriptionCommand: String?
-    public var summaryCommand: String?
     public var gitAutoCommit: Bool
     public var autoProcessOnStop: Bool
     /// Whether to watch for Zoom/Teams meetings and show the "Take notes" popup.
@@ -248,8 +246,6 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         outputPath: String,
         appDataPath: String,
         audio: AudioConfig = AudioConfig(),
-        transcriptionCommand: String?,
-        summaryCommand: String?,
         gitAutoCommit: Bool = false,
         autoProcessOnStop: Bool = true,
         detectMeetings: Bool = true,
@@ -265,8 +261,6 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         self.outputPath = outputPath
         self.appDataPath = appDataPath
         self.audio = audio
-        self.transcriptionCommand = transcriptionCommand
-        self.summaryCommand = summaryCommand
         self.gitAutoCommit = gitAutoCommit
         self.autoProcessOnStop = autoProcessOnStop
         self.detectMeetings = detectMeetings
@@ -293,8 +287,6 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         appDataPath = try c.decodeIfPresent(String.self, forKey: .appDataPath)
             ?? home.appendingPathComponent(".zmeet").path
         audio = try c.decodeIfPresent(AudioConfig.self, forKey: .audio) ?? AudioConfig()
-        transcriptionCommand = try c.decodeIfPresent(String.self, forKey: .transcriptionCommand)
-        summaryCommand = try c.decodeIfPresent(String.self, forKey: .summaryCommand)
         gitAutoCommit = try c.decodeIfPresent(Bool.self, forKey: .gitAutoCommit) ?? false
         autoProcessOnStop = try c.decodeIfPresent(Bool.self, forKey: .autoProcessOnStop) ?? true
         detectMeetings = try c.decodeIfPresent(Bool.self, forKey: .detectMeetings) ?? true
@@ -330,8 +322,6 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             outputPath: outputPath ?? home.appendingPathComponent("Documents/zMeet").path,
             appDataPath: home.appendingPathComponent(".zmeet").path,
             audio: AudioConfig(),
-            transcriptionCommand: nil,
-            summaryCommand: nil,
             gitAutoCommit: false,
             autoProcessOnStop: true,
             detectMeetings: true,

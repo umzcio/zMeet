@@ -101,8 +101,6 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     let config = ZMeetConfig(
         outputPath: root.appendingPathComponent("zMeet").path,
         appDataPath: root.appendingPathComponent("data").path,
-        transcriptionCommand: nil,
-        summaryCommand: nil,
         gitAutoCommit: false,
         autoProcessOnStop: false
     )
@@ -142,7 +140,7 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(stopped.endedAt != nil)
     #expect(recorder.stopCount == 1)
 
-    let processed = try manager.process(id: stopped.id)
+    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "Hello, this is the transcript.", summary: "## Summary\n\n- Discussed the plan.")
     #expect(processed.status == .processed)
     #expect(processed.notePath != nil)
     #expect(FileManager.default.fileExists(atPath: processed.notePath!))
@@ -235,26 +233,6 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(recovered.count == 1)
     #expect(recovered.first?.status == .failed)
     #expect(recovered.first?.errorMessage != nil)
-}
-
-@Test func transcriptPlaceholderDoesNotReferenceRetiredCLI() {
-    let session = MeetingSession(
-        id: "2026-05-26-120000-demo",
-        title: "Demo",
-        sourceApp: nil,
-        startedAt: Date(),
-        endedAt: nil,
-        status: .recorded,
-        audioPath: "/tmp/demo.m4a",
-        transcriptPath: nil,
-        notePath: nil,
-        recorderLogPath: nil,
-        errorMessage: nil
-    )
-    let text = MarkdownRenderer().renderTranscriptPlaceholder(session: session)
-    #expect(!text.contains("zmeet process"))
-    #expect(!text.contains("zmeet config"))
-    #expect(text.contains("~/.zmeet/config.json"))
 }
 
 @Test func recoveryIgnoresAlreadyFinalizedSessions() async throws {
