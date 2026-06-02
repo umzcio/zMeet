@@ -46,6 +46,10 @@ public struct MeetingSession: Codable, Equatable, Sendable {
     public var notePath: String?
     public var recorderLogPath: String?
     public var errorMessage: String?
+    /// Base filename last published to the Obsidian vault (no extension). Lets the
+    /// publisher clean up the old note pair when a meeting is renamed and republished
+    /// under a new name. nil until first published.
+    public var obsidianBaseName: String?
 
     public init(
         id: String,
@@ -59,7 +63,8 @@ public struct MeetingSession: Codable, Equatable, Sendable {
         transcriptPath: String?,
         notePath: String?,
         recorderLogPath: String?,
-        errorMessage: String?
+        errorMessage: String?,
+        obsidianBaseName: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -73,6 +78,7 @@ public struct MeetingSession: Codable, Equatable, Sendable {
         self.notePath = notePath
         self.recorderLogPath = recorderLogPath
         self.errorMessage = errorMessage
+        self.obsidianBaseName = obsidianBaseName
     }
 }
 
