@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var apiKeyInput = ""
     @State private var keyTestResult: KeyTestResult?
     @State private var testingKey = false
+    @State private var obsidianVaults: [ObsidianVaults.Vault] = []
 
     /// Outcome of the "Test key" check. A typed result so the success styling
     /// isn't driven by comparing display strings.
@@ -37,6 +38,7 @@ struct SettingsView: View {
     enum Section: String, CaseIterable, Identifiable {
         case general = "General"
         case summaries = "Summaries"
+        case obsidian = "Obsidian"
         case recording = "Recording"
         case meetings = "Meetings"
         case storage = "Storage"
@@ -47,6 +49,7 @@ struct SettingsView: View {
             switch self {
             case .general: return "gearshape.fill"
             case .summaries: return "sparkles"
+            case .obsidian: return "point.3.connected.trianglepath.dotted"
             case .recording: return "waveform"
             case .meetings: return "person.2.fill"
             case .storage: return "folder.fill"
@@ -69,7 +72,7 @@ struct SettingsView: View {
                 GeometryReader { proxy in
                     if let id = state.settingsMenu, let anchor = anchors[id] {
                         let rect = proxy[anchor]
-                        let menuWidth: CGFloat = id == .microphone ? 230 : 160
+                        let menuWidth: CGFloat = id == .obsidianVault ? 260 : (id == .microphone ? 230 : 160)
                         ZStack(alignment: .topLeading) {
                             Color.black.opacity(0.001)
                                 .contentShape(Rectangle())
@@ -167,11 +170,26 @@ struct SettingsView: View {
                     state.updateConfig { $0.profiles[editingMode].micGain = opt.1 }; state.settingsMenu = nil
                 }
             }
+        case .obsidianVault:
+            let cur = state.config.obsidianVaultPath
+            var items = obsidianVaults.map { vault in
+                MenuItem(label: vault.name, selected: vault.path == cur) {
+                    state.updateConfig { $0.obsidianVaultPath = vault.path }; state.settingsMenu = nil
+                }
+            }
+            items.append(MenuItem(label: "Choose manually…", selected: false) {
+                state.chooseObsidianVault()
+            })
+            return items
         }
     }
 
     private func currentLabel(for id: AppState.SettingsMenuKind) -> String {
-        menuItems(for: id).first { $0.selected }?.label ?? "—"
+        if id == .obsidianVault {
+            guard let p = state.config.obsidianVaultPath, !p.isEmpty else { return "Choose…" }
+            return (p as NSString).lastPathComponent
+        }
+        return menuItems(for: id).first { $0.selected }?.label ?? "—"
     }
 
     /// The app-styled trigger button that opens a dropdown.
@@ -185,7 +203,7 @@ struct SettingsView: View {
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
-            .frame(width: id == .microphone ? 190 : 140)
+            .frame(width: (id == .microphone || id == .obsidianVault) ? 190 : 140)
             .background(Self.card, in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Self.hairline, lineWidth: 1))
             .contentShape(Rectangle())
@@ -285,6 +303,7 @@ struct SettingsView: View {
                 switch selection {
                 case .general: generalSection
                 case .summaries: summariesSection
+                case .obsidian: obsidianSection
                 case .recording: recordingSection
                 case .meetings: meetingsSection
                 case .storage: storageSection
@@ -374,6 +393,24 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var obsidianSection: some View {
+        VStack(spacing: 14) {
+            card {
+                toggleRow("Publish notes to Obsidian",
+                          "Write a linked copy of each meeting (notes + transcript) into an Obsidian vault, so your graph becomes a network of people, projects, and topics.",
+                          boolBinding(\.publishToObsidian))
+            }
+            if state.config.publishToObsidian {
+                card {
+                    row("Vault", state.config.obsidianVaultPath.map(displayPath) ?? "No vault selected") {
+                        dropdownTrigger(.obsidianVault)
+                    }
+                }
+            }
+        }
+        .onAppear { obsidianVaults = ObsidianVaults.detected() }
     }
 
     private var recordingSection: some View {

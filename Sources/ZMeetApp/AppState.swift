@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 import AVFoundation
 import ZMeetCore
 
@@ -32,7 +33,7 @@ final class AppState: ObservableObject {
     @Published var libraryContextSession: MeetingSession?
     @Published var settingsMenu: SettingsMenuKind?
 
-    enum SettingsMenuKind: Hashable { case retention, quality, microphone, micGain, captureMode }
+    enum SettingsMenuKind: Hashable { case retention, quality, microphone, micGain, captureMode, obsidianVault }
     @Published var draftTitle: String = ""
     @Published private(set) var lastError: String?
     @Published private(set) var micGranted: Bool = false
@@ -512,6 +513,23 @@ final class AppState: ObservableObject {
                 mainName: names.main, transcriptName: names.transcript, into: vault)
         } catch {
             print("zMeet: Obsidian publish failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Folder picker for choosing an Obsidian vault manually (mirrors the notes-
+    /// folder picker). Writes the chosen path into config.
+    func chooseObsidianVault() {
+        settingsMenu = nil
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = false
+        panel.prompt = "Choose"
+        if let cur = config.obsidianVaultPath, !cur.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: ZMeetPaths.expandTilde(cur))
+        }
+        if panel.runModal() == .OK, let url = panel.url {
+            updateConfig { $0.obsidianVaultPath = url.path }
         }
     }
 
