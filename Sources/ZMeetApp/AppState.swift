@@ -411,24 +411,32 @@ final class AppState: ObservableObject {
         // can't detect completion from status alone.
         processingSessionID = id
         Task {
+            // Carries the inputs for the background Obsidian publish, set only on success.
+            var toPublish: (session: MeetingSession, transcript: String, summary: String)?
             do {
                 // The async Apple speech/LLM work runs off the main actor; the
                 // synchronous Core write happens back on the main actor.
                 let session = try manager.session(id: id)
-                let audioURL = URL(fileURLWithPath: session.audioPath)
-                let (transcript, summary, engine) = try await produceNotes(audioURL: audioURL, title: session.title)
+                let (transcript, summary, engine) = try await produceNotes(session: session)
                 let processed = try manager.applyProcessedText(id: id, transcript: transcript, summary: summary, engine: engine)
-                await publishToObsidianIfEnabled(session: processed, transcript: transcript, summary: summary)
                 notesReadyPopup.show(title: processed.title) { [weak self] in
                     self?.revealNote(processed)
                 }
                 manager.purgeExpiredAudio()
+                toPublish = (processed, transcript, summary)
             } catch {
                 lastError = error.localizedDescription
             }
+            // Free the UI as soon as the notes are saved + shown.
             phase = .idle
             processingSessionID = nil
             reloadRecent()
+            // Obsidian publish is a best-effort background step that runs AFTER the
+            // UI is freed, so a slow entity-extraction call can't pin the icon in
+            // .processing or delay the "notes ready" popup.
+            if let toPublish {
+                await publishToObsidianIfEnabled(session: toPublish.session, transcript: toPublish.transcript, summary: toPublish.summary)
+            }
         }
     }
 
@@ -459,9 +467,9 @@ final class AppState: ObservableObject {
         return try await SpeechTranscription().transcribe(audioURL: audioURL)
     }
 
-    private func produceNotes(audioURL: URL, title: String) async throws -> (transcript: String, summary: String, engine: SummaryEngine) {
+    private func produceNotes(session: MeetingSession) async throws -> (transcript: String, summary: String, engine: SummaryEngine) {
         if #available(macOS 26, *) {
-            let transcript = try await transcribeForNotes(audioURL: audioURL)
+            let transcript = try await transcript(for: session)
             let onDevice = MeetingSummarizer()
             var cloud: (any Summarizer)?
             if config.useCloudSummaries,
@@ -471,7 +479,7 @@ final class AppState: ObservableObject {
             }
             let (summary, engine) = try await SummarizationPolicy().summarize(
                 transcript: transcript,
-                title: title,
+                title: session.title,
                 useCloud: config.useCloudSummaries,
                 onDevice: onDevice,
                 cloud: cloud
@@ -485,10 +493,34 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// The transcript for a (re)process: transcribe the audio when it's present,
+    /// otherwise fall back to the transcript already on disk. The fallback lets a
+    /// meeting whose audio was purged (retention / free-up) still be re-processed —
+    /// e.g. to back-fill it into Obsidian after enabling that feature.
+    @available(macOS 26, *)
+    private func transcript(for session: MeetingSession) async throws -> String {
+        let audioURL = URL(fileURLWithPath: session.audioPath)
+        if FileManager.default.fileExists(atPath: audioURL.path) {
+            return try await transcribeForNotes(audioURL: audioURL)
+        }
+        if let path = session.transcriptPath,
+           FileManager.default.fileExists(atPath: path),
+           let existing = try? String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8),
+           !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return existing
+        }
+        throw NSError(
+            domain: "zMeet", code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "The audio for this meeting is no longer available, so it can't be re-processed."]
+        )
+    }
+
     /// Publishes a linked copy of the meeting (main note + companion transcript) into
     /// the configured Obsidian vault. Best-effort: gated on the opt-in flag + an
     /// existing vault folder; any failure is logged and never blocks notes or surfaces
-    /// as a user error. Idempotent — re-processing overwrites the same two files.
+    /// as a user error. Re-processing overwrites the same two files; if the meeting was
+    /// renamed since its last publish, the previously-published pair is removed first
+    /// so the vault doesn't accumulate stale duplicates.
     private func publishToObsidianIfEnabled(session: MeetingSession, transcript: String, summary: String) async {
         guard config.publishToObsidian,
               let rawPath = config.obsidianVaultPath, !rawPath.isEmpty else { return }
@@ -502,6 +534,11 @@ final class AppState: ObservableObject {
             apiKey: secretStore.read(account: SecretAccount.anthropicAPIKey)
         ).extract(summary: summary, transcript: transcript)
         let names = ObsidianVaultFiles.names(for: session)
+        // If the meeting was renamed since the last publish, its filename changed —
+        // remove the old pair so the vault doesn't keep an orphaned, stale note.
+        if let previous = session.obsidianBaseName, previous != names.mainNoteName {
+            ObsidianVaultFiles.remove(baseName: previous, from: vault)
+        }
         let main = ObsidianNoteRenderer.mainNote(
             session: session, summary: summary, entities: entities,
             transcriptNoteName: names.transcriptNoteName)
@@ -511,6 +548,8 @@ final class AppState: ObservableObject {
             try ObsidianVaultFiles.write(
                 main: main, transcript: tx,
                 mainName: names.main, transcriptName: names.transcript, into: vault)
+            // Remember what we published so a future rename can clean up this pair.
+            try? manager.setObsidianBaseName(id: session.id, to: names.mainNoteName)
         } catch {
             print("zMeet: Obsidian publish failed: \(error.localizedDescription)")
         }

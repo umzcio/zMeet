@@ -240,6 +240,16 @@ public final class SessionManager {
         return session
     }
 
+    /// Records the base filename last published to the Obsidian vault, so a later
+    /// republish under a different name (after a rename) can remove the old pair.
+    @discardableResult
+    public func setObsidianBaseName(id: String, to base: String) throws -> MeetingSession {
+        var session = try loadSession(id: id)
+        session.obsidianBaseName = base
+        try save(session)
+        return session
+    }
+
     /// Deletes a meeting: removes its on-disk folder (recording, transcript, note)
     /// and the session record. Missing files are ignored so a partial delete still
     /// clears the session.
