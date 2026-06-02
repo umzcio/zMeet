@@ -3,13 +3,13 @@
     <channel>
         <title>zMeet</title>
         <item>
-            <title>1.12.2</title>
-            <pubDate>Mon, 01 Jun 2026 21:43:39 -0600</pubDate>
-            <sparkle:version>16</sparkle:version>
-            <sparkle:shortVersionString>1.12.2</sparkle:shortVersionString>
+            <title>1.13.0</title>
+            <pubDate>Tue, 02 Jun 2026 10:18:36 -0600</pubDate>
+            <sparkle:version>17</sparkle:version>
+            <sparkle:shortVersionString>1.13.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/umzcio/zMeet/releases/download/v1.12.2/zMeet-1.12.2.dmg" length="3176817" type="application/octet-stream" sparkle:edSignature="RVWtdxI72NOtyrLB5gsgwK35a0OkwkVpmXNZIG6elvoZvw489F2DI36c/wc+TMuSwzB1g0HfpTTEw0bneudWCw=="/>
+            <enclosure url="https://github.com/umzcio/zMeet/releases/download/v1.13.0/zMeet-1.13.0.dmg" length="3187598" type="application/octet-stream" sparkle:edSignature="8hrFHZZN43xKxGfi0HAPNb8jm9PsZo8W5hl8NYwy1yyQaKF2VqNWnL0QAV54eaOCA5L52cXwk0iIXK//BYqIAw=="/>
         </item>
     </channel>
 </rss>
