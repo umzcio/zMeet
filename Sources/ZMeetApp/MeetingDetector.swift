@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import CoreGraphics
+import ZMeetCore
 
 /// A meeting that appears to be in progress, identified from an on-screen window.
 struct DetectedMeeting: Equatable {
@@ -19,15 +20,25 @@ final class MeetingDetector {
     private var timer: Timer?
     private(set) var current: DetectedMeeting?
 
-    /// Consecutive scans with no meeting detected before we treat it as ended.
-    /// At the 4s scan interval this is ~24s, so transient gaps (Teams password /
-    /// waiting room, brief title changes) don't stop a detection-started recording.
+    /// Consecutive scans with no meeting window before we drop the detected meeting.
+    /// This now only governs the *prompt* (hide popup / re-arm), NOT auto-stop — the
+    /// recording's lifecycle is driven by audio (see `audioActivity`).
     private let disappearThreshold = 6
     private var missCount = 0
 
-    /// Called when the detected meeting changes (a meeting starts → non-nil,
-    /// or ends → nil).
+    /// Audio-based "are we actually in a call" tracker — the reliable signal for
+    /// starting/stopping a recording, independent of window titles (and lobbies).
+    private let audioProbe = ProcessAudioProbe()
+    private var audioActivity = MeetingAudioActivity()
+
+    /// Called when the detected meeting *window* changes (appears → non-nil, or is
+    /// gone → nil). Drives the "Take notes" prompt and its reset.
     var onChange: ((DetectedMeeting?) -> Void)?
+    /// A meeting's audio actually started (you're in the call) — app name. Drives an
+    /// audio-based prompt for meetings the window detector misses.
+    var onAudioMeetingStarted: ((String) -> Void)?
+    /// A meeting's audio ended after having started — drives auto-stop.
+    var onAudioMeetingEnded: (() -> Void)?
 
     func start() {
         guard timer == nil else { return }
@@ -41,9 +52,15 @@ final class MeetingDetector {
         timer?.invalidate()
         timer = nil
         missCount = 0
+        audioActivity = MeetingAudioActivity()
     }
 
     private func scan() {
+        scanWindows()
+        scanAudio()
+    }
+
+    private func scanWindows() {
         let detected = Self.detectMeeting()
         if let detected {
             missCount = 0
@@ -58,6 +75,15 @@ final class MeetingDetector {
                 missCount = 0
                 onChange?(nil)
             }
+        }
+    }
+
+    private func scanAudio() {
+        let app = audioProbe.activeMeetingApp()
+        switch audioActivity.update(active: app != nil) {
+        case .started: onAudioMeetingStarted?(app ?? "Microsoft Teams")  // app is non-nil on .started
+        case .ended:   onAudioMeetingEnded?()
+        case nil:      break
         }
     }
 
