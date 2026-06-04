@@ -8,6 +8,9 @@ final class MeetingPopupController {
     private var panel: NSPanel?
     private var autoDismiss: Timer?
 
+    /// Whether the prompt is currently on screen (so callers don't stack a second one).
+    var isVisible: Bool { panel != nil }
+
     func show(meeting: DetectedMeeting, onStart: @escaping () -> Void, onDismiss: @escaping () -> Void) {
         hide()
 

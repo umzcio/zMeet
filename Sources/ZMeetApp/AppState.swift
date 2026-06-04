@@ -255,30 +255,50 @@ final class AppState: ObservableObject {
         detector.onChange = { [weak self] meeting in
             guard let self else { return }
             guard let meeting else {
-                // Meeting ended: hide the popup and allow future meetings to prompt again.
+                // Meeting window gone: hide the popup and allow future meetings to
+                // prompt again. Auto-stop is NOT driven by windows anymore — a Teams
+                // lobby looks like "no window" yet the meeting hasn't ended. The
+                // recording is stopped by audio activity (onAudioMeetingEnded) instead.
                 self.meetingPopup.hide()
                 self.dismissedMeetingKeys.removeAll()
-                // Auto-stop a recording that was started from this detected meeting.
-                if self.isRecording, self.recordingFromDetection {
-                    self.stopRecording()
-                }
                 return
             }
             // Don't prompt while already recording, or for a meeting already dismissed.
             guard !self.isRecording, !self.dismissedMeetingKeys.contains(meeting.key) else { return }
-            self.meetingPopup.show(
-                meeting: meeting,
-                onStart: {
-                    self.draftTitle = meeting.title
-                    // Detected meetings are remote — no need to ask.
-                    self.startRecording(mode: .remote, sourceApp: meeting.app)
-                },
-                onDismiss: {
-                    self.dismissedMeetingKeys.insert(meeting.key)
-                }
-            )
+            self.promptToTakeNotes(meeting)
+        }
+        // Audio actually started (you're in the call) — prompt even if the window
+        // detector missed it. Once-per-meeting, so it won't nag.
+        detector.onAudioMeetingStarted = { [weak self] app in
+            guard let self else { return }
+            guard !self.isRecording, !self.meetingPopup.isVisible else { return }
+            self.promptToTakeNotes(DetectedMeeting(app: app, title: "\(app) Meeting"))
+        }
+        // Audio ended after a meeting was actually under way — auto-stop a recording
+        // that was started from detection. This is the reliable stop signal.
+        detector.onAudioMeetingEnded = { [weak self] in
+            guard let self else { return }
+            if self.isRecording, self.recordingFromDetection {
+                self.stopRecording()
+            }
         }
         detector.start()
+    }
+
+    /// Show the "Take notes" prompt for a detected meeting.
+    private func promptToTakeNotes(_ meeting: DetectedMeeting) {
+        meetingPopup.show(
+            meeting: meeting,
+            onStart: { [weak self] in
+                guard let self else { return }
+                self.draftTitle = meeting.title
+                // Detected meetings are remote — no need to ask.
+                self.startRecording(mode: .remote, sourceApp: meeting.app)
+            },
+            onDismiss: { [weak self] in
+                self?.dismissedMeetingKeys.insert(meeting.key)
+            }
+        )
     }
 
     var isRecording: Bool {
