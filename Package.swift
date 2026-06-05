@@ -15,7 +15,19 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "CSpeexDSP",
+            path: "Sources/CSpeexDSP",
+            cSettings: [
+                .headerSearchPath("include"),
+                .define("HAVE_CONFIG_H"),
+                .define("OUTSIDE_SPEEX"),
+                .define("FLOATING_POINT"),
+                .define("USE_KISS_FFT")
+            ]
+        ),
+        .target(
             name: "ZMeetCore",
+            dependencies: ["CSpeexDSP"],
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         .executableTarget(
