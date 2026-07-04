@@ -2,8 +2,10 @@
   <img src="assets/zmeet-logo.png" alt="zMeet" width="380" />
 </p>
 
+<h1 align="center">zMeet — private, on-device AI meeting notes for macOS</h1>
+
 <p align="center">
-  <strong>Private, on-device meeting notes for macOS.</strong><br/>
+  An open-source, local-first meeting notetaker — a private alternative to Granola, Otter, and Fireflies.<br/>
   Records your meetings and turns them into transcripts and AI summaries — entirely on your Mac.<br/>
   No bot joins your call. Nothing is uploaded.
 </p>
@@ -13,6 +15,12 @@
   <img src="https://img.shields.io/badge/Swift-6-2EE08A?style=flat-square&labelColor=0D110F" alt="Swift 6" />
   <img src="https://img.shields.io/badge/100%25-on--device-2EE08A?style=flat-square&labelColor=0D110F" alt="On-device" />
   <img src="https://img.shields.io/badge/license-MIT-2EE08A?style=flat-square&labelColor=0D110F" alt="MIT" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/umzcio/zMeet/releases/latest">
+    <img src="https://img.shields.io/github/v/release/umzcio/zMeet?style=for-the-badge&label=Download&color=2EE08A&labelColor=0D110F" alt="Download the latest release" />
+  </a>
 </p>
 
 ---
@@ -122,7 +130,18 @@ Two **opt-in** features step outside the default local-only path, and only when 
 
 ---
 
-## Install / Build
+## Download
+
+Grab the notarized `.dmg` from the [latest release](https://github.com/umzcio/zMeet/releases/latest),
+drag **zMeet** to Applications, and launch it. The app updates itself via Sparkle.
+
+A microphone icon appears in your menu bar. On first recording, grant **Microphone** and
+**Screen Recording** permission (Screen Recording is required to capture the other participants'
+audio); on first processing, grant **Speech Recognition**.
+
+---
+
+## Build from source
 
 zMeet builds from source into a signed `.app` bundle.
 
@@ -137,10 +156,6 @@ bash scripts/build-app.sh
 # Launch
 open build/zMeet.app
 ```
-
-A microphone icon appears in your menu bar. On first recording, grant **Microphone** and
-**Screen Recording** permission (Screen Recording is required to capture the other participants'
-audio); on first processing, grant **Speech Recognition**.
 
 > The build script signs with a Developer ID by default. Set your own signing identity at the top of
 > `scripts/build-app.sh` (or use `security find-identity -p codesigning` to list available ones).
@@ -249,7 +264,7 @@ zMeet/
 
 ## Roadmap
 
-Current release **v1.12.0**. Shipped on top of the v1.0 capture → transcript → notes pipeline:
+Current release **v1.15.0**. Shipped on top of the v1.0 capture → transcript → notes pipeline:
 an in-app Library/Reader window, a Settings UI, full-text search, audio retention/storage
 management, right-click actions, recording modes (remote/hybrid/in-person) with per-mode capture
 profiles, mic gain, background-noise reduction, You-vs-Others speaker labeling, full-meeting
