@@ -135,6 +135,12 @@ Two **opt-in** features step outside the default local-only path, and only when 
 Grab the notarized `.dmg` from the [latest release](https://github.com/umzcio/zMeet/releases/latest),
 drag **zMeet** to Applications, and launch it. The app updates itself via Sparkle.
 
+Or install with [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask umzcio/tap/zmeet
+```
+
 A microphone icon appears in your menu bar. On first recording, grant **Microphone** and
 **Screen Recording** permission (Screen Recording is required to capture the other participants'
 audio); on first processing, grant **Speech Recognition**.
