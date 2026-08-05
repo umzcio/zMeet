@@ -50,6 +50,12 @@ public struct MeetingSession: Codable, Equatable, Sendable {
     /// publisher clean up the old note pair when a meeting is renamed and republished
     /// under a new name. nil until first published.
     public var obsidianBaseName: String?
+    /// The output root (ZMeetConfig.outputPath) in effect when this meeting was
+    /// created. Lets delete/purge logic recognize this session's files even after
+    /// the user later changes the output folder in Settings. nil for sessions
+    /// created before this field existed; callers should fall back to the current
+    /// output root in that case.
+    public var outputRoot: String?
 
     public init(
         id: String,
@@ -64,7 +70,8 @@ public struct MeetingSession: Codable, Equatable, Sendable {
         notePath: String?,
         recorderLogPath: String?,
         errorMessage: String?,
-        obsidianBaseName: String? = nil
+        obsidianBaseName: String? = nil,
+        outputRoot: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -79,6 +86,7 @@ public struct MeetingSession: Codable, Equatable, Sendable {
         self.recorderLogPath = recorderLogPath
         self.errorMessage = errorMessage
         self.obsidianBaseName = obsidianBaseName
+        self.outputRoot = outputRoot
     }
 }
 

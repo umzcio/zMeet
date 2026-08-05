@@ -82,6 +82,11 @@ public final class SearchStore: @unchecked Sendable {
             }
         }
 
+        // Overwrite freed pages on DELETE so removed transcripts/notes aren't
+        // recoverable from the raw database file — deletion must actually erase
+        // the content, not just unlink it from the index.
+        try? exec("PRAGMA secure_delete=ON;")
+
         do {
             try exec("""
             CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -282,6 +287,18 @@ public final class SearchStore: @unchecked Sendable {
             let notes = doc.notePath.flatMap(readFile) ?? ""
             let transcript = doc.transcriptPath.flatMap(readFile) ?? ""
             try? index(sessionID: doc.id, title: doc.title, notes: notes, transcript: transcript)
+        }
+    }
+
+    /// Reads back an integer PRAGMA value. Internal (not public API) — exists so
+    /// tests can assert on connection-level settings like `secure_delete`.
+    func pragmaIntValue(_ name: String) -> Int? {
+        queue.sync {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "PRAGMA \(name);", -1, &stmt, nil) == SQLITE_OK else { return nil }
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+            return Int(sqlite3_column_int(stmt, 0))
         }
     }
 

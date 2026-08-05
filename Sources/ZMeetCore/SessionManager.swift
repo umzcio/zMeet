@@ -82,7 +82,8 @@ public final class SessionManager {
             transcriptPath: nil,
             notePath: nil,
             recorderLogPath: logURL.path,
-            errorMessage: nil
+            errorMessage: nil,
+            outputRoot: outputURL.path
         )
 
         do {
@@ -234,13 +235,19 @@ public final class SessionManager {
             throw ZMeetError.activeSessionExists(session.id)
         }
         let folder = meetingFolderURL(for: session)
-        // Only remove the folder when it sits strictly under our output root
-        // (trailing slash so a sibling like ".../zMeetOther" can't match).
-        if folder.standardizedFileURL.path.hasPrefix(outputURL.standardizedFileURL.path + "/") {
+        // Only remove the folder when it sits strictly under the root this session
+        // was created under (trailing slash so a sibling like ".../zMeetOther"
+        // can't match). Falls back to the current output root for sessions that
+        // predate `outputRoot`, preserving prior behavior for them.
+        let root = URL(fileURLWithPath: session.outputRoot ?? outputURL.path).standardizedFileURL.path
+        if folder.standardizedFileURL.path.hasPrefix(root + "/") {
             try? fileManager.removeItem(at: folder)
         }
         try? fileManager.removeItem(at: sessionsURL.appendingPathComponent("\(id).json"))
         try? searchStore?.remove(sessionID: id)
+        let logURL = session.recorderLogPath.map { URL(fileURLWithPath: $0) }
+            ?? logsURL.appendingPathComponent("\(id).recorder.log")
+        try? fileManager.removeItem(at: logURL)
     }
 
     /// Purge audio for processed meetings older than `config.audioRetentionDays`.
@@ -269,31 +276,44 @@ public final class SessionManager {
     }
 
     /// Total bytes of audio that could be reclaimed (processed meetings only).
+    /// Uses the same removability predicate as `removeAudioFile` so this figure
+    /// never over-promises bytes the delete path would then refuse to remove.
     public func reclaimableAudioBytes() -> Int64 {
         var total: Int64 = 0
         for session in (try? listSessions()) ?? [] where session.status == .processed {
-            let size = (try? fileManager.attributesOfItem(atPath: session.audioPath))?[.size] as? NSNumber
+            guard let url = audioURLIfRemovable(for: session) else { continue }
+            let size = (try? fileManager.attributesOfItem(atPath: url.path))?[.size] as? NSNumber
             total += size?.int64Value ?? 0
         }
         return total
     }
 
-    /// Deletes a session's audio file if present and inside our output root.
-    /// Returns true if a file was actually removed.
-    @discardableResult
-    private func removeAudioFile(for session: MeetingSession) -> Bool {
+    /// The session's audio file URL, but only when it sits strictly under the
+    /// root this session was created under (falling back to the current output
+    /// root for sessions that predate `outputRoot`) AND the file actually exists.
+    /// Shared by `removeAudioFile` and `reclaimableAudioBytes` so what's reported
+    /// reclaimable is always what deletion is actually willing to remove.
+    private func audioURLIfRemovable(for session: MeetingSession) -> URL? {
         let url = URL(fileURLWithPath: session.audioPath)
         // Trailing slash on the root so a sibling dir (e.g. ".../zMeetOther") can't
         // satisfy the prefix check against ".../zMeet".
-        let root = outputURL.standardizedFileURL.path + "/"
-        guard url.standardizedFileURL.path.hasPrefix(root) else { return false }
+        let root = URL(fileURLWithPath: session.outputRoot ?? outputURL.path).standardizedFileURL.path + "/"
+        guard url.standardizedFileURL.path.hasPrefix(root) else { return nil }
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
+    /// Deletes a session's audio file if present and inside its output root.
+    /// Returns true if a file was actually removed.
+    @discardableResult
+    private func removeAudioFile(for session: MeetingSession) -> Bool {
+        guard let url = audioURLIfRemovable(for: session) else { return false }
         // Also drop any leftover diarization tracks in the meeting folder (best-effort)
         // so deleting/purging audio reclaims them too, not just the mixed recording.
         let folder = url.deletingLastPathComponent()
         for track in ["mic.m4a", "system.m4a"] {
             try? fileManager.removeItem(at: folder.appendingPathComponent(track))
         }
-        guard fileManager.fileExists(atPath: url.path) else { return false }
         do { try fileManager.removeItem(at: url); return true } catch { return false }
     }
 
@@ -324,11 +344,36 @@ public final class SessionManager {
         }
     }
 
+    /// Sessions whose meeting folder was deleted outside the app (e.g. Finder).
+    /// Removing their record + index row + log makes external deletion converge
+    /// with in-app deletion. `.recording` sessions are exempt (their folder may
+    /// be racing creation). Limited to folders under the user's home directory —
+    /// a path on an unmounted external volume reads as "missing" too, and we
+    /// must not purge those.
+    @discardableResult
+    public func purgeSessionsWithMissingFolders() -> [String] {
+        let home = fileManager.homeDirectoryForCurrentUser.standardizedFileURL.path + "/"
+        var purged: [String] = []
+        for session in (try? listSessions()) ?? [] where session.status != .recording {
+            let folder = meetingFolderURL(for: session)
+            let path = folder.standardizedFileURL.path
+            guard path.hasPrefix(home), !fileManager.fileExists(atPath: path) else { continue }
+            try? fileManager.removeItem(at: sessionsURL.appendingPathComponent("\(session.id).json"))
+            try? searchStore?.remove(sessionID: session.id)
+            let logURL = session.recorderLogPath.map { URL(fileURLWithPath: $0) }
+                ?? logsURL.appendingPathComponent("\(session.id).recorder.log")
+            try? fileManager.removeItem(at: logURL)
+            purged.append(session.id)
+        }
+        return purged
+    }
+
     /// Finalizes sessions left in `.recording` by a crash or force-quit. A session
     /// whose audio file exists and is non-empty becomes `.recorded`; otherwise it
     /// becomes `.failed`. Returns the sessions whose status changed.
     @discardableResult
     public func recoverInterruptedSessions() throws -> [MeetingSession] {
+        purgeSessionsWithMissingFolders()
         var recovered: [MeetingSession] = []
 
         for var session in try listSessions() where session.status == .recording {

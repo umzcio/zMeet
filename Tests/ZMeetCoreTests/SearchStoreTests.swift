@@ -8,6 +8,14 @@ private func tempDBURL() -> URL {
         .appendingPathComponent("search.db")
 }
 
+@Test func secureDeleteIsOn() throws {
+    let url = tempDBURL()
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let store = try SearchStore(databaseURL: url)
+
+    #expect(store.pragmaIntValue("secure_delete") == 1)
+}
+
 @Test func searchStoreOpensAndStartsEmpty() throws {
     let url = tempDBURL()
     defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

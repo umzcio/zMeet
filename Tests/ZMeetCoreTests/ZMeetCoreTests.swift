@@ -625,6 +625,138 @@ private func makeProcessedMeeting(_ manager: SessionManager, title: String, days
     #expect(manager.reclaimableAudioBytes() == 200)
 }
 
+/// A temp config rooted under the real home directory (not `/tmp`, which on
+/// macOS resolves outside `homeDirectoryForCurrentUser`), needed by tests that
+/// exercise the home-guarded `purgeSessionsWithMissingFolders`.
+private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
+    let root = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".zmeet-test-\(UUID().uuidString)", isDirectory: true)
+    let config = ZMeetConfig(
+        outputPath: root.appendingPathComponent("zMeet").path,
+        appDataPath: root.appendingPathComponent("data").path,
+        gitAutoCommit: false,
+        autoProcessOnStop: false
+    )
+    return (config, root)
+}
+
+@Test func deleteRemovesRecorderLog() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Logged", sourceApp: nil)
+    let stopped = try await manager.stop()
+    _ = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+
+    // MockRecorder doesn't write a log file — create the one the session record
+    // points at so we can verify delete() removes it.
+    let session = try manager.session(id: started.id)
+    let logPath = try #require(session.recorderLogPath)
+    try FileManager.default.createDirectory(
+        at: URL(fileURLWithPath: logPath).deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    FileManager.default.createFile(atPath: logPath, contents: Data("log".utf8))
+    #expect(FileManager.default.fileExists(atPath: logPath))
+
+    try manager.delete(id: started.id)
+    #expect(!FileManager.default.fileExists(atPath: logPath))
+}
+
+@Test func finderDeletedFolderPurgesSessionAndIndex() async throws {
+    let (config, root) = makeTempConfigUnderHome()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Vanishing", sourceApp: nil)
+    let stopped = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+
+    let logPath = try #require(processed.recorderLogPath)
+    try FileManager.default.createDirectory(
+        at: URL(fileURLWithPath: logPath).deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    FileManager.default.createFile(atPath: logPath, contents: Data("log".utf8))
+
+    let store = try #require(manager.searchStore)
+    #expect(try store.indexedIDs().contains(processed.id))
+
+    // Simulate the user deleting the meeting folder in Finder.
+    let folder = URL(fileURLWithPath: processed.audioPath).deletingLastPathComponent()
+    try FileManager.default.removeItem(at: folder)
+
+    let purged = manager.purgeSessionsWithMissingFolders()
+    #expect(purged == [processed.id])
+
+    #expect(throws: (any Error).self) { _ = try manager.session(id: processed.id) }
+    #expect(!(try store.indexedIDs().contains(processed.id)))
+    #expect(!FileManager.default.fileExists(atPath: logPath))
+}
+
+@Test func deleteWorksAfterOutputRootChanges() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Moving", sourceApp: nil)
+    let stopped = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+    let folder = URL(fileURLWithPath: processed.audioPath).deletingLastPathComponent()
+    #expect(FileManager.default.fileExists(atPath: folder.path))
+
+    // Rebuild a SessionManager pointing at a DIFFERENT output root, as happens
+    // when the user changes the notes folder in Settings.
+    var movedConfig = config
+    movedConfig.outputPath = root.appendingPathComponent("zMeetElsewhere").path
+    let movedManager = SessionManager(config: movedConfig, recorder: MockRecorder())
+
+    try movedManager.delete(id: processed.id)
+
+    // The original folder (under the OLD root, remembered via outputRoot) is gone.
+    #expect(!FileManager.default.fileExists(atPath: folder.path))
+    #expect(throws: (any Error).self) { _ = try movedManager.session(id: processed.id) }
+}
+
+/// `reclaimableAudioBytes` must never report bytes that `removeAudioFile` would
+/// then refuse to remove. Simulates a legacy session (predates `outputRoot`,
+/// so it decodes with `outputRoot == nil`) whose config output root then moves:
+/// the shared `audioURLIfRemovable` predicate falls back to the CURRENT output
+/// root for such a session, so its audio (still sitting under the OLD root) is
+/// correctly excluded from both reclaimable-bytes accounting and deletion.
+@Test func reclaimableMatchesRemovable() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder(audioFileSize: 100))
+
+    let processed = try await makeProcessedMeeting(manager, title: "Legacy", daysAgo: 1)
+    #expect(manager.reclaimableAudioBytes() == 100)
+
+    // Strip `outputRoot` from the on-disk session record to simulate a session
+    // created before this field existed.
+    let sessionURL = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
+        .appendingPathComponent("sessions", isDirectory: true)
+        .appendingPathComponent("\(processed.id).json")
+    let data = try Data(contentsOf: sessionURL)
+    var dict = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    dict.removeValue(forKey: "outputRoot")
+    let strippedData = try JSONSerialization.data(withJSONObject: dict)
+    try strippedData.write(to: sessionURL)
+
+    // Now move the output root and rebuild the manager, as Settings does.
+    var movedConfig = config
+    movedConfig.outputPath = root.appendingPathComponent("zMeetElsewhere").path
+    let movedManager = SessionManager(config: movedConfig, recorder: MockRecorder())
+
+    // The legacy session's audio still lives under the OLD root, which is no
+    // longer reachable via the (now current) output root fallback — reclaimable
+    // bytes must reflect that it will NOT be removed.
+    #expect(movedManager.reclaimableAudioBytes() == 0)
+    try movedManager.deleteAudio(id: processed.id)
+    #expect(FileManager.default.fileExists(atPath: processed.audioPath))
+}
+
 @Test func micGainDefaultsToUnityAndRoundTrips() throws {
     let config = ZMeetConfig.default(outputPath: "/tmp/zmeet-output")
     #expect(config.audio.micGain == 1.0)
