@@ -85,7 +85,17 @@ public final class SessionManager {
             errorMessage: nil
         )
 
-        try save(session)
+        do {
+            try save(session)
+        } catch {
+            // Never leave an unowned live capture behind a failed start. Capture
+            // the (Sendable) recorder itself, not `self`, so this compensating
+            // Task doesn't risk a data race with the throwing caller.
+            let recorder = self.recorder
+            Task { try? await recorder.stop() }
+            try? fileManager.removeItem(at: meetingFolder)
+            throw error
+        }
         return session
     }
 
@@ -120,6 +130,19 @@ public final class SessionManager {
     /// before producing a transcript).
     public func session(id: String) throws -> MeetingSession {
         try loadSession(id: id)
+    }
+
+    /// Marks a session failed with a user-facing message (used when capture
+    /// dies after start). No-op statuses: already-processed sessions keep their notes.
+    @discardableResult
+    public func markFailed(id: String, message: String) throws -> MeetingSession {
+        var session = try loadSession(id: id)
+        guard session.status == .recording || session.status == .recorded else { return session }
+        session.status = .failed
+        session.errorMessage = message
+        session.endedAt = session.endedAt ?? Date()
+        try save(session)
+        return session
     }
 
     /// Writes an externally-produced transcript + summary into the meeting folder,

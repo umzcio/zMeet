@@ -235,6 +235,81 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     }
 }
 
+/// A `save()` failure AFTER `recorder.start()` succeeded must not leave an
+/// unowned live capture behind: the recorder is stopped and the meeting
+/// folder is removed.
+@Test func startCompensatesWhenSaveFails() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    // Pre-create the sessions directory (ensureDirectory on an already-existing
+    // dir succeeds even when it's read-only), then lock it down so only the
+    // final `save()` write inside `start()` fails — recorder.start() and the
+    // meeting-folder creation happen elsewhere and must still succeed.
+    let sessionsDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
+        .appendingPathComponent("sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: sessionsDir, withIntermediateDirectories: true)
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: sessionsDir.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: sessionsDir.path) }
+
+    let mock = MockRecorder()
+    let manager = SessionManager(config: config, recorder: mock)
+
+    #expect(throws: (any Error).self) {
+        _ = try manager.start(title: "Doomed", sourceApp: nil)
+    }
+
+    // The compensating stop is fire-and-forget in a Task; poll briefly for it.
+    var waited = 0
+    while mock.stopCount == 0 && waited < 100 {
+        try? await Task.sleep(nanoseconds: 10_000_000)
+        waited += 1
+    }
+    // Regression guard: if the compensation is ever dropped, this must fail
+    // rather than silently pass after the poll window.
+    #expect(mock.stopCount == 1)
+
+    let outputDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.outputPath), isDirectory: true)
+    let leftover = (try? FileManager.default.contentsOfDirectory(at: outputDir, includingPropertiesForKeys: nil)) ?? []
+    #expect(leftover.isEmpty)
+}
+
+@Test func markFailedTransitionsSession() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    // A recording session is marked failed with the message + timestamp set.
+    let started = try manager.start(title: "Live", sourceApp: nil)
+    let failed = try manager.markFailed(id: started.id, message: "boom")
+    #expect(failed.status == .failed)
+    #expect(failed.errorMessage == "boom")
+    #expect(failed.endedAt != nil)
+
+    // A processed session is left alone by markFailed — its notes stay intact.
+    _ = try manager.start(title: "Done", sourceApp: nil)
+    let stopped = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+    #expect(processed.status == .processed)
+    let untouched = try manager.markFailed(id: processed.id, message: "should not apply")
+    #expect(untouched.status == .processed)
+}
+
+@Test func mockCaptureFailureCallbackFires() {
+    let mock = MockRecorder()
+    let box = CapturedMessageBox()
+    mock.onCaptureFailure = { message in box.value = message }
+    mock.simulateCaptureFailure("boom")
+    #expect(box.value == "boom")
+}
+
+/// Reference-type box so the `@Sendable` `onCaptureFailure` closure above can
+/// record its argument without tripping Swift 6's captured-var diagnostics —
+/// the mock invokes it synchronously, so there's no actual concurrent access.
+private final class CapturedMessageBox: @unchecked Sendable {
+    var value: String?
+}
+
 @Test func startFailureDoesNotPersistSession() throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }

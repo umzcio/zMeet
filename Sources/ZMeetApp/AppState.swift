@@ -56,7 +56,7 @@ final class AppState: ObservableObject {
 
     private let store = ConfigStore()
     private let secretStore: SecretStore = KeychainSecretStore()
-    private let recorder: MeetingRecorder
+    private var recorder: MeetingRecorder
     @Published private(set) var config: ZMeetConfig
     private var manager: SessionManager
     private let detector = MeetingDetector()
@@ -91,6 +91,24 @@ final class AppState: ObservableObject {
         refreshHasAPIKey()
         refreshPermissions()
         if config.detectMeetings { startMeetingDetection() }
+
+        // Report a capture failure that happens after `start()` returned (async
+        // stream setup failure, stream died mid-recording): surface it to the
+        // user and mark the in-flight session `.failed` instead of leaving it
+        // to look like a normal (silent) recording.
+        self.recorder.onCaptureFailure = { [weak self] message in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.lastError = message
+                if case .recording = self.phase,
+                   let active = self.allSessions.first(where: { $0.status == .recording }) {
+                    _ = try? await self.manager.stop()
+                    _ = try? self.manager.markFailed(id: active.id, message: message)
+                    self.phase = .idle
+                    self.reloadRecent()
+                }
+            }
+        }
 
         // Show first-run setup (or whenever a required permission is missing).
         DispatchQueue.main.async { [weak self] in

@@ -12,10 +12,17 @@ final class MockRecorder: MeetingRecorder, @unchecked Sendable {
     var audioFileSize: Int
     var startError: Error?
     var stopError: Error?
+    var onCaptureFailure: (@Sendable (String) -> Void)?
 
     init(createsAudioFile: Bool = true, audioFileSize: Int = 32) {
         self.createsAudioFile = createsAudioFile
         self.audioFileSize = audioFileSize
+    }
+
+    /// Test hook: invokes the stored `onCaptureFailure` handler synchronously,
+    /// as if capture had died after `start()` returned.
+    func simulateCaptureFailure(_ message: String) {
+        onCaptureFailure?(message)
     }
 
     func start(to url: URL, logURL: URL, audio: AudioConfig) throws {

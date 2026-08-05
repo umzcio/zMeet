@@ -22,6 +22,10 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     private var startTask: Task<Void, Never>?
     private let queue = DispatchQueue(label: "edu.umontana.zmeet.capture")
     private static let queueKey = DispatchSpecificKey<Void>()
+    /// Whether a capture failure has already been reported for the current
+    /// recording. Confined to `queue`, like the other mutable state.
+    private var didReportFailure = false
+    var onCaptureFailure: (@Sendable (String) -> Void)?
 
     private let canonical = AVAudioFormat(
         commonFormat: .pcmFormatFloat32,
@@ -38,6 +42,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     }
 
     func start(to url: URL, logURL: URL, audio: AudioConfig) throws {
+        didReportFailure = false
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
@@ -88,7 +93,10 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
 
         startTask = Task {
             do { try await self.startStream(audio: audio) }
-            catch { self.log("stream start error: \(error)") }
+            catch {
+                self.log("stream start error: \(error)")
+                self.reportCaptureFailure("Could not start audio capture: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -96,7 +104,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         let content = try await SCShareableContent.current
         guard let display = content.displays.first else {
             log("no display available")
-            return
+            throw CaptureError.noDisplay
         }
         let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
 
@@ -127,6 +135,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         log("stream stopped with error: \(error)")
+        reportCaptureFailure("Audio capture stopped unexpectedly: \(error.localizedDescription)")
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -244,6 +253,24 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
             queue.async { self.logHandle?.write(Data("[\(Date())] \(message)\n".utf8)) }
         }
     }
+
+    /// Delivers `onCaptureFailure` at most once per recording. Dispatches onto
+    /// `queue` to check+set `didReportFailure` safely, then invokes the handler
+    /// outside any lock context so it can freely re-enter the recorder.
+    private func reportCaptureFailure(_ message: String) {
+        queue.async {
+            guard !self.didReportFailure else { return }
+            self.didReportFailure = true
+            self.onCaptureFailure?(message)
+        }
+    }
+}
+
+/// A synchronous setup failure inside `startStream` that should flow through
+/// the same reporting path as any other post-start capture failure.
+enum CaptureError: LocalizedError {
+    case noDisplay
+    var errorDescription: String? { "No display available for system-audio capture." }
 }
 
 /// Tracks whether the single input buffer has been handed to an AVAudioConverter
