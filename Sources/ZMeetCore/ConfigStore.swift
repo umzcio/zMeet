@@ -42,26 +42,47 @@ public final class ConfigStore {
     public enum LoadOutcome {
         case loaded(ZMeetConfig)
         case bootstrapped(ZMeetConfig, corruptBackup: URL?)
+        /// The file exists but couldn't be read (I/O error) or couldn't be set
+        /// aside safely — defaults are used IN MEMORY ONLY; nothing on disk was
+        /// touched, so the user's settings survive for a later relaunch.
+        case loadFailedLeftUntouched(ZMeetConfig, reason: String)
     }
 
     /// Load the config; if the file exists but cannot be decoded, move it to
     /// `config.json.bak-<timestamp>` (never overwrite user data) and bootstrap
-    /// a fresh default. A missing file bootstraps without a backup.
+    /// a fresh default. A missing file bootstraps without a backup. A file
+    /// that exists but can't be read (I/O error), or a corrupt file that can't
+    /// be moved aside safely, is left untouched on disk — only in-memory
+    /// defaults are used, so nothing on disk is ever overwritten without a
+    /// successful backup first.
     public func loadOrBackupAndBootstrap() -> LoadOutcome {
         do {
             return .loaded(try load())
         } catch ZMeetError.configMissing {
             let fresh = (try? bootstrap()) ?? ZMeetConfig.default(home: home)
             return .bootstrapped(fresh, corruptBackup: nil)
-        } catch {
+        } catch let error as DecodingError {
             // Exists but undecodable: preserve it, then bootstrap.
+            _ = error
             let stamp = ISO8601DateFormatter().string(from: Date())
                 .replacingOccurrences(of: ":", with: "-")
             let backupURL = configDirectory.appendingPathComponent("config.json.bak-\(stamp)")
             try? FileManager.default.moveItem(at: configURL, to: backupURL)
-            let fresh = (try? bootstrap()) ?? ZMeetConfig.default(home: home)
             let backedUp = FileManager.default.fileExists(atPath: backupURL.path)
-            return .bootstrapped(fresh, corruptBackup: backedUp ? backupURL : nil)
+            guard backedUp else {
+                // Couldn't set the corrupt file aside — do NOT bootstrap, that
+                // would write config.json over the un-backed-up original.
+                return .loadFailedLeftUntouched(
+                    ZMeetConfig.default(home: home),
+                    reason: "couldn't set the unreadable file aside"
+                )
+            }
+            let fresh = (try? bootstrap()) ?? ZMeetConfig.default(home: home)
+            return .bootstrapped(fresh, corruptBackup: backupURL)
+        } catch {
+            // I/O error (locked file, permissions, EIO, ...) or anything else:
+            // no move, no write — leave the file exactly as it is.
+            return .loadFailedLeftUntouched(ZMeetConfig.default(home: home), reason: error.localizedDescription)
         }
     }
 }

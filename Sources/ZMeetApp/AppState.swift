@@ -90,6 +90,9 @@ final class AppState: ObservableObject {
             if let backup {
                 configRecoveryNote = "Your settings file couldn't be read and was reset to defaults. The old file was saved as \(backup.lastPathComponent) in ~/.zmeet."
             }
+        case .loadFailedLeftUntouched(let cfg, let reason):
+            loaded = cfg
+            configRecoveryNote = "Your settings file couldn't be read (\(reason)). Using defaults for this session — the file was left untouched."
         }
         self.recorder = recorder
         self.config = loaded
