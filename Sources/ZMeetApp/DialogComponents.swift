@@ -19,10 +19,10 @@ struct DialogScaffold<Content: View>: View {
             content
                 .padding(22)
                 .frame(width: 380)
-                .background(Color(red: 0.105, green: 0.124, blue: 0.116),
+                .background(ZMeetPalette.dialogCard,
                             in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(LibraryView.hairline, lineWidth: 1))
+                    .stroke(ZMeetPalette.hairline, lineWidth: 1))
                 .shadow(color: .black.opacity(0.5), radius: 30, y: 14)
                 .transition(reduceMotion
                     ? AnyTransition.opacity
@@ -42,12 +42,12 @@ struct DialogTextField: View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
             .font(.system(size: 14))
-            .foregroundStyle(LibraryView.light)
+            .foregroundStyle(ZMeetPalette.light)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9)
-                .stroke(focused ? LibraryView.mint : LibraryView.hairline, lineWidth: 1))
+                .stroke(focused ? ZMeetPalette.mint : ZMeetPalette.hairline, lineWidth: 1))
             .focused($focused)
             .onSubmit(onSubmit)
             .onAppear { focused = true }
@@ -78,14 +78,14 @@ struct DialogButton: View {
     private var foreground: Color {
         switch kind {
         case .primary:     return Color(red: 0.024, green: 0.157, blue: 0.102)
-        case .secondary:   return LibraryView.light
+        case .secondary:   return ZMeetPalette.light
         case .destructive: return .white
         }
     }
 
     private var background: Color {
         switch kind {
-        case .primary:     return LibraryView.mint.opacity(hover ? 0.88 : 1)
+        case .primary:     return ZMeetPalette.mint.opacity(hover ? 0.88 : 1)
         case .secondary:   return Color.white.opacity(hover ? 0.13 : 0.07)
         case .destructive: return Color(red: 0.90, green: 0.32, blue: 0.30).opacity(hover ? 0.88 : 1)
         }

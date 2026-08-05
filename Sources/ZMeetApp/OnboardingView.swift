@@ -8,8 +8,6 @@ struct OnboardingView: View {
     /// (especially Screen Recording, which is toggled in System Settings).
     private let poll = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
 
-    static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
-
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -53,10 +51,10 @@ struct OnboardingView: View {
         VStack(spacing: 10) {
             Image(systemName: "waveform.circle.fill")
                 .font(.system(size: 46))
-                .foregroundStyle(Self.mint)
+                .foregroundStyle(ZMeetPalette.mint)
                 .padding(.top, 8)
             HStack(spacing: 0) {
-                Text(" z").font(.custom("Dancing Script", size: 34)).foregroundStyle(Self.mint)
+                Text(" z").font(.custom("Dancing Script", size: 34)).foregroundStyle(ZMeetPalette.mint)
                 Text("Meet").font(.system(size: 30, weight: .bold))
             }
             Text("Private, on-device meeting notes.")
@@ -78,7 +76,7 @@ struct OnboardingView: View {
             Image(systemName: icon)
                 .font(.title3)
                 .symbolRenderingMode(.monochrome)
-                .foregroundStyle(granted ? Self.mint : .secondary)
+                .foregroundStyle(granted ? ZMeetPalette.mint : .secondary)
                 .frame(width: 28, height: 28, alignment: .center)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -94,11 +92,11 @@ struct OnboardingView: View {
             if granted {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(Self.mint)
+                    .foregroundStyle(ZMeetPalette.mint)
             } else {
                 Button("Grant", action: action)
                     .buttonStyle(.borderedProminent)
-                    .tint(Self.mint)
+                    .tint(ZMeetPalette.mint)
                     .controlSize(.small)
             }
         }
@@ -106,7 +104,7 @@ struct OnboardingView: View {
         .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(granted ? Self.mint.opacity(0.4) : Color.white.opacity(0.06), lineWidth: 1)
+                .stroke(granted ? ZMeetPalette.mint.opacity(0.4) : Color.white.opacity(0.06), lineWidth: 1)
         )
     }
 
@@ -124,7 +122,7 @@ struct OnboardingView: View {
                     onFinish()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Self.mint)
+                .tint(ZMeetPalette.mint)
                 .keyboardShortcut(.defaultAction)
             }
             .padding(.horizontal, 20)

@@ -21,23 +21,14 @@ struct LibraryView: View {
 
     enum Tab { case notes, transcript }
 
-    // Mint-terminal palette (matches the approved mock).
-    nonisolated static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
-    nonisolated static let light = Color(red: 0.918, green: 0.953, blue: 0.933)
-    nonisolated static let body = Color(red: 0.776, green: 0.839, blue: 0.804)
-    nonisolated static let muted = Color(red: 0.541, green: 0.608, blue: 0.573)
-    nonisolated static let faint = Color(red: 0.365, green: 0.420, blue: 0.388)
-    nonisolated static let bg = Color(red: 0.055, green: 0.071, blue: 0.067)
-    nonisolated static let rail = Color(red: 0.043, green: 0.059, blue: 0.055)
-    nonisolated static let card = Color(red: 0.090, green: 0.110, blue: 0.102)
-    nonisolated static let hover = Color(red: 0.106, green: 0.129, blue: 0.118)
-    nonisolated static let hairline = Color.white.opacity(0.06)
+    // Mint-terminal palette (matches the approved mock). Canonical colors now
+    // live in ZMeetPalette; see ZMeetPalette.swift.
 
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
                 railColumn
-                Rectangle().fill(Self.hairline).frame(width: 1)
+                Rectangle().fill(ZMeetPalette.hairline).frame(width: 1)
                 mainColumn
             }
 
@@ -59,9 +50,9 @@ struct LibraryView: View {
             contextMenu(anchors: anchors)
         }
         .frame(width: 1000, height: 680)
-        .background(Self.bg)
+        .background(ZMeetPalette.bg)
         .preferredColorScheme(.dark)
-        .tint(Self.mint)
+        .tint(ZMeetPalette.mint)
         .onReceive(ticker) { _ in audio.tick() }
         .task(id: reloadKey) { await loadSelected() }
         .onChange(of: selected?.id) { state.showLibraryActions = false; state.libraryContextSession = nil }
@@ -75,7 +66,7 @@ struct LibraryView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Rename meeting")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Self.light)
+                    .foregroundStyle(ZMeetPalette.light)
 
                 DialogTextField(text: $renameText, placeholder: "Meeting title") {
                     commitRename(session)
@@ -95,10 +86,10 @@ struct LibraryView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Delete this meeting?")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Self.light)
+                    .foregroundStyle(ZMeetPalette.light)
                 Text("This removes the recording, transcript, and notes for “\(session.title)”. This can't be undone.")
                     .font(.system(size: 13))
-                    .foregroundStyle(Self.muted)
+                    .foregroundStyle(ZMeetPalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 10) {
@@ -120,10 +111,10 @@ struct LibraryView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Delete audio for this meeting?")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Self.light)
+                    .foregroundStyle(ZMeetPalette.light)
                 Text("Removes the recording for \u{201C}\(session.title)\u{201D} to save space. The transcript and notes are kept. This can't be undone.")
                     .font(.system(size: 13))
-                    .foregroundStyle(Self.muted)
+                    .foregroundStyle(ZMeetPalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     Spacer()
@@ -177,7 +168,7 @@ struct LibraryView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text(" z").font(.custom("Dancing Script", size: 30)).foregroundStyle(Self.mint)
+                    Text(" z").font(.custom("Dancing Script", size: 30)).foregroundStyle(ZMeetPalette.mint)
                     Text("Meet").font(.system(size: 22, weight: .bold))
                 }
                 .padding(.leading, 4)
@@ -194,20 +185,20 @@ struct LibraryView: View {
         }
         .frame(width: 300)
         .frame(maxHeight: .infinity)
-        .background(Self.rail)
+        .background(ZMeetPalette.rail)
     }
 
     private var searchField: some View {
         HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(Self.muted)
+            Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(ZMeetPalette.muted)
             TextField("Search meetings", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13.5))
-                .foregroundStyle(Self.light)
+                .foregroundStyle(ZMeetPalette.light)
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 10)
-        .background(Self.card, in: RoundedRectangle(cornerRadius: 11))
+        .background(ZMeetPalette.card, in: RoundedRectangle(cornerRadius: 11))
         .padding(.bottom, 6)
     }
 
@@ -216,13 +207,13 @@ struct LibraryView: View {
             LazyVStack(alignment: .leading, spacing: 1, pinnedViews: []) {
                 if meetings.isEmpty {
                     Text(query.isEmpty ? "No meetings yet" : "No matches")
-                        .font(.system(size: 13)).foregroundStyle(Self.muted)
+                        .font(.system(size: 13)).foregroundStyle(ZMeetPalette.muted)
                         .padding(.horizontal, 18).padding(.top, 16)
                 } else {
                     ForEach(MeetingGrouping.groups(meetings), id: \.title) { group in
                         Text(group.title)
                             .font(.system(size: 11.5, weight: .semibold))
-                            .foregroundStyle(Self.faint)
+                            .foregroundStyle(ZMeetPalette.faint)
                             .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 6)
                         ForEach(group.sessions, id: \.id) { session in
                             railRow(session)
@@ -247,18 +238,18 @@ struct LibraryView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(session.title)
                         .font(.system(size: 13.5, weight: .semibold))
-                        .foregroundStyle(active ? Self.mint : Self.light)
+                        .foregroundStyle(active ? ZMeetPalette.mint : ZMeetPalette.light)
                         .lineLimit(1)
                     Text(railSubtitle(session))
                         .font(.system(size: 11.5))
-                        .foregroundStyle(Self.muted)
+                        .foregroundStyle(ZMeetPalette.muted)
                 }
                 Spacer(minLength: 0)
                 railStatus(session)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
-            .background(active ? Self.mint.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 10))
+            .background(active ? ZMeetPalette.mint.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 10))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -317,7 +308,7 @@ struct LibraryView: View {
                 .resizable()
                 .frame(width: 17, height: 17)
         case .generic:
-            Circle().fill(LibraryView.mint).frame(width: 9, height: 9)
+            Circle().fill(ZMeetPalette.mint).frame(width: 9, height: 9)
         }
     }
 
@@ -336,7 +327,7 @@ struct LibraryView: View {
                     .font(.system(size: 11)).foregroundStyle(.orange)
             case .recorded:
                 Image(systemName: "circle.dashed")
-                    .font(.system(size: 11)).foregroundStyle(Self.faint)
+                    .font(.system(size: 11)).foregroundStyle(ZMeetPalette.faint)
             case .processed:
                 EmptyView()
             }
@@ -353,12 +344,12 @@ struct LibraryView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .overlay(Rectangle().fill(Self.hairline).frame(height: 1), alignment: .top)
+        .overlay(Rectangle().fill(ZMeetPalette.hairline).frame(height: 1), alignment: .top)
     }
 
     private func miniButton(_ icon: String, _ help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon).font(.system(size: 15)).foregroundStyle(Self.faint)
+            Image(systemName: icon).font(.system(size: 15)).foregroundStyle(ZMeetPalette.faint)
                 .frame(width: 30, height: 30)
         }
         .buttonStyle(.plain)
@@ -394,7 +385,7 @@ struct LibraryView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Self.bg)
+            .background(ZMeetPalette.bg)
         } else {
             emptyState
         }
@@ -409,21 +400,21 @@ struct LibraryView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(session.title)
                     .font(.system(size: 21, weight: .bold))
-                    .foregroundStyle(Self.light)
+                    .foregroundStyle(ZMeetPalette.light)
                     .lineLimit(1)
                 Text(metaLine(session))
                     .font(.system(size: 13))
-                    .foregroundStyle(Self.muted)
+                    .foregroundStyle(ZMeetPalette.muted)
             }
             Spacer()
             if selectedIsProcessing {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small).scaleEffect(0.8)
-                    Text("Processing…").font(.system(size: 12)).foregroundStyle(Self.muted)
+                    Text("Processing…").font(.system(size: 12)).foregroundStyle(ZMeetPalette.muted)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Self.card, in: Capsule())
+                .background(ZMeetPalette.card, in: Capsule())
             }
             headerActions(session)
         }
@@ -445,9 +436,9 @@ struct LibraryView: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 15))
-                .foregroundStyle(Self.muted)
+                .foregroundStyle(ZMeetPalette.muted)
                 .frame(width: 38, height: 38)
-                .background(Self.card, in: RoundedRectangle(cornerRadius: 10))
+                .background(ZMeetPalette.card, in: RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
         .help(help)
@@ -476,7 +467,7 @@ struct LibraryView: View {
                     closeMenus(); state.libraryDialog = .deleteAudio
                 }
             }
-            Rectangle().fill(Self.hairline).frame(height: 1).padding(.vertical, 4)
+            Rectangle().fill(ZMeetPalette.hairline).frame(height: 1).padding(.vertical, 4)
             DropdownRow(title: "Delete…", destructive: true) {
                 closeMenus(); state.libraryDialog = .delete
             }
@@ -484,7 +475,7 @@ struct LibraryView: View {
         .padding(.vertical, 5)
         .frame(width: 196)
         .background(Color(red: 0.118, green: 0.137, blue: 0.129), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Self.hairline, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(ZMeetPalette.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
     }
 
@@ -495,7 +486,7 @@ struct LibraryView: View {
             Spacer()
         }
         .padding(.horizontal, 34)
-        .overlay(Rectangle().fill(Self.hairline).frame(height: 1), alignment: .bottom)
+        .overlay(Rectangle().fill(ZMeetPalette.hairline).frame(height: 1), alignment: .bottom)
     }
 
     private func tabButton(_ title: String, _ value: Tab) -> some View {
@@ -504,9 +495,9 @@ struct LibraryView: View {
             VStack(spacing: 10) {
                 Text(title)
                     .font(.system(size: 14.5, weight: .semibold))
-                    .foregroundStyle(active ? Self.light : Self.muted)
+                    .foregroundStyle(active ? ZMeetPalette.light : ZMeetPalette.muted)
                 Rectangle()
-                    .fill(active ? Self.mint : .clear)
+                    .fill(active ? ZMeetPalette.mint : .clear)
                     .frame(height: 2)
             }
             .padding(.top, 4)
@@ -537,7 +528,7 @@ struct LibraryView: View {
             unprocessedState(session)
         } else if noteBlocks.isEmpty {
             Text("No notes were generated for this meeting.")
-                .font(.system(size: 15)).foregroundStyle(Self.muted)
+                .font(.system(size: 15)).foregroundStyle(ZMeetPalette.muted)
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(noteBlocks.enumerated()), id: \.offset) { _, block in
@@ -553,14 +544,14 @@ struct LibraryView: View {
         if let text = transcriptText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             Text(text)
                 .font(.system(size: 14.5))
-                .foregroundStyle(Self.body)
+                .foregroundStyle(ZMeetPalette.body)
                 .lineSpacing(6)
                 .textSelection(.enabled)
         } else {
             Text(session.status == .processed
                  ? "No transcript was saved for this meeting."
                  : "The transcript appears after this meeting is processed.")
-                .font(.system(size: 15)).foregroundStyle(Self.muted)
+                .font(.system(size: 15)).foregroundStyle(ZMeetPalette.muted)
         }
     }
 
@@ -571,20 +562,20 @@ struct LibraryView: View {
                 Label("Processing failed", systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 15, weight: .semibold)).foregroundStyle(.orange)
                 if let msg = session.errorMessage {
-                    Text(msg).font(.system(size: 13)).foregroundStyle(Self.muted)
+                    Text(msg).font(.system(size: 13)).foregroundStyle(ZMeetPalette.muted)
                 }
             } else {
                 Text("This meeting hasn't been processed yet.")
-                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(Self.light)
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(ZMeetPalette.light)
                 Text("Transcribe and summarize it on-device to generate notes.")
-                    .font(.system(size: 14)).foregroundStyle(Self.muted)
+                    .font(.system(size: 14)).foregroundStyle(ZMeetPalette.muted)
             }
             Button {
                 state.process(id: session.id)
             } label: {
                 Label(state.processingSessionID != nil ? "Processing…" : "Process Notes", systemImage: "wand.and.stars")
             }
-            .buttonStyle(.borderedProminent).tint(Self.mint)
+            .buttonStyle(.borderedProminent).tint(ZMeetPalette.mint)
             .disabled(state.processingSessionID != nil || session.status == .recording)
         }
     }
@@ -593,27 +584,27 @@ struct LibraryView: View {
         VStack(spacing: 14) {
             Image(systemName: "waveform.circle")
                 .font(.system(size: 52, weight: .light))
-                .foregroundStyle(Self.faint)
+                .foregroundStyle(ZMeetPalette.faint)
             Text("No meetings yet")
-                .font(.system(size: 18, weight: .semibold)).foregroundStyle(Self.light)
+                .font(.system(size: 18, weight: .semibold)).foregroundStyle(ZMeetPalette.light)
             Text("Record a meeting from the menu bar and it will appear here.")
-                .font(.system(size: 14)).foregroundStyle(Self.muted)
+                .font(.system(size: 14)).foregroundStyle(ZMeetPalette.muted)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Self.bg)
+        .background(ZMeetPalette.bg)
     }
 
     // MARK: Audio player
 
     private var audioRemovedCaption: some View {
         HStack(spacing: 8) {
-            Image(systemName: "speaker.slash").font(.system(size: 13)).foregroundStyle(Self.faint)
-            Text("Audio removed to save space").font(.system(size: 12.5)).foregroundStyle(Self.muted)
+            Image(systemName: "speaker.slash").font(.system(size: 13)).foregroundStyle(ZMeetPalette.faint)
+            Text("Audio removed to save space").font(.system(size: 12.5)).foregroundStyle(ZMeetPalette.muted)
             Spacer()
         }
         .padding(.horizontal, 32).padding(.vertical, 16)
-        .overlay(Rectangle().fill(Self.hairline).frame(height: 1), alignment: .top)
+        .overlay(Rectangle().fill(ZMeetPalette.hairline).frame(height: 1), alignment: .top)
     }
 
     @ViewBuilder
@@ -624,30 +615,30 @@ struct LibraryView: View {
                     .font(.system(size: 16))
                     .foregroundStyle(Color(red: 0.024, green: 0.157, blue: 0.102))
                     .frame(width: 44, height: 44)
-                    .background(Self.mint, in: Circle())
+                    .background(ZMeetPalette.mint, in: Circle())
             }
             .buttonStyle(.plain)
             .disabled(audio.duration <= 0)
 
             Text(timeString(audio.currentTime))
-                .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(Self.muted)
+                .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(ZMeetPalette.muted)
 
             scrubber
 
             Text(timeString(audio.duration))
-                .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(Self.muted)
+                .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(ZMeetPalette.muted)
         }
         .padding(.horizontal, 32)
         .padding(.vertical, 16)
-        .overlay(Rectangle().fill(Self.hairline).frame(height: 1), alignment: .top)
+        .overlay(Rectangle().fill(ZMeetPalette.hairline).frame(height: 1), alignment: .top)
     }
 
     private var scrubber: some View {
         GeometryReader { geo in
             let fraction = audio.duration > 0 ? audio.currentTime / audio.duration : 0
             ZStack(alignment: .leading) {
-                Capsule().fill(Self.card)
-                Capsule().fill(Self.mint).frame(width: max(0, geo.size.width * fraction))
+                Capsule().fill(ZMeetPalette.card)
+                Capsule().fill(ZMeetPalette.mint).frame(width: max(0, geo.size.width * fraction))
             }
             .contentShape(Rectangle())
             .gesture(
@@ -668,14 +659,14 @@ struct LibraryView: View {
     private var searchResultsPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Results for \u{201C}\(query.trimmingCharacters(in: .whitespaces))\u{201D}")
-                .font(.system(size: 13)).foregroundStyle(Self.muted)
+                .font(.system(size: 13)).foregroundStyle(ZMeetPalette.muted)
                 .padding(.horizontal, 32).padding(.top, 26).padding(.bottom, 14)
 
             if searchHits.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 40, weight: .light)).foregroundStyle(Self.faint)
-                    Text("No results").font(.system(size: 16, weight: .semibold)).foregroundStyle(Self.light)
+                        .font(.system(size: 40, weight: .light)).foregroundStyle(ZMeetPalette.faint)
+                    Text("No results").font(.system(size: 16, weight: .semibold)).foregroundStyle(ZMeetPalette.light)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -692,7 +683,7 @@ struct LibraryView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Self.bg)
+        .background(ZMeetPalette.bg)
     }
 
     private func searchResultRow(_ session: MeetingSession, hit: SearchHit) -> some View {
@@ -707,19 +698,19 @@ struct LibraryView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 VStack(alignment: .leading, spacing: 4) {
                     Text(session.title)
-                        .font(.system(size: 14.5, weight: .semibold)).foregroundStyle(Self.light)
+                        .font(.system(size: 14.5, weight: .semibold)).foregroundStyle(ZMeetPalette.light)
                         .lineLimit(1)
                     Text(metaLine(session))
-                        .font(.system(size: 11.5)).foregroundStyle(Self.muted)
+                        .font(.system(size: 11.5)).foregroundStyle(ZMeetPalette.muted)
                     highlightedSnippet(hit.snippet)
-                        .font(.system(size: 13)).foregroundStyle(Self.body)
+                        .font(.system(size: 13)).foregroundStyle(ZMeetPalette.body)
                         .lineLimit(2)
                         .padding(.top, 2)
                 }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12).padding(.vertical, 12)
-            .background(Self.card.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+            .background(ZMeetPalette.card.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -736,7 +727,7 @@ struct LibraryView: View {
             }
             let parts = chunk.components(separatedBy: SearchStore.highlightEnd)
             if let match = parts.first {
-                result = result + Text(match).foregroundColor(Self.mint).bold()
+                result = result + Text(match).foregroundColor(ZMeetPalette.mint).bold()
             }
             if parts.count > 1 {
                 result = result + Text(parts.dropFirst().joined(separator: SearchStore.highlightEnd))
@@ -854,11 +845,11 @@ private struct DropdownRow: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 13.5))
-                .foregroundStyle(destructive ? Color(red: 0.95, green: 0.42, blue: 0.38) : LibraryView.light)
+                .foregroundStyle(destructive ? Color(red: 0.95, green: 0.42, blue: 0.38) : ZMeetPalette.light)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(hover ? LibraryView.hover : .clear)
+                .background(hover ? ZMeetPalette.hover : .clear)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())
@@ -883,7 +874,7 @@ enum MeetingSource {
         switch self {
         case .zoom:    return Color(red: 0.176, green: 0.549, blue: 1.0)
         case .teams:   return Color(red: 0.314, green: 0.349, blue: 0.788)
-        case .generic: return LibraryView.mint
+        case .generic: return ZMeetPalette.mint
         }
     }
 
@@ -975,24 +966,24 @@ enum NoteBlock {
             Text(s.uppercased())
                 .font(.system(size: 12, weight: .bold))
                 .tracking(0.8)
-                .foregroundStyle(LibraryView.mint)
+                .foregroundStyle(ZMeetPalette.mint)
                 .padding(.top, 22).padding(.bottom, 8)
         case .h3(let s):
             Text(s)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(LibraryView.light)
+                .foregroundStyle(ZMeetPalette.light)
                 .padding(.top, 14).padding(.bottom, 4)
         case .bullet(let s):
             HStack(alignment: .top, spacing: 10) {
-                Circle().fill(LibraryView.muted).frame(width: 5, height: 5).padding(.top, 9)
+                Circle().fill(ZMeetPalette.muted).frame(width: 5, height: 5).padding(.top, 9)
                 NoteBlock.inline(s)
-                    .font(.system(size: 15)).foregroundStyle(LibraryView.body)
+                    .font(.system(size: 15)).foregroundStyle(ZMeetPalette.body)
                     .lineSpacing(5)
             }
             .padding(.vertical, 3)
         case .paragraph(let s):
             NoteBlock.inline(s)
-                .font(.system(size: 15)).foregroundStyle(LibraryView.body)
+                .font(.system(size: 15)).foregroundStyle(ZMeetPalette.body)
                 .lineSpacing(5)
                 .padding(.vertical, 5)
         }
