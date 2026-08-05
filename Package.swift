@@ -12,7 +12,7 @@ let package = Package(
         .executable(name: "aec-probe", targets: ["aec-probe"])
     ],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.2")
     ],
     targets: [
         .target(
