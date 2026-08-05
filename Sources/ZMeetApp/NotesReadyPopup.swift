@@ -12,9 +12,7 @@ struct NotesReadyPopupView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.largeTitle)
-                .foregroundStyle(Self.mint)
+            NotesReadyCheckmark()
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Notes ready")
@@ -47,6 +45,22 @@ struct NotesReadyPopupView: View {
             .padding(7)
             .help("Dismiss")
         }
+    }
+}
+
+private struct NotesReadyCheckmark: View {
+    @State private var shown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .font(.largeTitle)
+            .foregroundStyle(NotesReadyPopupView.mint)
+            .scaleEffect(shown || reduceMotion ? 1.0 : 0.5)
+            .onAppear {
+                withAnimation(.spring(duration: 0.45, bounce: 0.35).delay(0.1)) {
+                    shown = true
+                }
+            }
     }
 }
 

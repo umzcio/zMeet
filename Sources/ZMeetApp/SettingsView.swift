@@ -412,6 +412,8 @@ struct SettingsView: View {
                         if let progress = state.obsidianBackfill {
                             Text("Publishing \(progress.done) of \(progress.total)…")
                                 .font(.system(size: 13)).foregroundStyle(.secondary)
+                                .contentTransition(.numericText())
+                                .animation(.easeOut(duration: 0.2), value: progress.done)
                         } else {
                             VStack(alignment: .trailing, spacing: 4) {
                                 Button("Publish all to vault") { state.publishAllToObsidian() }

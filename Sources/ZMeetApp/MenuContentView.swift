@@ -31,6 +31,8 @@ struct MenuContentView: View {
             primarySection
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
+                .animation(.easeOut(duration: 0.15), value: state.phase)
+                .animation(.easeOut(duration: 0.15), value: state.isProcessing)
 
             if let error = state.lastError {
                 Text(error)
@@ -109,7 +111,7 @@ struct MenuContentView: View {
             VStack(alignment: .leading, spacing: 10) {
                 TimelineView(.periodic(from: since, by: 1)) { _ in
                     HStack(spacing: 8) {
-                        Circle().fill(.red).frame(width: 9, height: 9)
+                        RecordingDot()
                         Text("Recording")
                         Spacer()
                         Text(elapsed(since: since)).monospacedDigit()
@@ -125,12 +127,14 @@ struct MenuContentView: View {
                 }
                 .buttonStyle(.bordered)
             }
+            .transition(.opacity)
 
         case .idle where state.isProcessing:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Processing…").foregroundStyle(.secondary)
             }
+            .transition(.opacity)
 
         case .idle:
             VStack(alignment: .leading, spacing: 8) {
@@ -145,6 +149,7 @@ struct MenuContentView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
             }
+            .transition(.opacity)
         }
     }
 
@@ -218,6 +223,21 @@ struct MenuContentView: View {
     private func elapsed(since: Date) -> String {
         let total = Int(Date().timeIntervalSince(since))
         return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+}
+
+private struct RecordingDot: View {
+    @State private var dim = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        Circle().fill(.red).frame(width: 9, height: 9)
+            .opacity(dim ? 0.45 : 1.0)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    dim = true
+                }
+            }
     }
 }
 
