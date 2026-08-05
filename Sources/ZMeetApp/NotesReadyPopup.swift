@@ -82,9 +82,11 @@ final class NotesReadyPopupController {
         if let screen = NSScreen.main {
             let v = screen.visibleFrame
             let s = panel.frame.size
-            panel.setFrameOrigin(NSPoint(x: v.maxX - s.width - 16, y: v.maxY - s.height - 8))
+            let origin = NSPoint(x: v.maxX - s.width - 16, y: v.maxY - s.height - 8)
+            PanelAnimator.present(panel, at: origin)
+        } else {
+            panel.orderFrontRegardless()   // no screen info — show without motion
         }
-        panel.orderFrontRegardless()
         self.panel = panel
 
         autoDismiss = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
@@ -95,7 +97,8 @@ final class NotesReadyPopupController {
     func hide() {
         autoDismiss?.invalidate()
         autoDismiss = nil
-        panel?.orderOut(nil)
-        panel = nil
+        guard let panel = self.panel else { return }
+        self.panel = nil   // re-entrant show() safe
+        PanelAnimator.dismiss(panel) { }
     }
 }
