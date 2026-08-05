@@ -93,12 +93,18 @@ public final class SessionManager {
         do {
             try save(session)
         } catch {
-            // Never leave an unowned live capture behind a failed start. Capture
-            // the (Sendable) recorder itself, not `self`, so this compensating
-            // Task doesn't risk a data race with the throwing caller.
+            // Never leave an unowned live capture behind a failed start. Stop the
+            // recorder FIRST (it holds open files inside the folder), then remove
+            // the folder and this session's recorder log. Capture the (Sendable)
+            // recorder, not `self`.
             let recorder = self.recorder
-            Task { try? await recorder.stop() }
-            try? fileManager.removeItem(at: meetingFolder)
+            let folder = meetingFolder
+            let log = logURL
+            Task {
+                try? await recorder.stop()
+                try? FileManager.default.removeItem(at: folder)
+                try? FileManager.default.removeItem(at: log)
+            }
             throw error
         }
         return session

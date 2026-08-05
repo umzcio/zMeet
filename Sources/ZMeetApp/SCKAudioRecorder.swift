@@ -58,57 +58,63 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         logHandle = try? FileHandle(forWritingTo: logURL)
         log("start \(url.lastPathComponent)")
 
-        audioFile = try AVAudioFile(forWriting: url, settings: [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: canonical.sampleRate,
-            AVNumberOfChannelsKey: canonical.channelCount,
-            AVEncoderBitRateKey: audio.bitrate
-        ])
-
-        if audio.separateTracks {
-            let folder = url.deletingLastPathComponent()
-            let trackSettings: [String: Any] = [
+        do {
+            audioFile = try AVAudioFile(forWriting: url, settings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: canonical.sampleRate,
                 AVNumberOfChannelsKey: canonical.channelCount,
-                AVEncoderBitRateKey: audio.bitrate,
-            ]
-            // Best-effort: a track-file failure must never abort the recording.
-            micFile = try? AVAudioFile(forWriting: folder.appendingPathComponent("mic.m4a"), settings: trackSettings)
-            systemFile = try? AVAudioFile(forWriting: folder.appendingPathComponent("system.m4a"), settings: trackSettings)
-            log("separate tracks: mic=\(micFile != nil) system=\(systemFile != nil)")
+                AVEncoderBitRateKey: audio.bitrate
+            ])
+
+            if audio.separateTracks {
+                let folder = url.deletingLastPathComponent()
+                let trackSettings: [String: Any] = [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVSampleRateKey: canonical.sampleRate,
+                    AVNumberOfChannelsKey: canonical.channelCount,
+                    AVEncoderBitRateKey: audio.bitrate,
+                ]
+                // Best-effort: a track-file failure must never abort the recording.
+                micFile = try? AVAudioFile(forWriting: folder.appendingPathComponent("mic.m4a"), settings: trackSettings)
+                systemFile = try? AVAudioFile(forWriting: folder.appendingPathComponent("system.m4a"), settings: trackSettings)
+                log("separate tracks: mic=\(micFile != nil) system=\(systemFile != nil)")
+            }
+
+            engine.attach(systemPlayer)
+            engine.attach(micPlayer)
+            engine.attach(captureMixer)
+            engine.connect(systemPlayer, to: captureMixer, format: canonical)
+            engine.connect(micPlayer, to: captureMixer, format: canonical)
+            engine.connect(captureMixer, to: engine.mainMixerNode, format: canonical)
+            engine.mainMixerNode.outputVolume = 0  // prevent speaker feedback
+
+            let tapFile = audioFile   // captured by value; tap never reads self's mutable state
+            captureMixer.installTap(onBus: 0, bufferSize: 4096, format: canonical) { [weak self] buffer, _ in
+                guard let self, let tapFile, buffer.frameLength > 0 else { return }
+                // Render thread: copy + enqueue only. Encoding and I/O happen on `queue`.
+                let admitted = self.mixWriteBackpressure.withLock { state -> Bool in
+                    if state.pending >= Self.maxPendingMixWrites { state.dropped += 1; return false }
+                    state.pending += 1
+                    return true
+                }
+                guard admitted, let copy = Self.copyBuffer(buffer) else {
+                    if !admitted { return }
+                    // Copy failed after admission: release the slot.
+                    self.mixWriteBackpressure.withLock { $0.pending -= 1 }
+                    return
+                }
+                self.queue.async {
+                    defer { self.mixWriteBackpressure.withLock { $0.pending -= 1 } }
+                    do { try tapFile.write(from: copy) } catch { self.log("write error: \(error)") }
+                }
+            }
+
+            try engine.start()
+        } catch {
+            rollbackFailedStart()
+            throw error
         }
 
-        engine.attach(systemPlayer)
-        engine.attach(micPlayer)
-        engine.attach(captureMixer)
-        engine.connect(systemPlayer, to: captureMixer, format: canonical)
-        engine.connect(micPlayer, to: captureMixer, format: canonical)
-        engine.connect(captureMixer, to: engine.mainMixerNode, format: canonical)
-        engine.mainMixerNode.outputVolume = 0  // prevent speaker feedback
-
-        let tapFile = audioFile   // captured by value; tap never reads self's mutable state
-        captureMixer.installTap(onBus: 0, bufferSize: 4096, format: canonical) { [weak self] buffer, _ in
-            guard let self, let tapFile, buffer.frameLength > 0 else { return }
-            // Render thread: copy + enqueue only. Encoding and I/O happen on `queue`.
-            let admitted = self.mixWriteBackpressure.withLock { state -> Bool in
-                if state.pending >= Self.maxPendingMixWrites { state.dropped += 1; return false }
-                state.pending += 1
-                return true
-            }
-            guard admitted, let copy = Self.copyBuffer(buffer) else {
-                if !admitted { return }
-                // Copy failed after admission: release the slot.
-                self.mixWriteBackpressure.withLock { $0.pending -= 1 }
-                return
-            }
-            self.queue.async {
-                defer { self.mixWriteBackpressure.withLock { $0.pending -= 1 } }
-                do { try tapFile.write(from: copy) } catch { self.log("write error: \(error)") }
-            }
-        }
-
-        try engine.start()
         systemPlayer.play()
         micPlayer.play()
         // Mic-only pre-mix gain (1.0 = unchanged). Scales just the mic node's
@@ -121,6 +127,26 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
                 self.log("stream start error: \(error)")
                 self.reportCaptureFailure("Could not start audio capture: \(error.localizedDescription)")
             }
+        }
+    }
+
+    /// Rolls back a partially-completed start(): tears down whatever was set up
+    /// so the next start() begins from a clean engine. Safe to call when the
+    /// engine never started (removeTap/stop/detach are no-ops or harmless then).
+    private func rollbackFailedStart() {
+        captureMixer.removeTap(onBus: 0)
+        engine.stop()
+        engine.detach(systemPlayer)
+        engine.detach(micPlayer)
+        engine.detach(captureMixer)
+        queue.sync {
+            systemConverter = nil
+            micConverter = nil
+            audioFile = nil
+            micFile = nil
+            systemFile = nil
+            try? logHandle?.close()
+            logHandle = nil
         }
     }
 

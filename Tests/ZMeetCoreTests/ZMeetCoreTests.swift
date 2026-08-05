@@ -283,25 +283,57 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: sessionsDir.path) }
 
     let mock = MockRecorder()
+    // The compensating Task calls recorder.stop() before removing the folder
+    // and log; gate stop() so the log file below is guaranteed to exist
+    // before that removal runs, instead of racing the Task's own scheduling.
+    let logFileReady = TestSignal()
+    mock.beforeStop = { await logFileReady.wait() }
     let manager = SessionManager(config: config, recorder: mock)
 
     #expect(throws: (any Error).self) {
         _ = try manager.start(title: "Doomed", sourceApp: nil)
     }
 
-    // The compensating stop is fire-and-forget in a Task; poll briefly for it.
+    // MockRecorder doesn't write a log file the way the real recorder does;
+    // create the one the compensation should remove so the assertion below
+    // is meaningful.
+    let logURL = try #require(mock.startedLogURL)
+    try FileManager.default.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    FileManager.default.createFile(atPath: logURL.path, contents: Data("log".utf8))
+    await logFileReady.fire()
+
+    // The compensating stop+cleanup is fire-and-forget in a Task; poll briefly for it.
     var waited = 0
-    while mock.stopCount == 0 && waited < 100 {
+    while (mock.stopCount == 0 || FileManager.default.fileExists(atPath: logURL.path)) && waited < 100 {
         try? await Task.sleep(nanoseconds: 10_000_000)
         waited += 1
     }
     // Regression guard: if the compensation is ever dropped, this must fail
     // rather than silently pass after the poll window.
     #expect(mock.stopCount == 1)
+    #expect(!FileManager.default.fileExists(atPath: logURL.path))
 
     let outputDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.outputPath), isDirectory: true)
     let leftover = (try? FileManager.default.contentsOfDirectory(at: outputDir, includingPropertiesForKeys: nil)) ?? []
     #expect(leftover.isEmpty)
+}
+
+/// Single-fire async gate used to sequence a test's own actions against a
+/// fire-and-forget compensating Task without racing its scheduling.
+private actor TestSignal {
+    private var fired = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        if fired { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func fire() {
+        fired = true
+        continuation?.resume()
+        continuation = nil
+    }
 }
 
 @Test func markFailedTransitionsSession() async throws {

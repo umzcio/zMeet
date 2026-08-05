@@ -13,6 +13,11 @@ final class MockRecorder: MeetingRecorder, @unchecked Sendable {
     var startError: Error?
     var stopError: Error?
     var onCaptureFailure: (@Sendable (String) -> Void)?
+    /// Optional hook awaited at the very start of stop(), before stopCount is
+    /// incremented. Lets tests deterministically sequence their own assertions
+    /// against SessionManager's compensating-Task ordering instead of racing
+    /// it. nil (the default) is a no-op — no behavior change for other tests.
+    var beforeStop: (@Sendable () async -> Void)?
 
     init(createsAudioFile: Bool = true, audioFileSize: Int = 32) {
         self.createsAudioFile = createsAudioFile
@@ -40,6 +45,7 @@ final class MockRecorder: MeetingRecorder, @unchecked Sendable {
     }
 
     func stop() async throws {
+        if let beforeStop { await beforeStop() }
         stopCount += 1
         if let stopError { throw stopError }
     }
