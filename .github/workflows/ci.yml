@@ -5,20 +5,9 @@ on:
   pull_request:
 
 jobs:
-  test:
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: .build-ci
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
-      - name: Run ZMeetCore tests
-        run: swift test --scratch-path .build-ci
-
-  build-app:
-    # ZMeetApp requires macOS 26 APIs (#available(macOS 26, *)); the test job
-    # above only needs to build ZMeetCore, which runs fine on macos-15.
+  test-and-build:
+    # The package's platform floor is macOS 26 (see Package.swift), so both
+    # testing and building require a macOS 26 runner/toolchain.
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -26,5 +15,7 @@ jobs:
         with:
           path: .build-ci
           key: spm-${{ runner.os }}-26-${{ hashFiles('Package.resolved') }}
+      - name: Run ZMeetCore tests
+        run: swift test --scratch-path .build-ci
       - name: Build ZMeetApp (release)
         run: swift build -c release --product ZMeetApp --scratch-path .build-ci

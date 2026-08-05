@@ -6,7 +6,6 @@ import ZMeetCore
 /// on-device Foundation Models LLM via map-reduce (so long meetings are fully
 /// covered, not just their opening). Falls back to a simple extractive summary
 /// when Apple Intelligence is unavailable. Stateless / Sendable.
-@available(macOS 26, *)
 struct MeetingSummarizer: Summarizer {
     /// Per-chunk budget, kept under the on-device model's context limit with room
     /// for the surrounding prompt.

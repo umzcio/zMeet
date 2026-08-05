@@ -542,7 +542,6 @@ final class AppState: ObservableObject {
         return t.isEmpty || t == "Untitled Meeting"
     }
 
-    @available(macOS 26, *)
     private func transcribeForNotes(audioURL: URL) async throws -> String {
         let folder = audioURL.deletingLastPathComponent()
         let micURL = folder.appendingPathComponent("mic.m4a")
@@ -570,36 +569,28 @@ final class AppState: ObservableObject {
     }
 
     private func produceNotes(session: MeetingSession) async throws -> (transcript: String, summary: String, engine: SummaryEngine) {
-        if #available(macOS 26, *) {
-            let transcript = try await transcript(for: session)
-            let onDevice = MeetingSummarizer()
-            var cloud: (any Summarizer)?
-            if config.useCloudSummaries,
-               let key = secretStore.read(account: SecretAccount.anthropicAPIKey),
-               !key.isEmpty {
-                cloud = CloudSummarizer(apiKey: key)
-            }
-            let (summary, engine) = try await SummarizationPolicy().summarize(
-                transcript: transcript,
-                title: session.title,
-                useCloud: config.useCloudSummaries,
-                onDevice: onDevice,
-                cloud: cloud
-            )
-            return (transcript, summary, engine)
-        } else {
-            throw NSError(
-                domain: "zMeet", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "On-device transcription requires macOS 26 or newer."]
-            )
+        let transcript = try await transcript(for: session)
+        let onDevice = MeetingSummarizer()
+        var cloud: (any Summarizer)?
+        if config.useCloudSummaries,
+           let key = secretStore.read(account: SecretAccount.anthropicAPIKey),
+           !key.isEmpty {
+            cloud = CloudSummarizer(apiKey: key)
         }
+        let (summary, engine) = try await SummarizationPolicy().summarize(
+            transcript: transcript,
+            title: session.title,
+            useCloud: config.useCloudSummaries,
+            onDevice: onDevice,
+            cloud: cloud
+        )
+        return (transcript, summary, engine)
     }
 
     /// The transcript for a (re)process: transcribe the audio when it's present,
     /// otherwise fall back to the transcript already on disk. The fallback lets a
     /// meeting whose audio was purged (retention / free-up) still be re-processed —
     /// e.g. to back-fill it into Obsidian after enabling that feature.
-    @available(macOS 26, *)
     private func transcript(for session: MeetingSession) async throws -> String {
         let audioURL = URL(fileURLWithPath: session.audioPath)
         if FileManager.default.fileExists(atPath: audioURL.path) {

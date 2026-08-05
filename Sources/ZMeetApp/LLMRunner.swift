@@ -30,7 +30,6 @@ struct LLMRunner {
     }
 
     private func runOnDevice(prompt: String) async -> String? {
-        guard #available(macOS 26, *) else { return nil }
         let model = SystemLanguageModel.default
         guard case .available = model.availability else { return nil }
         do {
