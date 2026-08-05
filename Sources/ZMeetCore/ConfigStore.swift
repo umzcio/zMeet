@@ -36,6 +36,34 @@ public final class ConfigStore {
 
         return config
     }
+
+    /// Result of loading with corruption handling: the config, plus the backup
+    /// URL when an unreadable file was set aside.
+    public enum LoadOutcome {
+        case loaded(ZMeetConfig)
+        case bootstrapped(ZMeetConfig, corruptBackup: URL?)
+    }
+
+    /// Load the config; if the file exists but cannot be decoded, move it to
+    /// `config.json.bak-<timestamp>` (never overwrite user data) and bootstrap
+    /// a fresh default. A missing file bootstraps without a backup.
+    public func loadOrBackupAndBootstrap() -> LoadOutcome {
+        do {
+            return .loaded(try load())
+        } catch ZMeetError.configMissing {
+            let fresh = (try? bootstrap()) ?? ZMeetConfig.default(home: home)
+            return .bootstrapped(fresh, corruptBackup: nil)
+        } catch {
+            // Exists but undecodable: preserve it, then bootstrap.
+            let stamp = ISO8601DateFormatter().string(from: Date())
+                .replacingOccurrences(of: ":", with: "-")
+            let backupURL = configDirectory.appendingPathComponent("config.json.bak-\(stamp)")
+            try? FileManager.default.moveItem(at: configURL, to: backupURL)
+            let fresh = (try? bootstrap()) ?? ZMeetConfig.default(home: home)
+            let backedUp = FileManager.default.fileExists(atPath: backupURL.path)
+            return .bootstrapped(fresh, corruptBackup: backedUp ? backupURL : nil)
+        }
+    }
 }
 
 extension JSONEncoder {

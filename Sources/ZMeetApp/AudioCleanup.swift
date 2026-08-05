@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import AudioToolbox
+import ZMeetCore
 
 /// Offline background-noise cleanup for a finished recording. Renders the file
 /// through a fresh AVAudioEngine (high-pass + downward expander) and atomically
@@ -69,8 +70,9 @@ struct AudioCleanup {
             throw CleanupError.renderFailed
         }
 
+        var completed = false
         do {
-            while engine.manualRenderingSampleTime < source.length {
+            renderLoop: while engine.manualRenderingSampleTime < source.length {
                 let remaining = source.length - engine.manualRenderingSampleTime
                 let frames = AVAudioFrameCount(min(Int64(buffer.frameCapacity), remaining))
                 let status = try engine.renderOffline(frames, to: buffer)
@@ -78,14 +80,14 @@ struct AudioCleanup {
                 case .success:
                     try outFile?.write(from: buffer)
                 case .insufficientDataFromInputNode:
-                    break
+                    break renderLoop
                 case .cannotDoInCurrentContext, .error:
                     throw CleanupError.renderFailed
                 @unknown default:
                     throw CleanupError.renderFailed
                 }
-                if status == .insufficientDataFromInputNode { break }
             }
+            completed = engine.manualRenderingSampleTime >= source.length
         } catch {
             engine.stop()
             outFile = nil
@@ -95,6 +97,22 @@ struct AudioCleanup {
 
         engine.stop()
         outFile = nil  // finalize/flush the AAC file before replacing
+
+        // Refuse to swap in a partial render: the loop must have consumed the
+        // whole source and the encoded output must be within tolerance of the
+        // source length. A thrown error here is the safe path — the caller
+        // keeps the original recording.
+        let rendered = try AVAudioFile(forReading: tempURL)
+        let toleranceFrames = Int64(format.sampleRate)
+        guard AudioCleanupPolicy.mayReplaceOriginal(
+            sourceFrames: source.length,
+            renderedFrames: rendered.length,
+            loopCompleted: completed,
+            toleranceFrames: toleranceFrames
+        ) else {
+            try? FileManager.default.removeItem(at: tempURL)
+            throw CleanupError.renderFailed
+        }
 
         // Atomically swap the cleaned file in for the original.
         _ = try FileManager.default.replaceItemAt(fileURL, withItemAt: tempURL)

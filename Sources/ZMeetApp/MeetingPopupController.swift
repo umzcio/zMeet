@@ -35,8 +35,11 @@ final class MeetingPopupController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView: view)
 
-        positionTopRight(panel)
-        panel.orderFrontRegardless()
+        if let origin = topRightOrigin(for: panel) {
+            PanelAnimator.present(panel, at: origin)
+        } else {
+            panel.orderFrontRegardless()   // no screen info — show without motion
+        }
         self.panel = panel
 
         // Auto-dismiss after 15s; the meeting can still be recorded from the menu.
@@ -48,18 +51,18 @@ final class MeetingPopupController {
     func hide() {
         autoDismiss?.invalidate()
         autoDismiss = nil
-        panel?.orderOut(nil)
-        panel = nil
+        guard let panel = self.panel else { return }
+        self.panel = nil   // isVisible false immediately; re-entrant show() safe
+        PanelAnimator.dismiss(panel) { }
     }
 
-    private func positionTopRight(_ panel: NSPanel) {
-        guard let screen = NSScreen.main else { return }
+    private func topRightOrigin(for panel: NSPanel) -> NSPoint? {
+        guard let screen = NSScreen.main else { return nil }
         let visible = screen.visibleFrame
         let size = panel.frame.size
-        let origin = NSPoint(
+        return NSPoint(
             x: visible.maxX - size.width - 16,
             y: visible.maxY - size.height - 8
         )
-        panel.setFrameOrigin(origin)
     }
 }

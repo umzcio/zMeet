@@ -6,6 +6,10 @@ import Testing
     #expect(SummaryEngine.cloud.attribution == "Summary by Claude Sonnet (cloud)")
 }
 
+@Test func failureAttributionMentionsCloudAttempt() {
+    #expect(SummaryEngine.onDeviceAfterCloudFailure.attribution.contains("cloud attempt failed"))
+}
+
 @Test func meetingSummaryPromptHasRequiredSections() {
     let prompt = MeetingSummaryPrompt.build(transcript: "We shipped X.", title: "Sync")
     #expect(prompt.contains("## Summary"))
@@ -47,7 +51,7 @@ private struct ThrowingSummarizer: Summarizer {
     let (md, engine) = try await SummarizationPolicy().summarize(
         transcript: "t", title: "x", useCloud: true, onDevice: onDevice, cloud: ThrowingSummarizer())
     #expect(md == "local")
-    #expect(engine == .onDevice)
+    #expect(engine == .onDeviceAfterCloudFailure)
 }
 
 @Test func policyUsesOnDeviceWhenDisabled() async throws {

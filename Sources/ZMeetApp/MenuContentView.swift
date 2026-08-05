@@ -31,6 +31,8 @@ struct MenuContentView: View {
             primarySection
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
+                .animation(.easeOut(duration: 0.15), value: state.phase)
+                .animation(.easeOut(duration: 0.15), value: state.isProcessing)
 
             if let error = state.lastError {
                 Text(error)
@@ -49,7 +51,7 @@ struct MenuContentView: View {
             }
 
             Divider()
-            openAppRow
+            OpenAppRow(subtitle: meetingCountText) { openLibrary() }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
 
@@ -92,11 +94,9 @@ struct MenuContentView: View {
     }
 
     private var statusText: String {
-        switch state.phase {
-        case .idle:        return "Ready"
-        case .recording:   return "Recording"
-        case .processing:  return "Processing…"
-        }
+        if state.isRecording { return "Recording" }
+        if state.isProcessing { return "Processing…" }
+        return "Ready"
     }
 
     // MARK: Primary action — Start (idle) / timer + Stop (recording)
@@ -104,25 +104,14 @@ struct MenuContentView: View {
     @ViewBuilder
     private var primarySection: some View {
         switch state.phase {
-        case .idle:
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Meeting title", text: $state.draftTitle)
-                    .textFieldStyle(.roundedBorder)
-                Button {
-                    state.requestManualStart()
-                } label: {
-                    Label("Start Recording", systemImage: "record.circle")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-            }
-
         case .recording(let since):
+            // Recording always wins the primary slot, even while a different
+            // meeting is being (re)processed in the background — the Stop button
+            // must never disappear behind a "Processing…" row.
             VStack(alignment: .leading, spacing: 10) {
                 TimelineView(.periodic(from: since, by: 1)) { _ in
                     HStack(spacing: 8) {
-                        Circle().fill(.red).frame(width: 9, height: 9)
+                        RecordingDot()
                         Text("Recording")
                         Spacer()
                         Text(elapsed(since: since)).monospacedDigit()
@@ -138,12 +127,29 @@ struct MenuContentView: View {
                 }
                 .buttonStyle(.bordered)
             }
+            .transition(.opacity)
 
-        case .processing:
+        case .idle where state.isProcessing:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Processing…").foregroundStyle(.secondary)
             }
+            .transition(.opacity)
+
+        case .idle:
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Meeting title", text: $state.draftTitle)
+                    .textFieldStyle(.roundedBorder)
+                Button {
+                    state.requestManualStart()
+                } label: {
+                    Label("Start Recording", systemImage: "record.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+            }
+            .transition(.opacity)
         }
     }
 
@@ -162,31 +168,6 @@ struct MenuContentView: View {
             Button("Set up") { dismissMenuBar(); state.openOnboarding() }
                 .font(.caption)
         }
-    }
-
-    // MARK: Open the app — single row into the Library (the meeting browser)
-
-    private var openAppRow: some View {
-        Button { openLibrary() } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "rectangle.stack")
-                    .font(.body)
-                    .foregroundStyle(Self.mint)
-                    .frame(width: 20)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Open zMeet").fontWeight(.medium)
-                    Text(meetingCountText)
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption).foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     private var meetingCountText: String {
@@ -220,18 +201,71 @@ struct MenuContentView: View {
     }
 }
 
+private struct RecordingDot: View {
+    @State private var dim = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        Circle().fill(.red).frame(width: 9, height: 9)
+            .opacity(dim ? 0.45 : 1.0)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                    dim = true
+                }
+            }
+    }
+}
+
 private struct ToolbarIcon: View {
     let systemName: String
     let help: String
     let action: () -> Void
+    @State private var hover = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(hover ? Color.primary : Color.secondary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
+        .onHover { hover = $0 }
         .help(help)
+    }
+}
+
+// MARK: Open the app — single row into the Library (the meeting browser)
+
+private struct OpenAppRow: View {
+    let subtitle: String
+    let action: () -> Void
+    @State private var hover = false
+
+    /// Brand mint (#2EE08A).
+    private static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "rectangle.stack")
+                    .font(.body)
+                    .foregroundStyle(Self.mint)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Open zMeet").fontWeight(.medium)
+                    Text(subtitle)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(hover ? Color.white.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .onHover { hover = $0 }
     }
 }

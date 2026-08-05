@@ -12,15 +12,25 @@ RES_DIR="$APP_DIR/Contents/Resources"
 FW_DIR="$APP_DIR/Contents/Frameworks"
 
 # App version (also stamped into the appcast on release).
-VERSION="1.15.0"
-BUILD="21"
+# Single source of truth: release.sh asserts its version argument matches this.
+VERSION="${ZMEET_VERSION:-1.15.0}"
+BUILD="${ZMEET_BUILD:-21}"
 
 # Sparkle auto-update: appcast feed URL + EdDSA public key (private key is in the
 # login keychain via generate_keys).
 SU_FEED_URL="https://raw.githubusercontent.com/umzcio/zMeet/main/appcast.xml"
 SU_PUBLIC_ED_KEY="7KQVNte/Z3ts81v6gETASf21YKulzZZTiqMpF8uv5G8="
 
-SPARKLE_FW="$ROOT/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+SPARKLE_ART="$(ls -d "$ROOT"/.build*/artifacts/sparkle/Sparkle 2>/dev/null | head -1 || true)"
+if [[ -z "$SPARKLE_ART" || ! -e "$SPARKLE_ART" ]]; then
+  echo "error: Sparkle artifacts not found. Run: swift package resolve  (or: rm -rf .build/artifacts && swift build)" >&2
+  exit 1
+fi
+SPARKLE_FW="$SPARKLE_ART/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+if [[ ! -e "$SPARKLE_FW" ]]; then
+  echo "error: Sparkle artifacts not found. Run: swift package resolve  (or: rm -rf .build/artifacts && swift build)" >&2
+  exit 1
+fi
 
 echo "==> Compiling ZMeetApp (release)"
 # The extra rpath lets the bundled binary find Sparkle.framework in Contents/Frameworks.

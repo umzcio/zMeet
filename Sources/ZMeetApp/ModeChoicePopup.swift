@@ -120,13 +120,14 @@ final class ModeChoicePopupController {
         panel.hidesOnDeactivate = false
         panel.contentView = host
         panel.center()
-        panel.orderFrontRegardless()
+        PanelAnimator.present(panel, at: panel.frame.origin, slide: 0, duration: 0.18)
         NSApp.activate(ignoringOtherApps: true)
         self.panel = panel
     }
 
     func hide() {
-        panel?.orderOut(nil)
-        panel = nil
+        guard let panel = self.panel else { return }
+        self.panel = nil   // re-entrant show() safe
+        PanelAnimator.dismiss(panel, slide: 0, duration: 0.15) { }
     }
 }

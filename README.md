@@ -51,14 +51,16 @@ Privacy is the point, not a feature.
 - **Audio never leaves your Mac.** Capture, transcription, and summarization all run locally.
 - **No account, no telemetry, no network calls** in the core workflow.
 - **No bot in your meeting.** Participants don't see a "zMeet Notetaker" join — capture happens at the OS level.
-- **You own the output.** Plain Markdown + an `.m4a`, in a folder you control. Delete a meeting by deleting its folder.
+- **You own the output.** Plain Markdown + an `.m4a`, in a folder you control. Delete a meeting from the Library (removes its files, index entry, and logs) — or delete its folder in Finder and zMeet cleans up the rest on next launch.
 
 Transcription uses on-device Speech; summaries use on-device Foundation Models (Apple Intelligence).
 If Apple Intelligence is off, you still get a full transcript and a basic extractive summary.
 
 Two **opt-in** features step outside the default local-only path, and only when you turn them on:
-**cloud summaries** send transcript text + the meeting title (never audio) to the Claude API, and
-**Obsidian export** writes Markdown copies into a vault folder on your Mac (local files, no network).
+**cloud summaries** send transcript and notes text + the meeting title (never audio) to the Claude
+API — for the summary itself, for the entity links used by Obsidian export, and for auto-titles —
+and **Obsidian export** writes Markdown copies into a vault folder on your Mac (local files, no
+network).
 
 ---
 

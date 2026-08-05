@@ -6,10 +6,13 @@ import ZMeetCore
 
 @MainActor
 final class AppState: ObservableObject {
+    // Recording and processing are concurrently valid (a background re-process
+    // can run while a new meeting is being recorded), so `.processing` was removed
+    // from `Phase` — `isProcessing` (derived from `processingSessionID`) is the
+    // sole processing signal now.
     enum Phase: Equatable {
         case idle
         case recording(since: Date)
-        case processing
     }
 
     @Published private(set) var phase: Phase = .idle
@@ -53,7 +56,7 @@ final class AppState: ObservableObject {
 
     private let store = ConfigStore()
     private let secretStore: SecretStore = KeychainSecretStore()
-    private let recorder: MeetingRecorder
+    private var recorder: MeetingRecorder
     @Published private(set) var config: ZMeetConfig
     private var manager: SessionManager
     private let detector = MeetingDetector()
@@ -70,12 +73,18 @@ final class AppState: ObservableObject {
     private var recordingFromDetection = false
 
     init(recorder: MeetingRecorder) {
-        // Load config, or bootstrap a fresh one if missing/old-schema.
+        // Load config; a corrupt file is backed up (never clobbered) and replaced
+        // with defaults, and the user is told below via lastError.
         let loaded: ZMeetConfig
-        if let existing = try? store.load() {
-            loaded = existing
-        } else {
-            loaded = (try? store.bootstrap()) ?? ZMeetConfig.default()
+        var configRecoveryNote: String?
+        switch store.loadOrBackupAndBootstrap() {
+        case .loaded(let cfg):
+            loaded = cfg
+        case .bootstrapped(let cfg, let backup):
+            loaded = cfg
+            if let backup {
+                configRecoveryNote = "Your settings file couldn't be read and was reset to defaults. The old file was saved as \(backup.lastPathComponent) in ~/.zmeet."
+            }
         }
         self.recorder = recorder
         self.config = loaded
@@ -87,7 +96,26 @@ final class AppState: ObservableObject {
         manager.purgeExpiredAudio()
         refreshHasAPIKey()
         refreshPermissions()
+        if let configRecoveryNote { lastError = configRecoveryNote }
         if config.detectMeetings { startMeetingDetection() }
+
+        // Report a capture failure that happens after `start()` returned (async
+        // stream setup failure, stream died mid-recording): surface it to the
+        // user and mark the in-flight session `.failed` instead of leaving it
+        // to look like a normal (silent) recording.
+        self.recorder.onCaptureFailure = { [weak self] message in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.lastError = message
+                if case .recording = self.phase,
+                   let active = self.allSessions.first(where: { $0.status == .recording }) {
+                    _ = try? await self.manager.stop()
+                    _ = try? self.manager.markFailed(id: active.id, message: message)
+                    self.phase = .idle
+                    self.reloadRecent()
+                }
+            }
+        }
 
         // Show first-run setup (or whenever a required permission is missing).
         DispatchQueue.main.async { [weak self] in
@@ -306,12 +334,14 @@ final class AppState: ObservableObject {
         return false
     }
 
+    /// True while any meeting's process+publish lifecycle is running — independent
+    /// of `phase`, so a background re-process never masks a concurrent recording.
+    var isProcessing: Bool { processingSessionID != nil }
+
     var iconState: MenuBarIcon.State {
-        switch phase {
-        case .recording: return .recording
-        case .processing: return .processing
-        case .idle: return .idle
-        }
+        if case .recording = phase { return .recording }
+        if isProcessing { return .processing }
+        return .idle
     }
 
     /// Manual start: ask remote vs in-person first, then record.
@@ -415,7 +445,10 @@ final class AppState: ObservableObject {
         guard isRecording else { return }
         lastError = nil
         recordingFromDetection = false
-        phase = .processing
+        // Return to idle immediately — processing (if any) is now tracked entirely
+        // via `processingSessionID`/`isProcessing`, independent of `phase`, so a
+        // concurrent background re-process of another meeting is never clobbered.
+        phase = .idle
         Task {
             do {
                 let stopped = try await manager.stop()
@@ -431,11 +464,8 @@ final class AppState: ObservableObject {
                 reloadRecent()
                 if config.autoProcessOnStop {
                     process(id: stopped.id)
-                } else {
-                    phase = .idle
                 }
             } catch {
-                phase = .idle
                 lastError = error.localizedDescription
                 reloadRecent()
             }
@@ -449,7 +479,6 @@ final class AppState: ObservableObject {
         guard !inFlightSessionIDs.contains(id) else { return }
         inFlightSessionIDs.insert(id)
         lastError = nil
-        phase = .processing
         // Track the specific meeting so the Library can show a per-row/reader
         // spinner and refresh the open note when this finishes — re-processing an
         // already-`.processed` meeting doesn't change its status, so the Library
@@ -463,6 +492,9 @@ final class AppState: ObservableObject {
                 // synchronous Core write happens back on the main actor.
                 let session = try manager.session(id: id)
                 let (transcript, summary, engine) = try await produceNotes(session: session)
+                if engine == .onDeviceAfterCloudFailure {
+                    lastError = "Cloud summary failed — this meeting's notes were generated on-device. Check your API key in Settings."
+                }
                 // Give untitled meetings (in-person / manual) a descriptive title from
                 // their notes, before the note is written + published so it carries
                 // through. Best-effort; never overwrites a real/user-set title. You can
@@ -484,9 +516,12 @@ final class AppState: ObservableObject {
                 toPublish = (processed, transcript, summary)
             } catch {
                 lastError = error.localizedDescription
+                let failedTitle = (try? manager.session(id: id))?.title ?? "Meeting"
+                notesReadyPopup.show(kind: .failure, title: failedTitle) { [weak self] in
+                    self?.openLibrary(select: id)
+                }
             }
             // Free the UI as soon as the notes are saved + shown.
-            phase = .idle
             processingSessionID = nil
             reloadRecent()
             // Obsidian publish is a best-effort background step that runs AFTER the

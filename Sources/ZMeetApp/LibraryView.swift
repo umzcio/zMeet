@@ -51,6 +51,8 @@ struct LibraryView: View {
                 deleteAudioDialog(session)
             }
         }
+        .animation(state.libraryDialog == nil ? DialogScaffold<EmptyView>.disappear : DialogScaffold<EmptyView>.appear,
+                   value: state.libraryDialog)
         // Read rail-row anchors from the whole tree (the rows live in railColumn)
         // and float the right-click menu under the clicked row.
         .overlayPreferenceValue(RailRowAnchorKey.self) { anchors in
@@ -458,8 +460,12 @@ struct LibraryView: View {
             DropdownRow(title: "Rename…") {
                 renameText = session.title; closeMenus(); state.libraryDialog = .rename
             }
-            DropdownRow(title: session.status == .processed ? "Re-process" : "Process Notes") {
-                state.process(id: session.id); closeMenus()
+            // A meeting that's actively recording can't be (re)processed yet — the
+            // Core guard already refuses it, but the UI shouldn't offer it either.
+            if session.status != .recording {
+                DropdownRow(title: session.status == .processed ? "Re-process" : "Process Notes") {
+                    state.process(id: session.id); closeMenus()
+                }
             }
             DropdownRow(title: "Reveal in Finder") {
                 state.revealNote(session); closeMenus()
@@ -576,10 +582,10 @@ struct LibraryView: View {
             Button {
                 state.process(id: session.id)
             } label: {
-                Label(state.phase == .processing ? "Processing…" : "Process Notes", systemImage: "wand.and.stars")
+                Label(state.processingSessionID != nil ? "Processing…" : "Process Notes", systemImage: "wand.and.stars")
             }
             .buttonStyle(.borderedProminent).tint(Self.mint)
-            .disabled(state.phase == .processing)
+            .disabled(state.processingSessionID != nil || session.status == .recording)
         }
     }
 
@@ -855,7 +861,7 @@ private struct DropdownRow: View {
                 .background(hover ? LibraryView.hover : .clear)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .onHover { hover = $0 }
         .padding(.horizontal, 5)
     }

@@ -104,6 +104,22 @@ public enum ZMeetText {
 
 }
 
+/// Guards the offline noise-cleanup pass from replacing a recording with a
+/// truncated render. A cleaned render may only swap in for the original when
+/// the render loop consumed the entire source and the encoded output length
+/// is within tolerance of the source length.
+public enum AudioCleanupPolicy {
+    /// A cleaned render may replace the original only when the render loop
+    /// consumed the whole source and the output length is within `tolerance`
+    /// frames of the source length.
+    public static func mayReplaceOriginal(
+        sourceFrames: Int64, renderedFrames: Int64,
+        loopCompleted: Bool, toleranceFrames: Int64
+    ) -> Bool {
+        loopCompleted && renderedFrames >= sourceFrames - toleranceFrames
+    }
+}
+
 public enum ZMeetDates {
     public static func iso8601(_ date: Date) -> String {
         ISO8601DateFormatter().string(from: date)

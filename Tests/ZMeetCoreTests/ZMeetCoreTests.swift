@@ -146,6 +146,63 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(FileManager.default.fileExists(atPath: processed.notePath!))
 }
 
+/// A re-process (of an already-`.processed` meeting) that fails mid-write must
+/// not downgrade the session — its prior notes are still intact on disk and the
+/// Library must keep showing them.
+@Test func reprocessFailurePreservesProcessedStatus() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let recorder = MockRecorder()
+    let manager = SessionManager(config: config, recorder: recorder)
+
+    let started = try manager.start(title: "Weekly Sync", sourceApp: nil)
+    let stopped = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "First pass.", summary: "## Summary\n\n- First.")
+    #expect(processed.status == .processed)
+
+    // Force the second write to fail mid-write (inside the catch-guarded block):
+    // make the meeting folder read-only so `transcript.write(...)` throws.
+    let folder = URL(fileURLWithPath: processed.audioPath).deletingLastPathComponent()
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+
+    #expect(throws: (any Error).self) {
+        _ = try manager.applyProcessedText(id: started.id, transcript: "Second pass.", summary: "## Summary\n\n- Second.")
+    }
+
+    let reloaded = try manager.session(id: started.id)
+    #expect(reloaded.status == .processed)
+    #expect(reloaded.errorMessage != nil)
+}
+
+/// Protects existing behavior: a first-ever process failure (on a `.recorded`
+/// session with no prior notes) still marks the session `.failed`.
+@Test func firstProcessFailureStillMarksFailed() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let recorder = MockRecorder()
+    let manager = SessionManager(config: config, recorder: recorder)
+
+    let started = try manager.start(title: "Flaky Notes", sourceApp: nil)
+    let stopped = try await manager.stop()
+    #expect(stopped.status == .recorded)
+
+    // Force the write to fail the same way, before any successful process.
+    let folder = URL(fileURLWithPath: stopped.audioPath).deletingLastPathComponent()
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+
+    #expect(throws: (any Error).self) {
+        _ = try manager.applyProcessedText(id: started.id, transcript: "Never lands.", summary: "## Summary\n\n- Never.")
+    }
+
+    let reloaded = try manager.session(id: started.id)
+    #expect(reloaded.status == .failed)
+    #expect(reloaded.errorMessage != nil)
+}
+
 @Test func stopFailureMarksSessionFailed() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -176,6 +233,81 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(throws: ZMeetError.self) {
         _ = try manager.start(title: "Second", sourceApp: nil)
     }
+}
+
+/// A `save()` failure AFTER `recorder.start()` succeeded must not leave an
+/// unowned live capture behind: the recorder is stopped and the meeting
+/// folder is removed.
+@Test func startCompensatesWhenSaveFails() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    // Pre-create the sessions directory (ensureDirectory on an already-existing
+    // dir succeeds even when it's read-only), then lock it down so only the
+    // final `save()` write inside `start()` fails — recorder.start() and the
+    // meeting-folder creation happen elsewhere and must still succeed.
+    let sessionsDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
+        .appendingPathComponent("sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: sessionsDir, withIntermediateDirectories: true)
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: sessionsDir.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: sessionsDir.path) }
+
+    let mock = MockRecorder()
+    let manager = SessionManager(config: config, recorder: mock)
+
+    #expect(throws: (any Error).self) {
+        _ = try manager.start(title: "Doomed", sourceApp: nil)
+    }
+
+    // The compensating stop is fire-and-forget in a Task; poll briefly for it.
+    var waited = 0
+    while mock.stopCount == 0 && waited < 100 {
+        try? await Task.sleep(nanoseconds: 10_000_000)
+        waited += 1
+    }
+    // Regression guard: if the compensation is ever dropped, this must fail
+    // rather than silently pass after the poll window.
+    #expect(mock.stopCount == 1)
+
+    let outputDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.outputPath), isDirectory: true)
+    let leftover = (try? FileManager.default.contentsOfDirectory(at: outputDir, includingPropertiesForKeys: nil)) ?? []
+    #expect(leftover.isEmpty)
+}
+
+@Test func markFailedTransitionsSession() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    // A recording session is marked failed with the message + timestamp set.
+    let started = try manager.start(title: "Live", sourceApp: nil)
+    let failed = try manager.markFailed(id: started.id, message: "boom")
+    #expect(failed.status == .failed)
+    #expect(failed.errorMessage == "boom")
+    #expect(failed.endedAt != nil)
+
+    // A processed session is left alone by markFailed — its notes stay intact.
+    _ = try manager.start(title: "Done", sourceApp: nil)
+    let stopped = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+    #expect(processed.status == .processed)
+    let untouched = try manager.markFailed(id: processed.id, message: "should not apply")
+    #expect(untouched.status == .processed)
+}
+
+@Test func mockCaptureFailureCallbackFires() {
+    let mock = MockRecorder()
+    let box = CapturedMessageBox()
+    mock.onCaptureFailure = { message in box.value = message }
+    mock.simulateCaptureFailure("boom")
+    #expect(box.value == "boom")
+}
+
+/// Reference-type box so the `@Sendable` `onCaptureFailure` closure above can
+/// record its argument without tripping Swift 6's captured-var diagnostics —
+/// the mock invokes it synchronously, so there's no actual concurrent access.
+private final class CapturedMessageBox: @unchecked Sendable {
+    var value: String?
 }
 
 @Test func startFailureDoesNotPersistSession() throws {
@@ -491,6 +623,138 @@ private func makeProcessedMeeting(_ manager: SessionManager, title: String, days
     _ = try await makeProcessedMeeting(manager, title: "B", daysAgo: 1)
 
     #expect(manager.reclaimableAudioBytes() == 200)
+}
+
+/// A temp config rooted under the real home directory (not `/tmp`, which on
+/// macOS resolves outside `homeDirectoryForCurrentUser`), needed by tests that
+/// exercise the home-guarded `purgeSessionsWithMissingFolders`.
+private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
+    let root = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".zmeet-test-\(UUID().uuidString)", isDirectory: true)
+    let config = ZMeetConfig(
+        outputPath: root.appendingPathComponent("zMeet").path,
+        appDataPath: root.appendingPathComponent("data").path,
+        gitAutoCommit: false,
+        autoProcessOnStop: false
+    )
+    return (config, root)
+}
+
+@Test func deleteRemovesRecorderLog() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Logged", sourceApp: nil)
+    let stopped = try await manager.stop()
+    _ = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+
+    // MockRecorder doesn't write a log file — create the one the session record
+    // points at so we can verify delete() removes it.
+    let session = try manager.session(id: started.id)
+    let logPath = try #require(session.recorderLogPath)
+    try FileManager.default.createDirectory(
+        at: URL(fileURLWithPath: logPath).deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    FileManager.default.createFile(atPath: logPath, contents: Data("log".utf8))
+    #expect(FileManager.default.fileExists(atPath: logPath))
+
+    try manager.delete(id: started.id)
+    #expect(!FileManager.default.fileExists(atPath: logPath))
+}
+
+@Test func finderDeletedFolderPurgesSessionAndIndex() async throws {
+    let (config, root) = makeTempConfigUnderHome()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Vanishing", sourceApp: nil)
+    let stopped = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+
+    let logPath = try #require(processed.recorderLogPath)
+    try FileManager.default.createDirectory(
+        at: URL(fileURLWithPath: logPath).deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    FileManager.default.createFile(atPath: logPath, contents: Data("log".utf8))
+
+    let store = try #require(manager.searchStore)
+    #expect(try store.indexedIDs().contains(processed.id))
+
+    // Simulate the user deleting the meeting folder in Finder.
+    let folder = URL(fileURLWithPath: processed.audioPath).deletingLastPathComponent()
+    try FileManager.default.removeItem(at: folder)
+
+    let purged = manager.purgeSessionsWithMissingFolders()
+    #expect(purged == [processed.id])
+
+    #expect(throws: (any Error).self) { _ = try manager.session(id: processed.id) }
+    #expect(!(try store.indexedIDs().contains(processed.id)))
+    #expect(!FileManager.default.fileExists(atPath: logPath))
+}
+
+@Test func deleteWorksAfterOutputRootChanges() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Moving", sourceApp: nil)
+    let stopped = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+    let folder = URL(fileURLWithPath: processed.audioPath).deletingLastPathComponent()
+    #expect(FileManager.default.fileExists(atPath: folder.path))
+
+    // Rebuild a SessionManager pointing at a DIFFERENT output root, as happens
+    // when the user changes the notes folder in Settings.
+    var movedConfig = config
+    movedConfig.outputPath = root.appendingPathComponent("zMeetElsewhere").path
+    let movedManager = SessionManager(config: movedConfig, recorder: MockRecorder())
+
+    try movedManager.delete(id: processed.id)
+
+    // The original folder (under the OLD root, remembered via outputRoot) is gone.
+    #expect(!FileManager.default.fileExists(atPath: folder.path))
+    #expect(throws: (any Error).self) { _ = try movedManager.session(id: processed.id) }
+}
+
+/// `reclaimableAudioBytes` must never report bytes that `removeAudioFile` would
+/// then refuse to remove. Simulates a legacy session (predates `outputRoot`,
+/// so it decodes with `outputRoot == nil`) whose config output root then moves:
+/// the shared `audioURLIfRemovable` predicate falls back to the CURRENT output
+/// root for such a session, so its audio (still sitting under the OLD root) is
+/// correctly excluded from both reclaimable-bytes accounting and deletion.
+@Test func reclaimableMatchesRemovable() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder(audioFileSize: 100))
+
+    let processed = try await makeProcessedMeeting(manager, title: "Legacy", daysAgo: 1)
+    #expect(manager.reclaimableAudioBytes() == 100)
+
+    // Strip `outputRoot` from the on-disk session record to simulate a session
+    // created before this field existed.
+    let sessionURL = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
+        .appendingPathComponent("sessions", isDirectory: true)
+        .appendingPathComponent("\(processed.id).json")
+    let data = try Data(contentsOf: sessionURL)
+    var dict = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    dict.removeValue(forKey: "outputRoot")
+    let strippedData = try JSONSerialization.data(withJSONObject: dict)
+    try strippedData.write(to: sessionURL)
+
+    // Now move the output root and rebuild the manager, as Settings does.
+    var movedConfig = config
+    movedConfig.outputPath = root.appendingPathComponent("zMeetElsewhere").path
+    let movedManager = SessionManager(config: movedConfig, recorder: MockRecorder())
+
+    // The legacy session's audio still lives under the OLD root, which is no
+    // longer reachable via the (now current) output root fallback — reclaimable
+    // bytes must reflect that it will NOT be removed.
+    #expect(movedManager.reclaimableAudioBytes() == 0)
+    try movedManager.deleteAudio(id: processed.id)
+    #expect(FileManager.default.fileExists(atPath: processed.audioPath))
 }
 
 @Test func micGainDefaultsToUnityAndRoundTrips() throws {
