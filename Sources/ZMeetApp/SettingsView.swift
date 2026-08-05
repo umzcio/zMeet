@@ -28,11 +28,9 @@ struct SettingsView: View {
         }
         var isOK: Bool { self == .ok }
     }
-    // Mint-terminal palette
-    static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
-    static let bg = Color(red: 0.051, green: 0.067, blue: 0.059)
+    // Mint-terminal palette. mint/bg/card now come from ZMeetPalette (Library's
+    // canonical shades); Settings previously used slightly darker values here.
     static let sidebarBG = Color(red: 0.078, green: 0.094, blue: 0.086)
-    static let card = Color(red: 0.118, green: 0.141, blue: 0.125)
     static let hairline = Color.white.opacity(0.07)
 
     enum Section: String, CaseIterable, Identifiable {
@@ -110,9 +108,9 @@ struct SettingsView: View {
             }
         }
         .frame(width: 720, height: 500)
-        .background(Self.bg)
+        .background(ZMeetPalette.bg)
         .preferredColorScheme(.dark)
-        .tint(Self.mint)
+        .tint(ZMeetPalette.mint)
         .onAppear { state.refreshPermissions() }
     }
 
@@ -204,7 +202,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
             .frame(width: (id == .microphone || id == .obsidianVault) ? 190 : 140)
-            .background(Self.card, in: RoundedRectangle(cornerRadius: 8))
+            .background(ZMeetPalette.card, in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Self.hairline, lineWidth: 1))
             .contentShape(Rectangle())
         }
@@ -231,7 +229,7 @@ struct SettingsView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 1) {
-                Text(" z").font(.custom("Dancing Script", size: 26)).foregroundStyle(Self.mint)
+                Text(" z").font(.custom("Dancing Script", size: 26)).foregroundStyle(ZMeetPalette.mint)
                 Text("Meet").font(.system(size: 20, weight: .bold))
             }
             .padding(.leading, 12)
@@ -276,7 +274,7 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(selected ? Self.mint : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .background(selected ? ZMeetPalette.mint : .clear, in: RoundedRectangle(cornerRadius: 8))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -371,7 +369,7 @@ struct SettingsView: View {
                             if let keyTestResult {
                                 Text(keyTestResult.label)
                                     .font(.caption)
-                                    .foregroundStyle(keyTestResult.isOK ? Self.mint : .orange)
+                                    .foregroundStyle(keyTestResult.isOK ? ZMeetPalette.mint : .orange)
                             }
                             Button(testingKey ? "Testing…" : "Test") {
                                 testingKey = true
@@ -419,7 +417,7 @@ struct SettingsView: View {
                                 Button("Publish all to vault") { state.publishAllToObsidian() }
                                     .disabled(state.config.obsidianVaultPath?.isEmpty != false)
                                 if let message = state.obsidianBackfillMessage {
-                                    Text(message).font(.caption).foregroundStyle(Self.mint)
+                                    Text(message).font(.caption).foregroundStyle(ZMeetPalette.mint)
                                         .multilineTextAlignment(.trailing)
                                 }
                             }
@@ -511,7 +509,7 @@ struct SettingsView: View {
             Button { state.openOnboarding() } label: {
                 Text("Open Setup…").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent).tint(Self.mint)
+            .buttonStyle(.borderedProminent).tint(ZMeetPalette.mint)
         }
     }
 
@@ -533,7 +531,7 @@ struct SettingsView: View {
 
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(spacing: 0) { content() }
-            .background(Self.card, in: RoundedRectangle(cornerRadius: 12))
+            .background(ZMeetPalette.card, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Self.hairline, lineWidth: 1))
     }
 
@@ -559,7 +557,7 @@ struct SettingsView: View {
 
     private func toggleRow(_ title: String, _ subtitle: String, _ binding: Binding<Bool>) -> some View {
         row(title, subtitle) {
-            Toggle("", isOn: binding).labelsHidden().toggleStyle(.switch).tint(Self.mint)
+            Toggle("", isOn: binding).labelsHidden().toggleStyle(.switch).tint(ZMeetPalette.mint)
         }
     }
 
@@ -567,7 +565,7 @@ struct SettingsView: View {
         row(title, nil) {
             Label(granted ? "Granted" : "Not granted",
                   systemImage: granted ? "checkmark.circle.fill" : "xmark.circle")
-                .foregroundStyle(granted ? Self.mint : .orange)
+                .foregroundStyle(granted ? ZMeetPalette.mint : .orange)
                 .labelStyle(.titleAndIcon)
                 .font(.callout)
         }
@@ -636,11 +634,11 @@ private struct DropdownMenuRow: View {
             HStack(spacing: 8) {
                 Text(label)
                     .font(.system(size: 13))
-                    .foregroundStyle(selected ? SettingsView.mint : Color.primary)
+                    .foregroundStyle(selected ? ZMeetPalette.mint : Color.primary)
                 Spacer(minLength: 8)
                 if selected {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(SettingsView.mint)
+                        .foregroundStyle(ZMeetPalette.mint)
                 }
             }
             .padding(.horizontal, 12)

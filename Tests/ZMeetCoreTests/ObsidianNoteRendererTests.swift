@@ -50,3 +50,13 @@ private func sampleSession() -> MeetingSession {
     #expect(t.contains("[[2026-06-01 Weekly Sync]]"))
     #expect(t.contains("Hello."))
 }
+
+@Test func frontmatterEscapesTrailingBackslashInsteadOfSwallowingQuote() {
+    // A value ending in a backslash must not be able to escape its own closing
+    // quote — the backslash itself needs escaping first, so the value renders
+    // as `"...\\"` (a literal trailing backslash, properly closed).
+    let e = MeetingEntities(people: ["C:\\Users\\Jonathan\\"], projects: [], topics: [])
+    let note = ObsidianNoteRenderer.mainNote(session: sampleSession(), summary: "body",
+        entities: e, transcriptNoteName: "T")
+    #expect(note.contains("people: [\"C:\\\\Users\\\\Jonathan\\\\\"]"))
+}

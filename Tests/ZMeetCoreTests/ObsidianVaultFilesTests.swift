@@ -56,6 +56,17 @@ import Testing
     #expect(legacy != ObsidianVaultFiles.names(for: s).mainNoteName)
 }
 
+@Test func vaultNamesStayUnderComponentLimit() {
+    // A very long (e.g. remote-controlled or LLM-generated) title must not push
+    // the published filename past APFS's 255-byte component limit, even after
+    // the "  — Transcript.md" suffix is appended.
+    let longTitle = String(repeating: "a", count: 400)
+    let s = MeetingSession(id: "x", title: longTitle, sourceApp: nil,
+        startedAt: Date(timeIntervalSince1970: 1_780_000_000), endedAt: nil, status: .processed,
+        audioPath: "", transcriptPath: nil, notePath: nil, recorderLogPath: nil, errorMessage: nil)
+    #expect(ObsidianVaultFiles.names(for: s).transcript.utf8.count < 255)
+}
+
 @Test func removeDeletesBothPublishedFiles() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("vault-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

@@ -9,6 +9,10 @@ public final class SessionManager {
     /// be opened, search is disabled but everything else works.
     public let searchStore: SearchStore?
 
+    /// In-memory session cache keyed by id. Source of truth stays the JSON files;
+    /// every write path maintains it. nil = not yet loaded (first read scans disk).
+    private var sessionCache: [String: MeetingSession]?
+
     private var appDataURL: URL {
         URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
     }
@@ -159,9 +163,9 @@ public final class SessionManager {
         let priorStatus = session.status
         let transcriptURL = transcriptURL(for: session)
         let noteURL = noteURL(for: session)
-        try ZMeetPaths.ensureDirectory(transcriptURL.deletingLastPathComponent())
 
         do {
+            try ZMeetPaths.ensureDirectory(transcriptURL.deletingLastPathComponent())
             try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
             let note = MarkdownRenderer().renderProcessedNote(
                 session: session,
@@ -183,9 +187,6 @@ public final class SessionManager {
                 sessionID: session.id, title: session.title,
                 notes: summary, transcript: transcript
             )
-            if config.gitAutoCommit {
-                _ = try? GitRepository(repoURL: outputURL).commitAll(message: "Add meeting notes: \(session.title)")
-            }
             return session
         } catch {
             // A failed re-process of an already-processed meeting must not hide
@@ -244,6 +245,7 @@ public final class SessionManager {
             try? fileManager.removeItem(at: folder)
         }
         try? fileManager.removeItem(at: sessionsURL.appendingPathComponent("\(id).json"))
+        sessionCache?.removeValue(forKey: id)
         try? searchStore?.remove(sessionID: id)
         let logURL = session.recorderLogPath.map { URL(fileURLWithPath: $0) }
             ?? logsURL.appendingPathComponent("\(id).recorder.log")
@@ -323,16 +325,33 @@ public final class SessionManager {
     }
 
     public func listSessions() throws -> [MeetingSession] {
+        try Array(cachedSessions().values).sorted { $0.startedAt > $1.startedAt }
+    }
+
+    /// Returns the cached session map, populating it from disk on first access.
+    private func cachedSessions() throws -> [String: MeetingSession] {
+        if let sessionCache { return sessionCache }
+        let loaded = try scanSessionsFromDisk()
+        sessionCache = loaded
+        return loaded
+    }
+
+    /// Drops the in-memory cache so the next read rescans disk. Used as a safe
+    /// fallback whenever a write path fails partway through.
+    private func invalidateSessionCache() { sessionCache = nil }
+
+    /// Enumerates and decodes every session JSON on disk, keyed by id. The only
+    /// place that scans the sessions directory — everything else reads the cache.
+    private func scanSessionsFromDisk() throws -> [String: MeetingSession] {
         guard fileManager.fileExists(atPath: sessionsURL.path) else {
-            return []
+            return [:]
         }
 
         let files = try fileManager.contentsOfDirectory(at: sessionsURL, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }
 
-        return try files
-            .map(loadSession(from:))
-            .sorted { $0.startedAt > $1.startedAt }
+        let sessions = try files.map(loadSession(from:))
+        return Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
     }
 
     /// Processed meetings as lightweight, Sendable docs the app uses to reconcile
@@ -359,6 +378,7 @@ public final class SessionManager {
             let path = folder.standardizedFileURL.path
             guard path.hasPrefix(home), !fileManager.fileExists(atPath: path) else { continue }
             try? fileManager.removeItem(at: sessionsURL.appendingPathComponent("\(session.id).json"))
+            sessionCache?.removeValue(forKey: session.id)
             try? searchStore?.remove(sessionID: session.id)
             let logURL = session.recorderLogPath.map { URL(fileURLWithPath: $0) }
                 ?? logsURL.appendingPathComponent("\(session.id).recorder.log")
@@ -405,7 +425,11 @@ public final class SessionManager {
             throw ZMeetError.sessionNotFound(id)
         }
 
-        return try loadSession(from: url)
+        let session = try loadSession(from: url)
+        // Refresh the cache entry so a direct single-file read (e.g. after an
+        // external edit) doesn't leave a stale value behind for later list reads.
+        sessionCache?[id] = session
+        return session
     }
 
     private func loadSession(from url: URL) throws -> MeetingSession {
@@ -414,10 +438,18 @@ public final class SessionManager {
     }
 
     private func save(_ session: MeetingSession) throws {
-        try ensureRuntimeDirectories()
-        let url = sessionsURL.appendingPathComponent("\(session.id).json")
-        let data = try JSONEncoder.zmeet.encode(session)
-        try data.write(to: url, options: [.atomic])
+        do {
+            try ensureRuntimeDirectories()
+            let url = sessionsURL.appendingPathComponent("\(session.id).json")
+            let data = try JSONEncoder.zmeet.encode(session)
+            try data.write(to: url, options: [.atomic])
+            sessionCache?[session.id] = session
+        } catch {
+            // Any failure mid-write leaves the cache's relationship to disk
+            // uncertain; drop it so the next read rescans from the source of truth.
+            invalidateSessionCache()
+            throw error
+        }
     }
 
     private func ensureRuntimeDirectories() throws {

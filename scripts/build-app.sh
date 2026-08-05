@@ -23,12 +23,12 @@ SU_PUBLIC_ED_KEY="7KQVNte/Z3ts81v6gETASf21YKulzZZTiqMpF8uv5G8="
 
 SPARKLE_ART="$(ls -d "$ROOT"/.build*/artifacts/sparkle/Sparkle 2>/dev/null | head -1 || true)"
 if [[ -z "$SPARKLE_ART" || ! -e "$SPARKLE_ART" ]]; then
-  echo "error: Sparkle artifacts not found. Run: swift package resolve  (or: rm -rf .build/artifacts && swift build)" >&2
+  echo "error: Sparkle artifacts not found. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
   exit 1
 fi
 SPARKLE_FW="$SPARKLE_ART/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 if [[ ! -e "$SPARKLE_FW" ]]; then
-  echo "error: Sparkle artifacts not found. Run: swift package resolve  (or: rm -rf .build/artifacts && swift build)" >&2
+  echo "error: Sparkle artifacts not found. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
   exit 1
 fi
 

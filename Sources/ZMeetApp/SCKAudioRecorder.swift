@@ -3,6 +3,7 @@ import AVFoundation
 import CoreMedia
 import ScreenCaptureKit
 import ZMeetCore
+import os
 
 /// Captures system audio + microphone via one SCStream (macOS 15+), normalizes
 /// both to a canonical PCM format, mixes them through an AVAudioEngine, and
@@ -36,6 +37,13 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     private var systemConverter: AVAudioConverter?
     private var micConverter: AVAudioConverter?
 
+    /// Render-side backpressure for mixed-file writes handed to `queue`: a
+    /// stalled disk must never block the real-time thread, so past the cap we
+    /// drop oldest-first (drops are counted and logged at stop). 64 × 4096
+    /// frames ≈ 5.5 s of audio in flight at 48 kHz before dropping.
+    private let mixWriteBackpressure = OSAllocatedUnfairLock(initialState: (pending: 0, dropped: 0))
+    private static let maxPendingMixWrites = 64
+
     override init() {
         super.init()
         queue.setSpecific(key: Self.queueKey, value: ())
@@ -43,6 +51,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
 
     func start(to url: URL, logURL: URL, audio: AudioConfig) throws {
         didReportFailure = false
+        mixWriteBackpressure.withLock { $0 = (0, 0) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
@@ -80,8 +89,23 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
 
         let tapFile = audioFile   // captured by value; tap never reads self's mutable state
         captureMixer.installTap(onBus: 0, bufferSize: 4096, format: canonical) { [weak self] buffer, _ in
-            guard let tapFile, buffer.frameLength > 0 else { return }
-            do { try tapFile.write(from: buffer) } catch { self?.log("write error: \(error)") }
+            guard let self, let tapFile, buffer.frameLength > 0 else { return }
+            // Render thread: copy + enqueue only. Encoding and I/O happen on `queue`.
+            let admitted = self.mixWriteBackpressure.withLock { state -> Bool in
+                if state.pending >= Self.maxPendingMixWrites { state.dropped += 1; return false }
+                state.pending += 1
+                return true
+            }
+            guard admitted, let copy = Self.copyBuffer(buffer) else {
+                if !admitted { return }
+                // Copy failed after admission: release the slot.
+                self.mixWriteBackpressure.withLock { $0.pending -= 1 }
+                return
+            }
+            self.queue.async {
+                defer { self.mixWriteBackpressure.withLock { $0.pending -= 1 } }
+                do { try tapFile.write(from: copy) } catch { self.log("write error: \(error)") }
+            }
         }
 
         try engine.start()
@@ -225,9 +249,24 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
             audioFile = nil  // closes/finalizes the file
             micFile = nil       // finalize/close the track files
             systemFile = nil
+            let dropped = mixWriteBackpressure.withLock { $0.dropped }
+            if dropped > 0 { logHandle?.write(Data("[\(Date())] dropped \(dropped) mix buffers (slow disk)\n".utf8)) }
             try? logHandle?.close()
             logHandle = nil
         }
+    }
+
+    /// Copies a canonical-format buffer so the render thread can hand it off
+    /// without sharing memory with the engine's tap buffer.
+    private static func copyBuffer(_ src: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let copy = AVAudioPCMBuffer(pcmFormat: src.format, frameCapacity: src.frameLength) else { return nil }
+        copy.frameLength = src.frameLength
+        let channels = Int(src.format.channelCount)
+        guard let srcData = src.floatChannelData, let dstData = copy.floatChannelData else { return nil }
+        for ch in 0..<channels {
+            memcpy(dstData[ch], srcData[ch], Int(src.frameLength) * MemoryLayout<Float>.size)
+        }
+        return copy
     }
 
     private static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {

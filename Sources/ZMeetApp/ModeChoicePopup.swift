@@ -8,7 +8,6 @@ struct ModeChoiceView: View {
     let onChoose: (RecordingMode) -> Void
     let onCancel: () -> Void
 
-    static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
     static let bg = Color(red: 0.051, green: 0.067, blue: 0.059)
     static let card = Color(red: 0.118, green: 0.141, blue: 0.125)
 
@@ -61,7 +60,7 @@ struct ModeChoiceView: View {
             VStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 30))
-                    .foregroundStyle(Self.mint)
+                    .foregroundStyle(ZMeetPalette.mint)
                     .frame(height: 34)
                 Text(title).font(.headline)
                 Text(detail)
@@ -87,7 +86,7 @@ private struct ModeCardButtonStyle: ButtonStyle {
         configuration.label
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
-                    .stroke(ModeChoiceView.mint, lineWidth: configuration.isPressed ? 2 : 0)
+                    .stroke(ZMeetPalette.mint, lineWidth: configuration.isPressed ? 2 : 0)
             )
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }

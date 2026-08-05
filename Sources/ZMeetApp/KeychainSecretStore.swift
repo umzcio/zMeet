@@ -30,6 +30,8 @@ struct KeychainSecretStore: SecretStore {
         SecItemDelete(baseQuery(account: account) as CFDictionary)
         var attrs = baseQuery(account: account)
         attrs[kSecValueData as String] = data
+        attrs[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        attrs[kSecAttrSynchronizable as String] = false
         let status = SecItemAdd(attrs as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))

@@ -57,7 +57,7 @@ public enum ObsidianNoteRenderer {
     private static func durationString(_ s: TimeInterval) -> String {
         let m = max(0, Int(s) / 60); return m >= 60 ? "\(m/60)h \(m%60)m" : "\(m)m"
     }
-    private static func yaml(_ s: String) -> String { "\"\(s.replacingOccurrences(of: "\"", with: "'"))\"" }
+    private static func yaml(_ s: String) -> String { ZMeetText.yamlQuote(s) }
     /// Strip characters that break a [[wikilink]].
     private static func sanitizeLink(_ s: String) -> String {
         s.components(separatedBy: CharacterSet(charactersIn: "[]|#^")).joined(separator: " ")

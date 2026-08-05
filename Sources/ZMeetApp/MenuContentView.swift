@@ -66,9 +66,6 @@ struct MenuContentView: View {
 
     // MARK: Header — app icon + name, status on the right (OneDrive-style)
 
-    /// Brand mint (#2EE08A).
-    private static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
-
     private var header: some View {
         HStack(spacing: 8) {
             // Wordmark: cursive z (Dancing Script) + mono "Meet".
@@ -78,7 +75,7 @@ struct MenuContentView: View {
                 // cursive z's entry swash isn't clipped at the frame's left edge.
                 Text(" z")
                     .font(.custom("Dancing Script", size: 23))
-                    .foregroundStyle(Self.mint)
+                    .foregroundStyle(ZMeetPalette.mint)
                 Text("Meet")
                     .font(.headline)
             }
@@ -241,15 +238,12 @@ private struct OpenAppRow: View {
     let action: () -> Void
     @State private var hover = false
 
-    /// Brand mint (#2EE08A).
-    private static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
-
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: "rectangle.stack")
                     .font(.body)
-                    .foregroundStyle(Self.mint)
+                    .foregroundStyle(ZMeetPalette.mint)
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Open zMeet").fontWeight(.medium)

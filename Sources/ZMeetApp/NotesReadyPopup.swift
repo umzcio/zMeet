@@ -15,8 +15,6 @@ struct OutcomePopupView: View {
     let onAction: () -> Void
     let onDismiss: () -> Void
 
-    static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
-
     var body: some View {
         HStack(spacing: 12) {
             OutcomePopupIcon(kind: kind)
@@ -36,7 +34,7 @@ struct OutcomePopupView: View {
                 Text(kind == .success ? "View notes" : "Open in Library")
             }
             .buttonStyle(.borderedProminent)
-            .tint(kind == .success ? Self.mint : Color.orange)
+            .tint(kind == .success ? ZMeetPalette.mint : Color.orange)
         }
         .padding(14)
         .padding(.leading, 8)
@@ -65,7 +63,7 @@ private struct OutcomePopupIcon: View {
             switch kind {
             case .success:
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(OutcomePopupView.mint)
+                    .foregroundStyle(ZMeetPalette.mint)
                     .scaleEffect(shown || reduceMotion ? 1.0 : 0.5)
                     .onAppear {
                         withAnimation(.spring(duration: 0.45, bounce: 0.35).delay(0.1)) {

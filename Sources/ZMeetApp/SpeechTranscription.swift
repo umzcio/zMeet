@@ -7,7 +7,6 @@ import ZMeetCore
 /// On-device transcription using macOS 26's SpeechAnalyzer + SpeechTranscriber.
 /// Stateless (a value type), so it's trivially Sendable and safe to call from
 /// any actor. The speech model is system-managed and downloaded on first use.
-@available(macOS 26, *)
 struct SpeechTranscription: Sendable {
     func transcribe(audioURL: URL) async throws -> String {
         guard await ensureAuthorized() else {
@@ -33,6 +32,7 @@ struct SpeechTranscription: Sendable {
             }
             return text
         }
+        defer { collector.cancel() }
 
         _ = try await analyzer.analyzeSequence(from: audioFile)
         try await analyzer.finalizeAndFinishThroughEndOfInput()
@@ -61,6 +61,7 @@ struct SpeechTranscription: Sendable {
             }
             return segments
         }
+        defer { collector.cancel() }
         _ = try await analyzer.analyzeSequence(from: audioFile)
         try await analyzer.finalizeAndFinishThroughEndOfInput()
         return try await collector.value

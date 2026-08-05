@@ -19,8 +19,7 @@ enum MenuBarIcon {
             return red
         case .processing:
             let base = symbol("wand.and.stars", fallback: "gearshape.fill")
-            let mint = NSColor(red: 0.180, green: 0.878, blue: 0.541, alpha: 1)
-            let tinted = base.withSymbolConfiguration(config.applying(.init(paletteColors: [mint]))) ?? base
+            let tinted = base.withSymbolConfiguration(config.applying(.init(paletteColors: [ZMeetPalette.mintNS]))) ?? base
             tinted.isTemplate = false
             return tinted
         }

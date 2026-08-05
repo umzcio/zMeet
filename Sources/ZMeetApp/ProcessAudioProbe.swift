@@ -1,3 +1,4 @@
+import AppKit
 import CoreAudio
 import Foundation
 
@@ -9,10 +10,20 @@ import Foundation
 struct ProcessAudioProbe {
     /// bundle-ID prefix → human app name. Teams audio runs in `.helper` processes, so
     /// prefix matching catches them; Zoom is `us.zoom.xos` and helpers.
-    private static let meetingApps: [(prefix: String, name: String)] = [
+    static let meetingApps: [(prefix: String, name: String)] = [
         ("com.microsoft.teams", "Microsoft Teams"),
         ("us.zoom", "Zoom"),
     ]
+
+    /// Cheap gate: is any known meeting app running as a PROCESS (no audio/window
+    /// IPC)? NSWorkspace's runningApplications list is cached by AppKit, so this is
+    /// far cheaper than enumerating Core Audio process objects or window-server state.
+    static func meetingAppProcessRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            guard let id = app.bundleIdentifier else { return false }
+            return meetingApps.contains { id.hasPrefix($0.prefix) }
+        }
+    }
 
     /// The human name of a meeting app currently running audio IO (input or output),
     /// or nil if none is. If several match, returns the first.
