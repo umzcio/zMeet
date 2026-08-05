@@ -6,10 +6,13 @@ import ZMeetCore
 
 @MainActor
 final class AppState: ObservableObject {
+    // Recording and processing are concurrently valid (a background re-process
+    // can run while a new meeting is being recorded), so `.processing` was removed
+    // from `Phase` — `isProcessing` (derived from `processingSessionID`) is the
+    // sole processing signal now.
     enum Phase: Equatable {
         case idle
         case recording(since: Date)
-        case processing
     }
 
     @Published private(set) var phase: Phase = .idle
@@ -306,12 +309,14 @@ final class AppState: ObservableObject {
         return false
     }
 
+    /// True while any meeting's process+publish lifecycle is running — independent
+    /// of `phase`, so a background re-process never masks a concurrent recording.
+    var isProcessing: Bool { processingSessionID != nil }
+
     var iconState: MenuBarIcon.State {
-        switch phase {
-        case .recording: return .recording
-        case .processing: return .processing
-        case .idle: return .idle
-        }
+        if case .recording = phase { return .recording }
+        if isProcessing { return .processing }
+        return .idle
     }
 
     /// Manual start: ask remote vs in-person first, then record.
@@ -415,7 +420,10 @@ final class AppState: ObservableObject {
         guard isRecording else { return }
         lastError = nil
         recordingFromDetection = false
-        phase = .processing
+        // Return to idle immediately — processing (if any) is now tracked entirely
+        // via `processingSessionID`/`isProcessing`, independent of `phase`, so a
+        // concurrent background re-process of another meeting is never clobbered.
+        phase = .idle
         Task {
             do {
                 let stopped = try await manager.stop()
@@ -431,11 +439,8 @@ final class AppState: ObservableObject {
                 reloadRecent()
                 if config.autoProcessOnStop {
                     process(id: stopped.id)
-                } else {
-                    phase = .idle
                 }
             } catch {
-                phase = .idle
                 lastError = error.localizedDescription
                 reloadRecent()
             }
@@ -449,7 +454,6 @@ final class AppState: ObservableObject {
         guard !inFlightSessionIDs.contains(id) else { return }
         inFlightSessionIDs.insert(id)
         lastError = nil
-        phase = .processing
         // Track the specific meeting so the Library can show a per-row/reader
         // spinner and refresh the open note when this finishes — re-processing an
         // already-`.processed` meeting doesn't change its status, so the Library
@@ -486,7 +490,6 @@ final class AppState: ObservableObject {
                 lastError = error.localizedDescription
             }
             // Free the UI as soon as the notes are saved + shown.
-            phase = .idle
             processingSessionID = nil
             reloadRecent()
             // Obsidian publish is a best-effort background step that runs AFTER the

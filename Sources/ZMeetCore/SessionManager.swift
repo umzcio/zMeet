@@ -132,6 +132,7 @@ public final class SessionManager {
         guard session.status != .recording else {
             throw ZMeetError.activeSessionExists(session.id)
         }
+        let priorStatus = session.status
         let transcriptURL = transcriptURL(for: session)
         let noteURL = noteURL(for: session)
         try ZMeetPaths.ensureDirectory(transcriptURL.deletingLastPathComponent())
@@ -163,7 +164,10 @@ public final class SessionManager {
             }
             return session
         } catch {
-            session.status = .failed
+            // A failed re-process of an already-processed meeting must not hide
+            // notes that are still intact on disk — only downgrade a session that
+            // wasn't processed yet.
+            session.status = (priorStatus == .processed) ? .processed : .failed
             session.errorMessage = error.localizedDescription
             try? save(session)
             throw error

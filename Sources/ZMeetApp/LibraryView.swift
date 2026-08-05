@@ -458,8 +458,12 @@ struct LibraryView: View {
             DropdownRow(title: "Rename…") {
                 renameText = session.title; closeMenus(); state.libraryDialog = .rename
             }
-            DropdownRow(title: session.status == .processed ? "Re-process" : "Process Notes") {
-                state.process(id: session.id); closeMenus()
+            // A meeting that's actively recording can't be (re)processed yet — the
+            // Core guard already refuses it, but the UI shouldn't offer it either.
+            if session.status != .recording {
+                DropdownRow(title: session.status == .processed ? "Re-process" : "Process Notes") {
+                    state.process(id: session.id); closeMenus()
+                }
             }
             DropdownRow(title: "Reveal in Finder") {
                 state.revealNote(session); closeMenus()
@@ -576,10 +580,10 @@ struct LibraryView: View {
             Button {
                 state.process(id: session.id)
             } label: {
-                Label(state.phase == .processing ? "Processing…" : "Process Notes", systemImage: "wand.and.stars")
+                Label(state.processingSessionID != nil ? "Processing…" : "Process Notes", systemImage: "wand.and.stars")
             }
             .buttonStyle(.borderedProminent).tint(Self.mint)
-            .disabled(state.phase == .processing)
+            .disabled(state.processingSessionID != nil || session.status == .recording)
         }
     }
 

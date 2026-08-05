@@ -92,11 +92,9 @@ struct MenuContentView: View {
     }
 
     private var statusText: String {
-        switch state.phase {
-        case .idle:        return "Ready"
-        case .recording:   return "Recording"
-        case .processing:  return "Processing…"
-        }
+        if state.isRecording { return "Recording" }
+        if state.isProcessing { return "Processing…" }
+        return "Ready"
     }
 
     // MARK: Primary action — Start (idle) / timer + Stop (recording)
@@ -104,21 +102,10 @@ struct MenuContentView: View {
     @ViewBuilder
     private var primarySection: some View {
         switch state.phase {
-        case .idle:
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Meeting title", text: $state.draftTitle)
-                    .textFieldStyle(.roundedBorder)
-                Button {
-                    state.requestManualStart()
-                } label: {
-                    Label("Start Recording", systemImage: "record.circle")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-            }
-
         case .recording(let since):
+            // Recording always wins the primary slot, even while a different
+            // meeting is being (re)processed in the background — the Stop button
+            // must never disappear behind a "Processing…" row.
             VStack(alignment: .leading, spacing: 10) {
                 TimelineView(.periodic(from: since, by: 1)) { _ in
                     HStack(spacing: 8) {
@@ -139,10 +126,24 @@ struct MenuContentView: View {
                 .buttonStyle(.bordered)
             }
 
-        case .processing:
+        case .idle where state.isProcessing:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Processing…").foregroundStyle(.secondary)
+            }
+
+        case .idle:
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Meeting title", text: $state.draftTitle)
+                    .textFieldStyle(.roundedBorder)
+                Button {
+                    state.requestManualStart()
+                } label: {
+                    Label("Start Recording", systemImage: "record.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
             }
         }
     }

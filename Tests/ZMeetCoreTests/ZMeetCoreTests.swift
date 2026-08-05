@@ -146,6 +146,63 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(FileManager.default.fileExists(atPath: processed.notePath!))
 }
 
+/// A re-process (of an already-`.processed` meeting) that fails mid-write must
+/// not downgrade the session — its prior notes are still intact on disk and the
+/// Library must keep showing them.
+@Test func reprocessFailurePreservesProcessedStatus() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let recorder = MockRecorder()
+    let manager = SessionManager(config: config, recorder: recorder)
+
+    let started = try manager.start(title: "Weekly Sync", sourceApp: nil)
+    let stopped = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "First pass.", summary: "## Summary\n\n- First.")
+    #expect(processed.status == .processed)
+
+    // Force the second write to fail mid-write (inside the catch-guarded block):
+    // make the meeting folder read-only so `transcript.write(...)` throws.
+    let folder = URL(fileURLWithPath: processed.audioPath).deletingLastPathComponent()
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+
+    #expect(throws: (any Error).self) {
+        _ = try manager.applyProcessedText(id: started.id, transcript: "Second pass.", summary: "## Summary\n\n- Second.")
+    }
+
+    let reloaded = try manager.session(id: started.id)
+    #expect(reloaded.status == .processed)
+    #expect(reloaded.errorMessage != nil)
+}
+
+/// Protects existing behavior: a first-ever process failure (on a `.recorded`
+/// session with no prior notes) still marks the session `.failed`.
+@Test func firstProcessFailureStillMarksFailed() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let recorder = MockRecorder()
+    let manager = SessionManager(config: config, recorder: recorder)
+
+    let started = try manager.start(title: "Flaky Notes", sourceApp: nil)
+    let stopped = try await manager.stop()
+    #expect(stopped.status == .recorded)
+
+    // Force the write to fail the same way, before any successful process.
+    let folder = URL(fileURLWithPath: stopped.audioPath).deletingLastPathComponent()
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+
+    #expect(throws: (any Error).self) {
+        _ = try manager.applyProcessedText(id: started.id, transcript: "Never lands.", summary: "## Summary\n\n- Never.")
+    }
+
+    let reloaded = try manager.session(id: started.id)
+    #expect(reloaded.status == .failed)
+    #expect(reloaded.errorMessage != nil)
+}
+
 @Test func stopFailureMarksSessionFailed() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
