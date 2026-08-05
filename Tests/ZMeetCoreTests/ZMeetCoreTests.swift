@@ -8,6 +8,26 @@ import Testing
     #expect(ZMeetText.slugify("!!!") == "untitled-meeting")
 }
 
+@Test func sanitizeFileNameClampsLongTitles() {
+    let longTitle = String(repeating: "a", count: 400)
+    let sanitized = ZMeetText.sanitizeFileName(longTitle)
+    #expect(sanitized.utf8.count <= 120)
+    #expect(!sanitized.isEmpty)
+}
+
+@Test func sanitizeFileNameStripsControlCharacters() {
+    let dirty = "Weekly Sync\nAgenda\u{0007}"
+    let sanitized = ZMeetText.sanitizeFileName(dirty)
+    #expect(!sanitized.contains("\n"))
+    #expect(!sanitized.contains("\u{0007}"))
+}
+
+@Test func clampUTF8DoesNotSplitCharacters() {
+    let longMultibyte = String(repeating: "é", count: 200)
+    let clamped = ZMeetText.clampUTF8(longMultibyte, maxBytes: 120)
+    #expect(clamped.utf8.count <= 120)
+}
+
 @Test func noteSearchBodyStripsFrontmatterHeadingsAndTranscriptLink() {
     let note = """
     ---

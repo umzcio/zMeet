@@ -39,9 +39,14 @@ public enum ObsidianVaultFiles {
     }
     /// Remove characters illegal in filenames / that confuse Obsidian, then collapse
     /// any runs of whitespace (sanitized chars can leave multiple spaces) to one.
+    /// Delegates the shared illegal-character stripping, control-character
+    /// removal, and length clamp to the common text sanitizer (see Utilities.swift),
+    /// leaving a smaller budget (100 bytes) to account for the "  — Transcript.md"
+    /// suffix and the date/time stamp prefix that get added on top.
     private static func sanitizeFilename(_ s: String) -> String {
-        let bad = CharacterSet(charactersIn: "/\\:*?\"<>|#^[]")
-        let cleaned = s.components(separatedBy: bad).joined(separator: " ")
+        let base = ZMeetText.sanitizeFileName(s, maxBytes: 100)
+        let obsidianBad = CharacterSet(charactersIn: "#^[]")
+        let cleaned = base.components(separatedBy: obsidianBad).joined(separator: " ")
         return cleaned.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 }

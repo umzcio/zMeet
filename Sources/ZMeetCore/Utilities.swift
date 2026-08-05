@@ -58,10 +58,12 @@ public enum ZMeetText {
     }
 
     /// Sanitizes a meeting title for use as a folder or file name: strips path
-    /// separators and other characters that are awkward on disk, collapses
-    /// whitespace, and falls back to a default when empty.
-    public static func sanitizeFileName(_ input: String) -> String {
-        let illegal = CharacterSet(charactersIn: "/\\:*?\"<>|")
+    /// separators, control characters, and other characters that are awkward
+    /// on disk, collapses whitespace, clamps to `maxBytes` of UTF-8 (so a long
+    /// title can't push a folder/file name past filesystem component limits),
+    /// and falls back to a default when empty.
+    public static func sanitizeFileName(_ input: String, maxBytes: Int = 120) -> String {
+        let illegal = CharacterSet(charactersIn: "/\\:*?\"<>|").union(.controlCharacters)
         let cleaned = input
             .components(separatedBy: illegal)
             .joined(separator: "-")
@@ -69,7 +71,20 @@ public enum ZMeetText {
             .filter { !$0.isEmpty }
             .joined(separator: " ")
             .trimmingCharacters(in: CharacterSet(charactersIn: " .-"))
-        return cleaned.isEmpty ? "Untitled Meeting" : cleaned
+        let capped = clampUTF8(cleaned, maxBytes: maxBytes)
+        return capped.isEmpty ? "Untitled Meeting" : capped
+    }
+
+    /// Truncates to at most `maxBytes` of UTF-8 without splitting a character,
+    /// then re-trims trailing space/dot/dash left by the cut.
+    static func clampUTF8(_ s: String, maxBytes: Int) -> String {
+        guard s.utf8.count > maxBytes else { return s }
+        var result = ""
+        for ch in s {
+            if (result.utf8.count + String(ch).utf8.count) > maxBytes { break }
+            result.append(ch)
+        }
+        return result.trimmingCharacters(in: CharacterSet(charactersIn: " .-"))
     }
 
     public static func yamlQuote(_ value: String) -> String {
