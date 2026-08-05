@@ -73,12 +73,18 @@ final class AppState: ObservableObject {
     private var recordingFromDetection = false
 
     init(recorder: MeetingRecorder) {
-        // Load config, or bootstrap a fresh one if missing/old-schema.
+        // Load config; a corrupt file is backed up (never clobbered) and replaced
+        // with defaults, and the user is told below via lastError.
         let loaded: ZMeetConfig
-        if let existing = try? store.load() {
-            loaded = existing
-        } else {
-            loaded = (try? store.bootstrap()) ?? ZMeetConfig.default()
+        var configRecoveryNote: String?
+        switch store.loadOrBackupAndBootstrap() {
+        case .loaded(let cfg):
+            loaded = cfg
+        case .bootstrapped(let cfg, let backup):
+            loaded = cfg
+            if let backup {
+                configRecoveryNote = "Your settings file couldn't be read and was reset to defaults. The old file was saved as \(backup.lastPathComponent) in ~/.zmeet."
+            }
         }
         self.recorder = recorder
         self.config = loaded
@@ -90,6 +96,7 @@ final class AppState: ObservableObject {
         manager.purgeExpiredAudio()
         refreshHasAPIKey()
         refreshPermissions()
+        if let configRecoveryNote { lastError = configRecoveryNote }
         if config.detectMeetings { startMeetingDetection() }
 
         // Report a capture failure that happens after `start()` returned (async
