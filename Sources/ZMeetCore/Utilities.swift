@@ -87,10 +87,29 @@ public enum ZMeetText {
         return result.trimmingCharacters(in: CharacterSet(charactersIn: " .-"))
     }
 
+    /// Normalizes a human-entered or window-derived meeting title for storage:
+    /// strips control characters (incl. newlines — YAML/heading safety), collapses
+    /// whitespace runs, trims. Returns "" if nothing remains (callers substitute
+    /// their placeholder).
+    public static func sanitizeTitle(_ raw: String) -> String {
+        // Replace (not delete) control characters with a space so an interior
+        // newline/tab/CR becomes a word break rather than fusing the two
+        // neighboring words together; the whitespace-run collapse below then
+        // normalizes runs of these (and any pre-existing) spaces to one.
+        let spaced = raw.unicodeScalars.map {
+            CharacterSet.controlCharacters.contains($0) ? Unicode.Scalar(" ") : $0
+        }
+        return String(String.UnicodeScalarView(spaced))
+            .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+
     public static func yamlQuote(_ value: String) -> String {
         let escaped = value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\t", with: "\\t")
         return "\"\(escaped)\""
     }
 

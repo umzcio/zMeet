@@ -22,6 +22,17 @@ import Testing
     #expect(!sanitized.contains("\u{0007}"))
 }
 
+@Test func sanitizeTitleCollapsesInteriorControlCharactersToSpace() {
+    #expect(ZMeetText.sanitizeTitle("Weekly Sync\nAgenda") == "Weekly Sync Agenda")
+    #expect(ZMeetText.sanitizeTitle("Tab\tHere\rThere") == "Tab Here There")
+    #expect(ZMeetText.sanitizeTitle("  leading and trailing junk  ") == "leading and trailing junk")
+    #expect(ZMeetText.sanitizeTitle("\n\t  ") == "")
+}
+
+@Test func yamlQuoteEscapesControlCharacters() {
+    #expect(ZMeetText.yamlQuote("a\nb") == "\"a\\nb\"")
+}
+
 @Test func clampUTF8DoesNotSplitCharacters() {
     let longMultibyte = String(repeating: "é", count: 200)
     let clamped = ZMeetText.clampUTF8(longMultibyte, maxBytes: 120)
@@ -429,6 +440,26 @@ private final class CapturedMessageBox: @unchecked Sendable {
     // Empty/whitespace titles fall back to the default.
     let blank = try manager.setTitle(id: started.id, to: "   ")
     #expect(blank.title == "Untitled Meeting")
+}
+
+@Test func startSanitizesInteriorControlCharactersInTitle() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+    let started = try manager.start(title: "Line1\nLine2", sourceApp: nil)
+    #expect(started.title == "Line1 Line2")
+}
+
+@Test func setTitleSanitizesInteriorControlCharacters() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+    let started = try manager.start(title: "Old Name", sourceApp: nil)
+
+    let renamed = try manager.setTitle(id: started.id, to: "Line1\nLine2")
+    #expect(renamed.title == "Line1 Line2")
 }
 
 @Test func deleteRemovesFolderAndSession() async throws {

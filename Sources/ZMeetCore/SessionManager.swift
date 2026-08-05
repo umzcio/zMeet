@@ -60,7 +60,7 @@ public final class SessionManager {
         try ensureRuntimeDirectories()
 
         let startedAt = Date()
-        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled Meeting" : rawTitle
+        let title = { let t = ZMeetText.sanitizeTitle(rawTitle); return t.isEmpty ? "Untitled Meeting" : t }()
         let id = try uniqueSessionID(title: title, startedAt: startedAt)
         // One folder per meeting (Zoom-style), holding the recording, transcript,
         // and notes together under the output root.
@@ -205,7 +205,7 @@ public final class SessionManager {
     @discardableResult
     public func setTitle(id: String, to rawTitle: String) throws -> MeetingSession {
         var session = try loadSession(id: id)
-        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = ZMeetText.sanitizeTitle(rawTitle)
         session.title = title.isEmpty ? "Untitled Meeting" : title
         try save(session)
         // Update only the indexed title, preserving the meeting's notes/transcript
