@@ -1,6 +1,9 @@
-.build/
+.build*/
 .swiftpm/
 .DS_Store
+
+# Internal audit/advisor plans — never published
+plans/
 
 # Local runtime state belongs in ~/.zmeet, not the source repo.
 .zmeet/

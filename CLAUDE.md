@@ -41,5 +41,6 @@ AppKit/AVFoundation into ZMeetCore. Sources/CSpeexDSP is vendored C
 - The notes.md format is written by MarkdownRenderer and parsed in several
   places (Library reader, search indexing, Obsidian backfill) — template
   changes break all three differently.
-- Colors: no shared palette exists yet (no ZMeetPalette) — don't invent one
-  speculatively, but don't scatter new one-off hex literals either.
+- Colors: use ZMeetPalette (Sources/ZMeetApp/ZMeetPalette.swift) — add members
+  there, never new one-off hex literals. Known drifted residuals awaiting a
+  visual pass: SettingsView.sidebarBG/hairline, ModeChoicePopup.bg/card.

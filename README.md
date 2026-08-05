@@ -214,7 +214,7 @@ Internal state (session metadata, logs) lives under `~/.zmeet`.
 ```
   zMeet.app (menu-bar, signed)
   ├─ MenuBarExtra UI ........ start/stop, recent, permissions, "Take notes" popup
-  ├─ RecordingController .... drives the capture + processing lifecycle
+  ├─ AppState ................ drives the capture + processing lifecycle
   ├─ SCKAudioRecorder ....... system audio + mic -> mixed .m4a
   ├─ SpeechTranscription .... on-device SpeechAnalyzer -> transcript
   ├─ MeetingSummarizer ...... on-device Foundation Models -> notes
@@ -226,6 +226,8 @@ Internal state (session metadata, logs) lives under `~/.zmeet`.
   ├─ Models ................. MeetingSession, ZMeetConfig, AudioConfig
   ├─ MeetingRecorder (proto)  the seam the app's recorder implements
   ├─ MarkdownRenderer ....... note + transcript rendering
+  ├─ SearchStore ............. SQLite FTS5 full-text search
+  ├─ ObsidianNoteRenderer ... vault note + transcript rendering
   └─ ConfigStore ............ ~/.zmeet/config.json
 ```
 
@@ -257,7 +259,9 @@ zMeet/
 ├── Package.swift
 ├── Sources/
 │   ├── ZMeetCore/          # engine: sessions, models, rendering, config (unit-tested)
-│   └── ZMeetApp/           # menu-bar app: recorder, transcription, summary, detection, UI
+│   ├── ZMeetApp/           # menu-bar app: recorder, transcription, summary, detection, UI
+│   ├── CSpeexDSP/          # vendored speexdsp (BSD-3, see THIRD-PARTY-NOTICES.md)
+│   └── aec-probe/          # offline AEC validation tool (spike)
 ├── Tests/
 │   └── ZMeetCoreTests/     # Swift Testing suite for the engine
 └── scripts/

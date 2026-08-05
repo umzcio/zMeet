@@ -30,6 +30,12 @@ distribution pipeline.
 
 1. Bump `VERSION`/`BUILD` in `scripts/build-app.sh` and commit — `release.sh` refuses a version argument that doesn't match, and only auto-tags on a clean tree.
 2. `scripts/release.sh 1.16.0` — runs the test suite, builds + signs, packages the `.dmg`, notarizes + staples (twice: pre- and post-staple), generates the signed appcast in `build/dist/`, and tags `v1.16.0`.
+
+   Hosting the `.dmg` somewhere other than the default? Override `DOWNLOAD_URL_PREFIX`:
+   ```sh
+   DOWNLOAD_URL_PREFIX="https://github.com/OWNER/zMeet/releases/download/v0.2.0/" \
+     scripts/release.sh 0.2.0
+   ```
 3. `git push origin main v1.16.0`
 4. `gh release create v1.16.0 build/dist/zMeet-1.16.0.dmg --title "v1.16.0" --notes "..."`
 5. `cp build/dist/appcast.xml appcast.xml && git commit -am "v1.16.0 release: appcast" && git push` — auto-update goes live at this step.
