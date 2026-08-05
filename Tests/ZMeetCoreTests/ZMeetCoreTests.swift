@@ -881,3 +881,108 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
     let seen = try secondManager.listSessions()
     #expect(seen.contains { $0.id == processed.id && $0.status == .processed })
 }
+
+/// One undecodable session file (truncated JSON, stray non-session file) must
+/// not fail the whole scan and blank the Library — it's skipped, not fatal.
+@Test func scanSkipsCorruptSessionFiles() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let sessionsDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
+        .appendingPathComponent("sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: sessionsDir, withIntermediateDirectories: true)
+
+    let valid = MeetingSession(
+        id: "2026-05-26-120000-demo",
+        title: "Valid",
+        sourceApp: nil,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        endedAt: nil,
+        status: .recorded,
+        audioPath: "/tmp/demo.m4a",
+        transcriptPath: nil,
+        notePath: nil,
+        recorderLogPath: nil,
+        errorMessage: nil
+    )
+    try JSONEncoder.zmeet.encode(valid).write(to: sessionsDir.appendingPathComponent("\(valid.id).json"))
+    try Data("not json".utf8).write(to: sessionsDir.appendingPathComponent("garbage.json"))
+
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+    let listed = try manager.listSessions()
+    #expect(listed.count == 1)
+    #expect(listed.first?.id == valid.id)
+}
+
+/// Two session files decoding to the same id (Finder "Duplicate", a sync
+/// conflict copy, a restored backup) must not trap `Dictionary(uniqueKeysWithValues:)`
+/// — the newest record (by `startedAt`) wins.
+@Test func scanKeepsNewestOnDuplicateID() throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let sessionsDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
+        .appendingPathComponent("sessions", isDirectory: true)
+    try FileManager.default.createDirectory(at: sessionsDir, withIntermediateDirectories: true)
+
+    let older = MeetingSession(
+        id: "dup-id",
+        title: "Older",
+        sourceApp: nil,
+        startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+        endedAt: nil,
+        status: .recorded,
+        audioPath: "/tmp/older.m4a",
+        transcriptPath: nil,
+        notePath: nil,
+        recorderLogPath: nil,
+        errorMessage: nil
+    )
+    var newer = older
+    newer.title = "Newer"
+    newer.startedAt = Date(timeIntervalSince1970: 1_700_000_100)
+    newer.audioPath = "/tmp/newer.m4a"
+
+    try JSONEncoder.zmeet.encode(older).write(to: sessionsDir.appendingPathComponent("dup-id.json"))
+    try JSONEncoder.zmeet.encode(newer).write(to: sessionsDir.appendingPathComponent("dup-id copy.json"))
+
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+    let listed = try manager.listSessions()
+    #expect(listed.count == 1)
+    #expect(listed.first?.id == "dup-id")
+    #expect(listed.first?.title == "Newer")
+}
+
+/// TEST-06: `save()` invalidates the cache on a mid-write failure — the next
+/// read on the SAME manager instance must rescan disk and reflect the truth
+/// (the failed write never landed; prior sessions are unaffected), not crash
+/// or stay stuck on a stale/corrupted in-memory cache.
+@Test func cacheRecoversAfterFailedSave() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    // A prior, successfully saved session — populates the cache from disk.
+    let started = try manager.start(title: "Prior", sourceApp: nil)
+    _ = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
+    #expect(try manager.listSessions().contains { $0.id == processed.id })
+
+    // Lock the sessions directory so the next save's write fails mid-write.
+    let sessionsDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
+        .appendingPathComponent("sessions", isDirectory: true)
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: sessionsDir.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: sessionsDir.path) }
+
+    #expect(throws: (any Error).self) {
+        _ = try manager.start(title: "ShouldFail", sourceApp: nil)
+    }
+
+    // Same manager instance — the cache was invalidated on the failed save,
+    // so this read must rescan disk rather than trust a stale cache.
+    let listed = try manager.listSessions()
+    #expect(listed.count == 1)
+    #expect(listed.first?.id == processed.id)
+    #expect(listed.first?.status == .processed)
+}

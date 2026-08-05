@@ -350,8 +350,20 @@ public final class SessionManager {
         let files = try fileManager.contentsOfDirectory(at: sessionsURL, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }
 
-        let sessions = try files.map(loadSession(from:))
-        return Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        // Skip unreadable/undecodable files rather than failing the whole scan —
+        // one corrupt record must never blank the entire library. Skips are
+        // counted so corruption isn't silently invisible.
+        var skipped = 0
+        let sessions = files.compactMap { url -> MeetingSession? in
+            guard let s = try? loadSession(from: url) else { skipped += 1; return nil }
+            return s
+        }
+        if skipped > 0 {
+            print("zMeet: skipped \(skipped) unreadable session file(s) in \(sessionsURL.path)")
+        }
+        // Duplicate ids (conflict copies, restored backups) keep the newest record.
+        return Dictionary(sessions.map { ($0.id, $0) },
+                          uniquingKeysWith: { a, b in a.startedAt >= b.startedAt ? a : b })
     }
 
     /// Processed meetings as lightweight, Sendable docs the app uses to reconcile
