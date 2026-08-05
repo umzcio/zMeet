@@ -7,12 +7,18 @@ import ZMeetCore
 
 struct LibraryView: View {
     @ObservedObject var state: AppState
-    @StateObject private var audio = AudioPlayerModel()
+    // Held (not observed) by the root — the 4Hz playback ticker would otherwise
+    // re-render the whole window. Only PlayerBar observes it.
+    @State private var audio = AudioPlayerModel()
 
     @State private var query = ""
     @State private var tab: Tab = .notes
     @State private var noteBlocks: [NoteBlock] = []
     @State private var transcriptText: String?
+    // Distinguishes "not loaded yet" (nil text, spinner) from "loaded and
+    // genuinely empty" (nil text, "no transcript" message) — both leave
+    // transcriptText nil, so this flag disambiguates them.
+    @State private var transcriptLoaded = false
     @State private var renameText = ""
     @State private var searchHits: [SearchHit] = []
     @State private var searchTask: Task<Void, Never>?
@@ -53,8 +59,9 @@ struct LibraryView: View {
         .background(ZMeetPalette.bg)
         .preferredColorScheme(.dark)
         .tint(ZMeetPalette.mint)
-        .onReceive(ticker) { _ in audio.tick() }
+        .onReceive(ticker) { _ in if audio.isPlaying { audio.tick() } }
         .task(id: reloadKey) { await loadSelected() }
+        .task(id: transcriptLoadKey) { await loadTranscriptIfNeeded() }
         .onChange(of: selected?.id) { state.showLibraryActions = false; state.libraryContextSession = nil }
         .onChange(of: query) { runSearch() }
     }
@@ -155,6 +162,12 @@ struct LibraryView: View {
     private var reloadKey: String {
         let processing = state.processingSessionID == selected?.id
         return "\(selected?.id ?? "none")-\(selected?.status.rawValue ?? "")-\(processing)"
+    }
+
+    /// Drives on-demand transcript loading: re-evaluates whenever the selected
+    /// meeting or the active tab changes.
+    private var transcriptLoadKey: String {
+        "\(selected?.id ?? "none")-\(tab)"
     }
 
     /// True while the selected meeting is being (re)processed.
@@ -369,7 +382,7 @@ struct LibraryView: View {
                     tabBar
                     reader(session)
                     if FileManager.default.fileExists(atPath: session.audioPath) {
-                        playerBar(session)
+                        PlayerBar(audio: audio)
                     } else if session.status == .processed {
                         audioRemovedCaption
                     }
@@ -542,11 +555,24 @@ struct LibraryView: View {
     @ViewBuilder
     private func transcriptBody(_ session: MeetingSession) -> some View {
         if let text = transcriptText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Text(text)
-                .font(.system(size: 14.5))
-                .foregroundStyle(ZMeetPalette.body)
-                .lineSpacing(6)
-                .textSelection(.enabled)
+            // Chunked into paragraphs (rather than one monolithic Text) so a long
+            // transcript lays out incrementally instead of re-flowing 50-150KB of
+            // text on every invalidation. Trade-off: text selection no longer
+            // spans across paragraph breaks.
+            let paragraphs = text.components(separatedBy: "\n\n").filter {
+                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            LazyVStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, paragraph in
+                    Text(paragraph)
+                        .font(.system(size: 14.5))
+                        .foregroundStyle(ZMeetPalette.body)
+                        .lineSpacing(6)
+                        .textSelection(.enabled)
+                }
+            }
+        } else if session.status == .processed && !transcriptLoaded {
+            ProgressView().controlSize(.small)
         } else {
             Text(session.status == .processed
                  ? "No transcript was saved for this meeting."
@@ -605,51 +631,6 @@ struct LibraryView: View {
         }
         .padding(.horizontal, 32).padding(.vertical, 16)
         .overlay(Rectangle().fill(ZMeetPalette.hairline).frame(height: 1), alignment: .top)
-    }
-
-    @ViewBuilder
-    private func playerBar(_ session: MeetingSession) -> some View {
-        HStack(spacing: 18) {
-            Button { audio.toggle() } label: {
-                Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Color(red: 0.024, green: 0.157, blue: 0.102))
-                    .frame(width: 44, height: 44)
-                    .background(ZMeetPalette.mint, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(audio.duration <= 0)
-
-            Text(timeString(audio.currentTime))
-                .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(ZMeetPalette.muted)
-
-            scrubber
-
-            Text(timeString(audio.duration))
-                .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(ZMeetPalette.muted)
-        }
-        .padding(.horizontal, 32)
-        .padding(.vertical, 16)
-        .overlay(Rectangle().fill(ZMeetPalette.hairline).frame(height: 1), alignment: .top)
-    }
-
-    private var scrubber: some View {
-        GeometryReader { geo in
-            let fraction = audio.duration > 0 ? audio.currentTime / audio.duration : 0
-            ZStack(alignment: .leading) {
-                Capsule().fill(ZMeetPalette.card)
-                Capsule().fill(ZMeetPalette.mint).frame(width: max(0, geo.size.width * fraction))
-            }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0).onEnded { value in
-                    let f = min(max(0, value.location.x / geo.size.width), 1)
-                    audio.seek(toFraction: f)
-                }
-            )
-        }
-        .frame(height: 5)
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: Loading + formatting
@@ -753,15 +734,37 @@ struct LibraryView: View {
     private func loadSelected() async {
         tab = .notes
         audio.stop()
+        transcriptText = nil
+        transcriptLoaded = false
         guard let session = selected else {
-            noteBlocks = []; transcriptText = nil; return
+            noteBlocks = []; return
         }
         noteBlocks = NoteBlock.parse(state.readNote(session) ?? "")
-        transcriptText = state.readTranscript(session)
         let url = URL(fileURLWithPath: session.audioPath)
         if FileManager.default.fileExists(atPath: url.path) {
             audio.load(url)
         }
+    }
+
+    /// The transcript is large (up to ~150KB) and only needed when the
+    /// Transcript tab is actually visible, so it's loaded on demand — off the
+    /// main actor, since `readTranscript` is a pure file read keyed on the
+    /// session's `transcriptPath`.
+    @MainActor
+    private func loadTranscriptIfNeeded() async {
+        guard tab == .transcript, !transcriptLoaded, let session = selected else { return }
+        let path = session.transcriptPath
+        let text: String? = if let path {
+            await Task.detached(priority: .userInitiated) {
+                try? String(contentsOfFile: path, encoding: .utf8)
+            }.value
+        } else {
+            nil
+        }
+        // The selection may have changed while the read was in flight.
+        guard selected?.id == session.id, tab == .transcript else { return }
+        transcriptText = text
+        transcriptLoaded = true
     }
 
     private func railSubtitle(_ session: MeetingSession) -> String {
@@ -805,12 +808,6 @@ struct LibraryView: View {
         return "\(max(1, m)) min"
     }
 
-    private func timeString(_ t: Double) -> String {
-        guard t.isFinite, t >= 0 else { return "0:00" }
-        let s = Int(t)
-        return String(format: "%d:%02d", s / 60, s % 60)
-    }
-
     static let timeFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "h:mm a"; return f
     }()
@@ -820,6 +817,64 @@ struct LibraryView: View {
     static let dateFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; return f
     }()
+}
+
+// MARK: - Player bar (the only view that observes AudioPlayerModel)
+
+/// Scoped to just the transport controls so the 4Hz playback ticker
+/// invalidates this small subtree instead of the whole library window.
+private struct PlayerBar: View {
+    @ObservedObject var audio: AudioPlayerModel
+
+    var body: some View {
+        HStack(spacing: 18) {
+            Button { audio.toggle() } label: {
+                Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(Color(red: 0.024, green: 0.157, blue: 0.102))
+                    .frame(width: 44, height: 44)
+                    .background(ZMeetPalette.mint, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(audio.duration <= 0)
+
+            Text(timeString(audio.currentTime))
+                .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(ZMeetPalette.muted)
+
+            scrubber
+
+            Text(timeString(audio.duration))
+                .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(ZMeetPalette.muted)
+        }
+        .padding(.horizontal, 32)
+        .padding(.vertical, 16)
+        .overlay(Rectangle().fill(ZMeetPalette.hairline).frame(height: 1), alignment: .top)
+    }
+
+    private var scrubber: some View {
+        GeometryReader { geo in
+            let fraction = audio.duration > 0 ? audio.currentTime / audio.duration : 0
+            ZStack(alignment: .leading) {
+                Capsule().fill(ZMeetPalette.card)
+                Capsule().fill(ZMeetPalette.mint).frame(width: max(0, geo.size.width * fraction))
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0).onEnded { value in
+                    let f = min(max(0, value.location.x / geo.size.width), 1)
+                    audio.seek(toFraction: f)
+                }
+            )
+        }
+        .frame(height: 5)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func timeString(_ t: Double) -> String {
+        guard t.isFinite, t >= 0 else { return "0:00" }
+        let s = Int(t)
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
 }
 
 // MARK: - Rail row anchor preference key
@@ -1045,7 +1100,9 @@ final class AudioPlayerModel: NSObject, ObservableObject {
     /// Called on a timer from the view to advance the scrubber.
     func tick() {
         guard let player else { return }
-        currentTime = player.currentTime
+        if currentTime != player.currentTime {
+            currentTime = player.currentTime
+        }
         if isPlaying && !player.isPlaying {
             // Reached the end.
             isPlaying = false
