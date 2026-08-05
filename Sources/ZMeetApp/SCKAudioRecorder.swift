@@ -14,11 +14,14 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     private let systemPlayer = AVAudioPlayerNode()
     private let micPlayer = AVAudioPlayerNode()
     private let captureMixer = AVAudioMixerNode()
+    // All mutable state below is confined to `queue` after start().
     private var audioFile: AVAudioFile?
     private var micFile: AVAudioFile?
     private var systemFile: AVAudioFile?
     private var logHandle: FileHandle?
+    private var startTask: Task<Void, Never>?
     private let queue = DispatchQueue(label: "edu.umontana.zmeet.capture")
+    private static let queueKey = DispatchSpecificKey<Void>()
 
     private let canonical = AVAudioFormat(
         commonFormat: .pcmFormatFloat32,
@@ -28,6 +31,11 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     )!
     private var systemConverter: AVAudioConverter?
     private var micConverter: AVAudioConverter?
+
+    override init() {
+        super.init()
+        queue.setSpecific(key: Self.queueKey, value: ())
+    }
 
     func start(to url: URL, logURL: URL, audio: AudioConfig) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -65,9 +73,10 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         engine.connect(captureMixer, to: engine.mainMixerNode, format: canonical)
         engine.mainMixerNode.outputVolume = 0  // prevent speaker feedback
 
+        let tapFile = audioFile   // captured by value; tap never reads self's mutable state
         captureMixer.installTap(onBus: 0, bufferSize: 4096, format: canonical) { [weak self] buffer, _ in
-            guard let self, let file = self.audioFile, buffer.frameLength > 0 else { return }
-            do { try file.write(from: buffer) } catch { self.log("write error: \(error)") }
+            guard let tapFile, buffer.frameLength > 0 else { return }
+            do { try tapFile.write(from: buffer) } catch { self?.log("write error: \(error)") }
         }
 
         try engine.start()
@@ -77,7 +86,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         // contribution into the capture mixer; system audio is unaffected.
         micPlayer.volume = audio.micGain
 
-        Task {
+        startTask = Task {
             do { try await self.startStream(audio: audio) }
             catch { self.log("stream start error: \(error)") }
         }
@@ -109,8 +118,10 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         if audio.captureMicrophone {
             try stream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: queue)
         }
+        guard !Task.isCancelled else { return }
         self.stream = stream
         try await stream.startCapture()
+        if Task.isCancelled { try? await stream.stopCapture(); self.stream = nil; return }
         log("capture started (system=\(audio.captureSystemAudio) mic=\(audio.captureMicrophone))")
     }
 
@@ -139,6 +150,10 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
 
     private func convert(_ input: AVAudioPCMBuffer, using converter: inout AVAudioConverter?, label: String) -> AVAudioPCMBuffer? {
         if input.format == canonical { return input }
+        if let existing = converter, existing.inputFormat != input.format {
+            log("\(label) input format changed \(existing.inputFormat) -> \(input.format); rebuilding converter")
+            converter = nil
+        }
         if converter == nil {
             converter = AVAudioConverter(from: input.format, to: canonical)
             log("\(label) converter: \(input.format) -> canonical")
@@ -167,6 +182,12 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
 
     func stop() async throws {
         log("stop")
+        // The unstructured start Task may still be mid-setup (e.g. awaiting
+        // SCShareableContent.current); cancel and await it before touching
+        // `stream` so a late `self.stream = stream` can never land after teardown.
+        startTask?.cancel()
+        await startTask?.value
+        startTask = nil
         if let stream {
             // A stopCapture failure can leave the file truncated; log it for the
             // session-recovery diagnostics but still tear down so the engine is
@@ -176,6 +197,10 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         }
         stream = nil
         captureMixer.removeTap(onBus: 0)
+        // Barrier: all queued sample callbacks/log writes finish before teardown.
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            queue.async { cont.resume() }
+        }
         systemPlayer.stop()
         micPlayer.stop()
         engine.stop()
@@ -185,13 +210,15 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         engine.detach(systemPlayer)
         engine.detach(micPlayer)
         engine.detach(captureMixer)
-        systemConverter = nil
-        micConverter = nil
-        audioFile = nil  // closes/finalizes the file
-        micFile = nil       // finalize/close the track files
-        systemFile = nil
-        try? logHandle?.close()
-        logHandle = nil
+        queue.sync {
+            systemConverter = nil
+            micConverter = nil
+            audioFile = nil  // closes/finalizes the file
+            micFile = nil       // finalize/close the track files
+            systemFile = nil
+            try? logHandle?.close()
+            logHandle = nil
+        }
     }
 
     private static func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
@@ -211,7 +238,11 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     }
 
     private func log(_ message: String) {
-        logHandle?.write(Data("[\(Date())] \(message)\n".utf8))
+        if DispatchQueue.getSpecific(key: Self.queueKey) != nil {
+            logHandle?.write(Data("[\(Date())] \(message)\n".utf8))
+        } else {
+            queue.async { self.logHandle?.write(Data("[\(Date())] \(message)\n".utf8)) }
+        }
     }
 }
 
