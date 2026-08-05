@@ -65,6 +65,7 @@ cp "$DMG" "$DIST/"
 echo "==> [7/7] Done"
 echo "  DMG     : $DIST/$APP_NAME-$VERSION.dmg  -> upload to the v$VERSION GitHub release"
 echo "  appcast : $DIST/appcast.xml             -> commit to main (SUFeedURL points there)"
+echo "  cask    : after publishing the release, run scripts/update-cask.sh $VERSION"
 
 if [[ -z "$(git -C "$ROOT" status --porcelain)" ]]; then
   git -C "$ROOT" tag -a "v$VERSION" -m "v$VERSION"
