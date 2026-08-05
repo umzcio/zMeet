@@ -785,3 +785,99 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
     let decoded = try JSONDecoder.zmeet.decode(ZMeetConfig.self, from: data)
     #expect(decoded.audio.micGain == 2.0)
 }
+
+// MARK: - Session list cache
+
+/// `listSessions()` must reflect a `save()` immediately, both for a brand-new
+/// session (first population of the cache) and for a subsequent status update
+/// (cache maintained on write, not just populated once).
+@Test func listSessionsReflectsSaveImmediately() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Weekly Sync", sourceApp: nil)
+    let afterStart = try manager.listSessions()
+    #expect(afterStart.first { $0.id == started.id }?.status == .recording)
+
+    let stopped = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+
+    let afterProcess = try manager.listSessions()
+    #expect(afterProcess.first { $0.id == started.id }?.status == .processed)
+    #expect(afterProcess.first { $0.id == started.id }?.notePath == processed.notePath)
+}
+
+/// `listSessions()` must omit a session immediately after `delete(id:)`.
+@Test func listSessionsReflectsDelete() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Gone Soon", sourceApp: nil)
+    _ = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
+    #expect(try manager.listSessions().contains { $0.id == processed.id })
+
+    try manager.delete(id: processed.id)
+
+    #expect(!(try manager.listSessions().contains { $0.id == processed.id }))
+}
+
+/// Every other read path that consults the session cache must stay in
+/// agreement with `listSessions()` after a sequence of mutations (save,
+/// backdate via `overwriteSessionForTesting`, delete).
+@Test func cacheSurvivesExternalReadPaths() async throws {
+    let (config0, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var config = config0
+    config.audioRetentionDays = 30
+    let manager = SessionManager(config: config, recorder: MockRecorder(audioFileSize: 100))
+
+    let old = try await makeProcessedMeeting(manager, title: "Old", daysAgo: 60)
+    let recent = try await makeProcessedMeeting(manager, title: "Recent", daysAgo: 5)
+
+    let listed = try manager.listSessions()
+    #expect(listed.contains { $0.id == old.id })
+    #expect(listed.contains { $0.id == recent.id })
+
+    // reclaimableAudioBytes sees both processed meetings' audio.
+    #expect(manager.reclaimableAudioBytes() == 200)
+
+    // searchIndexDocuments agrees on which sessions are processed.
+    let docs = manager.searchIndexDocuments()
+    #expect(Set(docs.map(\.id)) == Set(listed.filter { $0.status == .processed }.map(\.id)))
+
+    // No active session (both are processed) — activeSession-backed start() should succeed.
+    let started = try manager.start(title: "Active", sourceApp: nil)
+    #expect(try manager.listSessions().first { $0.id == started.id }?.status == .recording)
+    _ = try await manager.stop()
+
+    // Delete one and confirm every read path drops it together.
+    try manager.delete(id: old.id)
+    let afterDelete = try manager.listSessions()
+    #expect(!afterDelete.contains { $0.id == old.id })
+    #expect(!manager.searchIndexDocuments().contains { $0.id == old.id })
+    #expect(manager.reclaimableAudioBytes() == 100)
+}
+
+/// A fresh `SessionManager` constructed on the same config must see sessions
+/// written by a prior manager instance — the cache is per-instance, not a
+/// substitute for the on-disk files remaining the source of truth.
+@Test func freshManagerSeesDiskTruth() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Persisted", sourceApp: nil)
+    _ = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
+
+    // Prime the first manager's cache, then construct a second manager on the
+    // identical config — its cache starts nil and must scan disk on first read.
+    _ = try manager.listSessions()
+    let secondManager = SessionManager(config: config, recorder: MockRecorder())
+
+    let seen = try secondManager.listSessions()
+    #expect(seen.contains { $0.id == processed.id && $0.status == .processed })
+}

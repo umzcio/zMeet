@@ -67,18 +67,23 @@ public final class ConfigStore {
 }
 
 extension JSONEncoder {
-    static var zmeet: JSONEncoder {
+    // Shared singleton, not a per-call instance: JSONEncoder isn't safe for
+    // CONCURRENT use, but this codebase only ever touches it from one thread
+    // (single-threaded usage contract), so reusing one instance is safe and
+    // avoids allocating a fresh encoder per file.
+    static let zmeet: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return encoder
-    }
+    }()
 }
 
 extension JSONDecoder {
-    static var zmeet: JSONDecoder {
+    // Same contract as JSONEncoder.zmeet above: single-threaded usage only.
+    static let zmeet: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
-    }
+    }()
 }
