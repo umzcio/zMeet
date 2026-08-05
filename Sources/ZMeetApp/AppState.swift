@@ -23,6 +23,11 @@ final class AppState: ObservableObject {
     /// second process(id:) for the same meeting — the Obsidian publish continues
     /// after the UI returns to idle, so processingSessionID alone can't gate it.
     private var inFlightSessionIDs: Set<String> = []
+    /// Serializes vault publishes per meeting across process/rename/backfill.
+    /// A second publish for an id already in flight is DROPPED — its content is
+    /// already on disk, and a later republish (rename or backfill re-run)
+    /// converges the vault.
+    private var publishingSessionIDs: Set<String> = []
     /// Progress of a "publish all to Obsidian" backfill, while one is running (nil
     /// otherwise). Drives the Settings button label + disabled state.
     @Published private(set) var obsidianBackfill: BackfillProgress?
@@ -622,10 +627,15 @@ final class AppState: ObservableObject {
             print("zMeet: Obsidian vault not found at \(vault.path); skipping publish.")
             return
         }
+        guard !publishingSessionIDs.contains(session.id) else { return }
+        publishingSessionIDs.insert(session.id)
+        defer { publishingSessionIDs.remove(session.id) }
         let entities = await EntityExtractor(
             useCloud: config.useCloudSummaries,
             apiKey: secretStore.read(account: SecretAccount.anthropicAPIKey)
         ).extract(summary: summary, transcript: transcript)
+        // Re-load: the meeting may have been renamed while extraction ran.
+        let session = (try? manager.session(id: session.id)) ?? session
         let names = ObsidianVaultFiles.names(for: session)
         // Remove a stale prior pair so the vault doesn't keep an orphaned note:
         if let previous = session.obsidianBaseName {
