@@ -32,6 +32,7 @@ struct SpeechTranscription: Sendable {
             }
             return text
         }
+        defer { collector.cancel() }
 
         _ = try await analyzer.analyzeSequence(from: audioFile)
         try await analyzer.finalizeAndFinishThroughEndOfInput()
@@ -60,6 +61,7 @@ struct SpeechTranscription: Sendable {
             }
             return segments
         }
+        defer { collector.cancel() }
         _ = try await analyzer.analyzeSequence(from: audioFile)
         try await analyzer.finalizeAndFinishThroughEndOfInput()
         return try await collector.value
