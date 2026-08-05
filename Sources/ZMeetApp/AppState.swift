@@ -8,26 +8,20 @@ import ZMeetCore
 final class AppState: ObservableObject {
     // Recording and processing are concurrently valid (a background re-process
     // can run while a new meeting is being recorded), so `.processing` was removed
-    // from `Phase` — `isProcessing` (derived from `processingSessionID`) is the
-    // sole processing signal now.
+    // from `Phase` — `isProcessing` (derived from `processing`, a ProcessingRegistry)
+    // is the sole processing signal now.
     enum Phase: Equatable {
         case idle
         case recording(since: Date)
     }
 
     @Published private(set) var phase: Phase = .idle
-    /// The meeting currently being (re)processed, if any. Drives the Library's
-    /// per-meeting processing spinner and triggers a reader refresh on completion.
-    @Published private(set) var processingSessionID: String?
-    /// Meeting ids whose process+publish lifecycle is still running. Guards against a
-    /// second process(id:) for the same meeting — the Obsidian publish continues
-    /// after the UI returns to idle, so processingSessionID alone can't gate it.
-    private var inFlightSessionIDs: Set<String> = []
-    /// Serializes vault publishes per meeting across process/rename/backfill.
-    /// A second publish for an id already in flight is DROPPED — its content is
-    /// already on disk, and a later republish (rename or backfill re-run)
-    /// converges the vault.
-    private var publishingSessionIDs: Set<String> = []
+    /// Which meetings are processing (admitted vs. still UI-visible) and which
+    /// are publishing to the vault. See ProcessingRegistry for the semantics —
+    /// notably that a meeting's UI spinner clears at notes-ready while admission
+    /// (guarding a duplicate process(id:)) is held until the background publish
+    /// finishes. One @Published struct, so mutations publish automatically.
+    @Published private(set) var processing = ProcessingRegistry()
     /// Progress of a "publish all to Obsidian" backfill, while one is running (nil
     /// otherwise). Drives the Settings button label + disabled state.
     @Published private(set) var obsidianBackfill: BackfillProgress?
@@ -76,6 +70,10 @@ final class AppState: ObservableObject {
     /// True when the current recording was started from a detected meeting, so it
     /// can be auto-stopped when that meeting ends.
     private var recordingFromDetection = false
+    /// The in-flight `manager.stop()` task, if any. `startRecording` awaits it
+    /// before starting a new session, so a Record click that lands in the
+    /// stop→start window doesn't race the still-persisted `.recording` session.
+    private var stopTask: Task<Void, Never>?
 
     init(recorder: MeetingRecorder) {
         // Load config; a corrupt file is backed up (never clobbered) and replaced
@@ -352,9 +350,11 @@ final class AppState: ObservableObject {
         return false
     }
 
-    /// True while any meeting's process+publish lifecycle is running — independent
-    /// of `phase`, so a background re-process never masks a concurrent recording.
-    var isProcessing: Bool { processingSessionID != nil }
+    /// True while any meeting is visibly processing — independent of `phase`, so
+    /// a background re-process never masks a concurrent recording. Reflects the
+    /// UI-visible lifecycle (clears at notes-ready), not the longer admission
+    /// hold that continues through the background Obsidian publish.
+    var isProcessing: Bool { processing.isAnyVisiblyProcessing }
 
     var iconState: MenuBarIcon.State {
         if case .recording = phase { return .recording }
@@ -373,6 +373,9 @@ final class AppState: ObservableObject {
         lastError = nil
         meetingPopup.hide()
         Task {
+            // If a stop is still in flight, wait for it — otherwise this can hit
+            // the still-persisted `.recording` session and drop the recording.
+            await stopTask?.value
             let ok = await requestPermissions()
             guard ok else {
                 lastError = "Microphone and Screen Recording permission are required. Grant them in System Settings → Privacy & Security, then try again."
@@ -464,10 +467,10 @@ final class AppState: ObservableObject {
         lastError = nil
         recordingFromDetection = false
         // Return to idle immediately — processing (if any) is now tracked entirely
-        // via `processingSessionID`/`isProcessing`, independent of `phase`, so a
+        // via `processing`/`isProcessing`, independent of `phase`, so a
         // concurrent background re-process of another meeting is never clobbered.
         phase = .idle
-        Task {
+        stopTask = Task {
             do {
                 let stopped = try await manager.stop()
                 if let warning = stopped.errorMessage {
@@ -493,21 +496,20 @@ final class AppState: ObservableObject {
                 lastError = error.localizedDescription
                 reloadRecent()
             }
+            stopTask = nil
         }
     }
 
     func process(id: String) {
         // Ignore a duplicate (re)process for a meeting whose process+publish is still
         // running — the publish continues after the UI returns to idle, so without
-        // this two runs could race on the same notes + vault files.
-        guard !inFlightSessionIDs.contains(id) else { return }
-        inFlightSessionIDs.insert(id)
+        // this two runs could race on the same notes + vault files. beginProcess
+        // also marks the meeting visibly processing, so the Library can show a
+        // per-row/reader spinner and refresh the open note when notes are ready —
+        // re-processing an already-`.processed` meeting doesn't change its status,
+        // so the Library can't detect completion from status alone.
+        guard processing.beginProcess(id: id) else { return }
         lastError = nil
-        // Track the specific meeting so the Library can show a per-row/reader
-        // spinner and refresh the open note when this finishes — re-processing an
-        // already-`.processed` meeting doesn't change its status, so the Library
-        // can't detect completion from status alone.
-        processingSessionID = id
         Task {
             // Carries the inputs for the background Obsidian publish, set only on success.
             var toPublish: (session: MeetingSession, transcript: String, summary: String)?
@@ -545,8 +547,10 @@ final class AppState: ObservableObject {
                     self?.openLibrary(select: id)
                 }
             }
-            // Free the UI as soon as the notes are saved + shown.
-            processingSessionID = nil
+            // Free the UI as soon as the notes are saved + shown. Admission
+            // (`processing.isProcessing(id)`) stays held until endProcess below, so a
+            // duplicate process(id:) is still rejected while the publish runs.
+            processing.markNotesReady(id: id)
             reloadRecent()
             // Obsidian publish is a best-effort background step that runs AFTER the
             // UI is freed, so a slow entity-extraction call can't pin the icon in
@@ -554,7 +558,7 @@ final class AppState: ObservableObject {
             if let toPublish {
                 await publishToObsidianIfEnabled(session: toPublish.session, transcript: toPublish.transcript, summary: toPublish.summary)
             }
-            inFlightSessionIDs.remove(id)
+            processing.endProcess(id: id)
         }
     }
 
@@ -646,9 +650,8 @@ final class AppState: ObservableObject {
             print("zMeet: Obsidian vault not found at \(vault.path); skipping publish.")
             return
         }
-        guard !publishingSessionIDs.contains(session.id) else { return }
-        publishingSessionIDs.insert(session.id)
-        defer { publishingSessionIDs.remove(session.id) }
+        guard processing.beginPublish(id: session.id) else { return }
+        defer { processing.endPublish(id: session.id) }
         let entities = await EntityExtractor(
             useCloud: config.useCloudSummaries,
             apiKey: secretStore.read(account: SecretAccount.anthropicAPIKey)
