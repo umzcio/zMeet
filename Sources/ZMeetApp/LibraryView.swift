@@ -861,7 +861,7 @@ private struct DropdownRow: View {
                 .background(hover ? LibraryView.hover : .clear)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .onHover { hover = $0 }
         .padding(.horizontal, 5)
     }

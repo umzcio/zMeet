@@ -51,7 +51,7 @@ struct MenuContentView: View {
             }
 
             Divider()
-            openAppRow
+            OpenAppRow(subtitle: meetingCountText) { openLibrary() }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
 
@@ -170,31 +170,6 @@ struct MenuContentView: View {
         }
     }
 
-    // MARK: Open the app — single row into the Library (the meeting browser)
-
-    private var openAppRow: some View {
-        Button { openLibrary() } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "rectangle.stack")
-                    .font(.body)
-                    .foregroundStyle(Self.mint)
-                    .frame(width: 20)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Open zMeet").fontWeight(.medium)
-                    Text(meetingCountText)
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption).foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
     private var meetingCountText: String {
         switch state.allSessions.count {
         case 0:  return "No meetings yet"
@@ -245,14 +220,52 @@ private struct ToolbarIcon: View {
     let systemName: String
     let help: String
     let action: () -> Void
+    @State private var hover = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(hover ? Color.primary : Color.secondary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
+        .onHover { hover = $0 }
         .help(help)
+    }
+}
+
+// MARK: Open the app — single row into the Library (the meeting browser)
+
+private struct OpenAppRow: View {
+    let subtitle: String
+    let action: () -> Void
+    @State private var hover = false
+
+    /// Brand mint (#2EE08A).
+    private static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "rectangle.stack")
+                    .font(.body)
+                    .foregroundStyle(Self.mint)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Open zMeet").fontWeight(.medium)
+                    Text(subtitle)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption).foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(hover ? Color.white.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableStyle())
+        .onHover { hover = $0 }
     }
 }

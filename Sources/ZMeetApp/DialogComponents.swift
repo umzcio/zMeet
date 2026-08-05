@@ -71,7 +71,7 @@ struct DialogButton: View {
                 .background(background, in: RoundedRectangle(cornerRadius: 9))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .onHover { hover = $0 }
     }
 
@@ -89,5 +89,17 @@ struct DialogButton: View {
         case .secondary:   return Color.white.opacity(hover ? 0.13 : 0.07)
         case .destructive: return Color(red: 0.90, green: 0.32, blue: 0.30).opacity(hover ? 0.88 : 1)
         }
+    }
+}
+
+/// Instant pointer-down feedback for custom (plain-styled) controls.
+/// Apple guidance: respond on press, not on release; 100-160ms; subtle.
+struct PressableStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1.0)
+            .opacity(configuration.isPressed ? 0.9 : 1.0)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }

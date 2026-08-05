@@ -648,7 +648,7 @@ private struct DropdownMenuRow: View {
             .background(hover ? Color.white.opacity(0.06) : .clear)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .onHover { hover = $0 }
         .padding(.horizontal, 5)
     }
