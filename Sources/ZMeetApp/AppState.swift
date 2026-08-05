@@ -67,6 +67,10 @@ final class AppState: ObservableObject {
     private let libraryWindow = LibraryWindowController()
     let updater = UpdaterController()
     private var dismissedMeetingKeys: Set<String> = []
+    /// Meeting ids whose publish was dropped because one was already in flight
+    /// (see `publishToObsidianIfEnabled`) — drained once that in-flight publish
+    /// finishes so a rename that raced it still converges the vault.
+    private var pendingRepublishIDs: Set<String> = []
     /// True when the current recording was started from a detected meeting, so it
     /// can be auto-stopped when that meeting ends.
     private var recordingFromDetection = false
@@ -650,14 +654,40 @@ final class AppState: ObservableObject {
             print("zMeet: Obsidian vault not found at \(vault.path); skipping publish.")
             return
         }
-        guard processing.beginPublish(id: session.id) else { return }
-        defer { processing.endPublish(id: session.id) }
+        guard processing.beginPublish(id: session.id) else {
+            // A publish for this meeting is already in flight; remember to re-run
+            // once it finishes so a rename that raced it still converges the vault.
+            pendingRepublishIDs.insert(session.id)
+            return
+        }
+        // Admitted: run the actual extraction + write, then release the slot
+        // unconditionally — `publishOnce` has no path that skips this release,
+        // including its own early return when the meeting was deleted mid-flight.
+        await publishOnce(session: session, transcript: transcript, summary: summary, vault: vault)
+        processing.endPublish(id: session.id)
+        // Drain a rename that raced this publish and got dropped above. This runs
+        // strictly after the release so the recursive call is admitted by
+        // beginPublish instead of being dropped again.
+        if pendingRepublishIDs.remove(session.id) != nil {
+            // Re-read fresh notes from disk; the racing rename's content/title wins.
+            if let current = try? manager.session(id: session.id),
+               let notes = onDiskNotes(for: current) {
+                await publishToObsidianIfEnabled(session: current, transcript: notes.transcript, summary: notes.summary)
+            }
+        }
+    }
+
+    /// The actual extraction + vault write for an admitted publish. Split out of
+    /// `publishToObsidianIfEnabled` so every return here (including the deleted-
+    /// meeting guard) still lets the caller release the publish slot exactly once.
+    private func publishOnce(session: MeetingSession, transcript: String, summary: String, vault: URL) async {
         let entities = await EntityExtractor(
             useCloud: config.useCloudSummaries,
             apiKey: secretStore.read(account: SecretAccount.anthropicAPIKey)
         ).extract(summary: summary, transcript: transcript)
-        // Re-load: the meeting may have been renamed while extraction ran.
-        let session = (try? manager.session(id: session.id)) ?? session
+        // Re-load: the meeting may have been renamed — or DELETED — while
+        // extraction ran. A deleted meeting must never be re-published.
+        guard let session = try? manager.session(id: session.id) else { return }
         let names = ObsidianVaultFiles.names(for: session)
         // Remove a stale prior pair so the vault doesn't keep an orphaned note:
         if let previous = session.obsidianBaseName {

@@ -24,18 +24,35 @@ public enum ObsidianVaultFiles {
         return ("\(base).md", "\(base) — Transcript.md", base, "\(base) — Transcript")
     }
     public static func write(main: String, transcript: String, mainName: String, transcriptName: String, into vault: URL) throws {
+        guard let mainURL = containedURL(mainName, in: vault),
+              let transcriptURL = containedURL(transcriptName, in: vault) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
         // Write the transcript first: the main note embeds a [[transcript]] wikilink,
         // so writing the link target first means a partial failure never leaves a
         // main note pointing at a transcript that doesn't exist yet.
-        try transcript.write(to: vault.appendingPathComponent(transcriptName), atomically: true, encoding: .utf8)
-        try main.write(to: vault.appendingPathComponent(mainName), atomically: true, encoding: .utf8)
+        try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
+        try main.write(to: mainURL, atomically: true, encoding: .utf8)
     }
     /// Remove a previously-published pair (main note + companion transcript) for the
     /// given base name. Best-effort — used to clean up stale files when a meeting was
-    /// renamed and republished under a new name. Missing files are ignored.
+    /// renamed and republished under a new name. Missing files are ignored, and so is
+    /// a base name that would resolve outside the vault (see `containedURL`).
     public static func remove(baseName base: String, from vault: URL) {
-        try? FileManager.default.removeItem(at: vault.appendingPathComponent("\(base).md"))
-        try? FileManager.default.removeItem(at: vault.appendingPathComponent("\(base) — Transcript.md"))
+        if let mainURL = containedURL("\(base).md", in: vault) {
+            try? FileManager.default.removeItem(at: mainURL)
+        }
+        if let transcriptURL = containedURL("\(base) — Transcript.md", in: vault) {
+            try? FileManager.default.removeItem(at: transcriptURL)
+        }
+    }
+    /// Resolves `name` strictly inside `vault`; nil if it escapes (e.g. a
+    /// tampered stored base name containing "../"). Names created by this type
+    /// are already sanitized — this guards values read back from disk.
+    private static func containedURL(_ name: String, in vault: URL) -> URL? {
+        let url = vault.appendingPathComponent(name).standardizedFileURL
+        guard url.path.hasPrefix(vault.standardizedFileURL.path + "/") else { return nil }
+        return url
     }
     /// Remove characters illegal in filenames / that confuse Obsidian, then collapse
     /// any runs of whitespace (sanitized chars can leave multiple spaces) to one.

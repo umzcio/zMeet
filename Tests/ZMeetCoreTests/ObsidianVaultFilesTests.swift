@@ -76,3 +76,30 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("Old.md").path))
     #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("Old — Transcript.md").path))
 }
+
+@Test func removeIgnoresTraversalBaseName() throws {
+    // A tampered/hand-edited `obsidianBaseName` of "../escape" read back from
+    // ~/.zmeet/sessions/<id>.json must not be able to delete anything outside
+    // the vault. Sentinel files sit exactly where that base name would resolve
+    // to (one level above the vault) and must survive the call.
+    let parent = FileManager.default.temporaryDirectory.appendingPathComponent("vault-parent-\(UUID().uuidString)")
+    let vault = parent.appendingPathComponent("vault")
+    try FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: parent) }
+    let sentinelMain = parent.appendingPathComponent("escape.md")
+    let sentinelTranscript = parent.appendingPathComponent("escape — Transcript.md")
+    try "keep me".write(to: sentinelMain, atomically: true, encoding: .utf8)
+    try "keep me too".write(to: sentinelTranscript, atomically: true, encoding: .utf8)
+    ObsidianVaultFiles.remove(baseName: "../escape", from: vault)
+    #expect(FileManager.default.fileExists(atPath: sentinelMain.path))
+    #expect(FileManager.default.fileExists(atPath: sentinelTranscript.path))
+}
+
+@Test func writeThrowsOnTraversalName() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("vault-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    #expect(throws: (any Error).self) {
+        try ObsidianVaultFiles.write(main: "M", transcript: "T", mainName: "../x.md", transcriptName: "Note — Transcript.md", into: dir)
+    }
+}
