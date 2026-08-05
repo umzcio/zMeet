@@ -1,21 +1,28 @@
 import AppKit
 import SwiftUI
 
-/// "Meeting notes are ready" banner, shown after processing completes. Same
-/// floating-panel style as the meeting-detected popup.
-struct NotesReadyPopupView: View {
+/// Outcome banner shown after processing finishes — either "Notes ready" (success)
+/// or "Couldn't create notes" (failure). Same floating-panel style as the
+/// meeting-detected popup.
+struct OutcomePopupView: View {
+    enum Kind {
+        case success
+        case failure
+    }
+
+    let kind: Kind
     let title: String
-    let onView: () -> Void
+    let onAction: () -> Void
     let onDismiss: () -> Void
 
     static let mint = Color(red: 0.180, green: 0.878, blue: 0.541)
 
     var body: some View {
         HStack(spacing: 12) {
-            NotesReadyCheckmark()
+            OutcomePopupIcon(kind: kind)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Notes ready")
+                Text(kind == .success ? "Notes ready" : "Couldn't create notes")
                     .font(.headline)
                 Text(title)
                     .font(.caption)
@@ -25,11 +32,11 @@ struct NotesReadyPopupView: View {
 
             Spacer(minLength: 8)
 
-            Button(action: onView) {
-                Text("View notes")
+            Button(action: onAction) {
+                Text(kind == .success ? "View notes" : "Open in Library")
             }
             .buttonStyle(.borderedProminent)
-            .tint(Self.mint)
+            .tint(kind == .success ? Self.mint : Color.orange)
         }
         .padding(14)
         .padding(.leading, 8)
@@ -48,19 +55,31 @@ struct NotesReadyPopupView: View {
     }
 }
 
-private struct NotesReadyCheckmark: View {
+private struct OutcomePopupIcon: View {
+    let kind: OutcomePopupView.Kind
     @State private var shown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        Image(systemName: "checkmark.circle.fill")
-            .font(.largeTitle)
-            .foregroundStyle(NotesReadyPopupView.mint)
-            .scaleEffect(shown || reduceMotion ? 1.0 : 0.5)
-            .onAppear {
-                withAnimation(.spring(duration: 0.45, bounce: 0.35).delay(0.1)) {
-                    shown = true
-                }
+        Group {
+            switch kind {
+            case .success:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(OutcomePopupView.mint)
+                    .scaleEffect(shown || reduceMotion ? 1.0 : 0.5)
+                    .onAppear {
+                        withAnimation(.spring(duration: 0.45, bounce: 0.35).delay(0.1)) {
+                            shown = true
+                        }
+                    }
+            case .failure:
+                // A failure isn't a delight moment — no celebratory spring pop,
+                // just the warning rendered at full size.
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color.orange)
             }
+        }
+        .font(.largeTitle)
     }
 }
 
@@ -69,12 +88,13 @@ final class NotesReadyPopupController {
     private var panel: NSPanel?
     private var autoDismiss: Timer?
 
-    func show(title: String, onView: @escaping () -> Void) {
+    func show(kind: OutcomePopupView.Kind = .success, title: String, onAction: @escaping () -> Void) {
         hide()
 
-        let view = NotesReadyPopupView(
+        let view = OutcomePopupView(
+            kind: kind,
             title: title,
-            onView: { [weak self] in onView(); self?.hide() },
+            onAction: { [weak self] in onAction(); self?.hide() },
             onDismiss: { [weak self] in self?.hide() }
         )
 

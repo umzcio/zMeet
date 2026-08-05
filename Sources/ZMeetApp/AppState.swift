@@ -516,6 +516,10 @@ final class AppState: ObservableObject {
                 toPublish = (processed, transcript, summary)
             } catch {
                 lastError = error.localizedDescription
+                let failedTitle = (try? manager.session(id: id))?.title ?? "Meeting"
+                notesReadyPopup.show(kind: .failure, title: failedTitle) { [weak self] in
+                    self?.openLibrary(select: id)
+                }
             }
             // Free the UI as soon as the notes are saved + shown.
             processingSessionID = nil
