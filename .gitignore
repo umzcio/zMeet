@@ -15,5 +15,6 @@ build/
 # Notary credentials (local only)
 scripts/.notary-config.local
 
-# Internal docs/specs/plans/mocks — not published
-docs/
+# Internal specs/plans/mocks — not published (RELEASING.md is tracked)
+docs/*
+!docs/RELEASING.md
