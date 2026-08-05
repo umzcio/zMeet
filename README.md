@@ -272,7 +272,7 @@ zMeet/
 
 ## Roadmap
 
-Current release **v1.15.0**. Shipped on top of the v1.0 capture → transcript → notes pipeline:
+Current release **v1.15.1**. Shipped on top of the v1.0 capture → transcript → notes pipeline:
 an in-app Library/Reader window, a Settings UI, full-text search, audio retention/storage
 management, right-click actions, recording modes (remote/hybrid/in-person) with per-mode capture
 profiles, mic gain, background-noise reduction, You-vs-Others speaker labeling, full-meeting
@@ -286,3 +286,6 @@ export, and cross-machine **vault sync** options.
 ## License
 
 [MIT](LICENSE) — do what you like; no warranty.
+
+Vendored third-party code (SpeexDSP, KISS FFT) is BSD-3-Clause — see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
