@@ -57,6 +57,14 @@ final class MeetingDetector {
     }
 
     private func scan() {
+        // Cheap tier: skip the window + Core Audio IPC entirely when no meeting
+        // app is even running and nothing is in flight. Never skip mid-meeting:
+        // the audio reducer's .ended transition (auto-stop) needs its ticks.
+        let inFlight = current != nil || audioActivity.isInMeeting
+        if !inFlight && !ProcessAudioProbe.meetingAppProcessRunning() {
+            _ = audioActivity.update(active: false)
+            return
+        }
         scanWindows()
         scanAudio()
     }
