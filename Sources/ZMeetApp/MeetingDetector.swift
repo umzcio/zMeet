@@ -52,6 +52,7 @@ final class MeetingDetector {
         timer?.invalidate()
         timer = nil
         missCount = 0
+        current = nil
         audioActivity = MeetingAudioActivity()
     }
 

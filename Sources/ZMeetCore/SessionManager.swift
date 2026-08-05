@@ -159,9 +159,9 @@ public final class SessionManager {
         let priorStatus = session.status
         let transcriptURL = transcriptURL(for: session)
         let noteURL = noteURL(for: session)
-        try ZMeetPaths.ensureDirectory(transcriptURL.deletingLastPathComponent())
 
         do {
+            try ZMeetPaths.ensureDirectory(transcriptURL.deletingLastPathComponent())
             try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
             let note = MarkdownRenderer().renderProcessedNote(
                 session: session,

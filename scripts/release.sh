@@ -18,12 +18,12 @@ DIST="$ROOT/build/dist"
 DMG="$ROOT/build/$APP_NAME-$VERSION.dmg"
 SPARKLE_ART="$(ls -d "$ROOT"/.build*/artifacts/sparkle/Sparkle 2>/dev/null | head -1 || true)"
 if [[ -z "$SPARKLE_ART" || ! -e "$SPARKLE_ART" ]]; then
-  echo "error: Sparkle artifacts not found. Run: swift package resolve  (or: rm -rf .build/artifacts && swift build)" >&2
+  echo "error: Sparkle artifacts not found. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
   exit 1
 fi
 SPARKLE_BIN="$SPARKLE_ART/bin"
 if [[ ! -e "$SPARKLE_BIN" ]]; then
-  echo "error: Sparkle artifacts not found. Run: swift package resolve  (or: rm -rf .build/artifacts && swift build)" >&2
+  echo "error: Sparkle artifacts not found. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
   exit 1
 fi
 
@@ -67,7 +67,7 @@ echo "  DMG     : $DIST/$APP_NAME-$VERSION.dmg  -> upload to the v$VERSION GitHu
 echo "  appcast : $DIST/appcast.xml             -> commit to main (SUFeedURL points there)"
 echo "  cask    : after publishing the release, run scripts/update-cask.sh $VERSION"
 
-if [[ -z "$(git -C "$ROOT" status --porcelain)" ]]; then
+if [[ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ]]; then
   git -C "$ROOT" tag -a "v$VERSION" -m "v$VERSION"
   echo "  tagged  : v$VERSION (push with: git push origin v$VERSION)"
 else
