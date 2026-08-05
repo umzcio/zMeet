@@ -5,12 +5,16 @@ import Foundation
 public enum SummaryEngine: Sendable, Equatable {
     case onDevice
     case cloud
+    /// Cloud was attempted (the transcript was transmitted) but the response
+    /// failed; the saved summary came from the on-device fallback.
+    case onDeviceAfterCloudFailure
 
     /// Footer line appended to the rendered note (not indexed for search).
     public var attribution: String {
         switch self {
         case .onDevice: "Summary generated on-device"
         case .cloud: "Summary by Claude Sonnet (cloud)"
+        case .onDeviceAfterCloudFailure: "Summary generated on-device (cloud attempt failed)"
         }
     }
 }
@@ -141,7 +145,10 @@ public struct SummarizationPolicy: Sendable {
                 let md = try await cloud.summarize(transcript: transcript, title: title)
                 return (md, .cloud)
             } catch {
-                // Any cloud failure → silent fallback to on-device below.
+                // Cloud was attempted — the transcript was already transmitted —
+                // so the fallback must be attributed honestly.
+                let md = try await onDevice.summarize(transcript: transcript, title: title)
+                return (md, .onDeviceAfterCloudFailure)
             }
         }
         let md = try await onDevice.summarize(transcript: transcript, title: title)

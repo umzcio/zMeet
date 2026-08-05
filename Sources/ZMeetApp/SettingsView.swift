@@ -387,7 +387,7 @@ struct SettingsView: View {
                     }
                 }
                 card {
-                    row("Privacy", "When on, your transcript text and meeting title are sent to Anthropic to generate the summary. Your audio always stays on your Mac.") {
+                    row("Privacy", "When on, text from your meetings is sent to Anthropic for: summaries (transcript + title), the linked-note entities used by Obsidian publishing (notes + part of the transcript), and auto-titles (notes). This includes the Obsidian backfill, which processes every meeting you publish. Your audio always stays on your Mac.") {
                         EmptyView()
                     }
                 }
@@ -408,7 +408,7 @@ struct SettingsView: View {
                         dropdownTrigger(.obsidianVault)
                     }
                     divider
-                    row("Backfill", "Publish all existing meetings into the vault. Reuses each meeting's saved transcript and notes.") {
+                    row("Backfill", "Publish all existing meetings into the vault. Reuses each meeting's saved transcript and notes." + (state.config.useCloudSummaries ? " Cloud summaries is on, so entity extraction sends each published meeting's text to Anthropic." : "")) {
                         if let progress = state.obsidianBackfill {
                             Text("Publishing \(progress.done) of \(progress.total)…")
                                 .font(.system(size: 13)).foregroundStyle(.secondary)

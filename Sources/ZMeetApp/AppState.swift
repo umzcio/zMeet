@@ -485,6 +485,9 @@ final class AppState: ObservableObject {
                 // synchronous Core write happens back on the main actor.
                 let session = try manager.session(id: id)
                 let (transcript, summary, engine) = try await produceNotes(session: session)
+                if engine == .onDeviceAfterCloudFailure {
+                    lastError = "Cloud summary failed — this meeting's notes were generated on-device. Check your API key in Settings."
+                }
                 // Give untitled meetings (in-person / manual) a descriptive title from
                 // their notes, before the note is written + published so it carries
                 // through. Best-effort; never overwrites a real/user-set title. You can

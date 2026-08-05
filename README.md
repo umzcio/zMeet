@@ -57,8 +57,10 @@ Transcription uses on-device Speech; summaries use on-device Foundation Models (
 If Apple Intelligence is off, you still get a full transcript and a basic extractive summary.
 
 Two **opt-in** features step outside the default local-only path, and only when you turn them on:
-**cloud summaries** send transcript text + the meeting title (never audio) to the Claude API, and
-**Obsidian export** writes Markdown copies into a vault folder on your Mac (local files, no network).
+**cloud summaries** send transcript and notes text + the meeting title (never audio) to the Claude
+API — for the summary itself, for the entity links used by Obsidian export, and for auto-titles —
+and **Obsidian export** writes Markdown copies into a vault folder on your Mac (local files, no
+network).
 
 ---
 
