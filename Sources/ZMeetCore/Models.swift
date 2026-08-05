@@ -6,7 +6,6 @@ public enum ZMeetError: Error, LocalizedError {
     case noActiveSession
     case sessionNotFound(String)
     case invalidCommand(String)
-    case processFailed(command: String, exitCode: Int32, stderr: String)
 
     public var errorDescription: String? {
         switch self {
@@ -20,8 +19,6 @@ public enum ZMeetError: Error, LocalizedError {
             "No meeting session found for id \(id)."
         case .invalidCommand(let command):
             "Invalid command: \(command)"
-        case .processFailed(let command, let exitCode, let stderr):
-            "Command failed with exit code \(exitCode): \(command)\n\(stderr)"
         }
     }
 }
@@ -224,7 +221,6 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     public var outputPath: String
     public var appDataPath: String
     public var audio: AudioConfig
-    public var gitAutoCommit: Bool
     public var autoProcessOnStop: Bool
     /// Whether to watch for Zoom/Teams meetings and show the "Take notes" popup.
     public var detectMeetings: Bool
@@ -254,7 +250,6 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         outputPath: String,
         appDataPath: String,
         audio: AudioConfig = AudioConfig(),
-        gitAutoCommit: Bool = false,
         autoProcessOnStop: Bool = true,
         detectMeetings: Bool = true,
         recordingMode: RecordingMode = .remote,
@@ -269,7 +264,6 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         self.outputPath = outputPath
         self.appDataPath = appDataPath
         self.audio = audio
-        self.gitAutoCommit = gitAutoCommit
         self.autoProcessOnStop = autoProcessOnStop
         self.detectMeetings = detectMeetings
         self.recordingMode = recordingMode
@@ -295,7 +289,6 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         appDataPath = try c.decodeIfPresent(String.self, forKey: .appDataPath)
             ?? home.appendingPathComponent(".zmeet").path
         audio = try c.decodeIfPresent(AudioConfig.self, forKey: .audio) ?? AudioConfig()
-        gitAutoCommit = try c.decodeIfPresent(Bool.self, forKey: .gitAutoCommit) ?? false
         autoProcessOnStop = try c.decodeIfPresent(Bool.self, forKey: .autoProcessOnStop) ?? true
         detectMeetings = try c.decodeIfPresent(Bool.self, forKey: .detectMeetings) ?? true
         recordingMode = try c.decodeIfPresent(RecordingMode.self, forKey: .recordingMode) ?? .remote
@@ -330,7 +323,6 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             outputPath: outputPath ?? home.appendingPathComponent("Documents/zMeet").path,
             appDataPath: home.appendingPathComponent(".zmeet").path,
             audio: AudioConfig(),
-            gitAutoCommit: false,
             autoProcessOnStop: true,
             detectMeetings: true,
             recordingMode: .remote,

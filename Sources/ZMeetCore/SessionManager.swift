@@ -183,9 +183,6 @@ public final class SessionManager {
                 sessionID: session.id, title: session.title,
                 notes: summary, transcript: transcript
             )
-            if config.gitAutoCommit {
-                _ = try? GitRepository(repoURL: outputURL).commitAll(message: "Add meeting notes: \(session.title)")
-            }
             return session
         } catch {
             // A failed re-process of an already-processed meeting must not hide

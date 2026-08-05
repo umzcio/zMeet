@@ -101,7 +101,6 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     let config = ZMeetConfig(
         outputPath: root.appendingPathComponent("zMeet").path,
         appDataPath: root.appendingPathComponent("data").path,
-        gitAutoCommit: false,
         autoProcessOnStop: false
     )
     return (config, root)
@@ -634,7 +633,6 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
     let config = ZMeetConfig(
         outputPath: root.appendingPathComponent("zMeet").path,
         appDataPath: root.appendingPathComponent("data").path,
-        gitAutoCommit: false,
         autoProcessOnStop: false
     )
     return (config, root)
