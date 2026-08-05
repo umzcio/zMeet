@@ -26,6 +26,12 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     /// Whether a capture failure has already been reported for the current
     /// recording. Confined to `queue`, like the other mutable state.
     private var didReportFailure = false
+    /// Whether `stop()` is currently tearing down capture. Confined to `queue`.
+    /// Suppresses failure reports that race an intentional stop (e.g. SCK
+    /// delivering `didStopWithError` as a side effect of our own teardown)
+    /// without suppressing a genuine mid-recording death, since that path
+    /// reports before `stop()` is ever called.
+    private var isStopping = false
     var onCaptureFailure: (@Sendable (String) -> Void)?
 
     private let canonical = AVAudioFormat(
@@ -39,8 +45,9 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
 
     /// Render-side backpressure for mixed-file writes handed to `queue`: a
     /// stalled disk must never block the real-time thread, so past the cap we
-    /// drop oldest-first (drops are counted and logged at stop). 64 × 4096
-    /// frames ≈ 5.5 s of audio in flight at 48 kHz before dropping.
+    /// drop the incoming buffer (newest) (drops are counted and logged at
+    /// stop). 64 × 4096 frames ≈ 5.5 s of audio in flight at 48 kHz before
+    /// dropping.
     private let mixWriteBackpressure = OSAllocatedUnfairLock(initialState: (pending: 0, dropped: 0))
     private static let maxPendingMixWrites = 64
 
@@ -50,7 +57,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     }
 
     func start(to url: URL, logURL: URL, audio: AudioConfig) throws {
-        didReportFailure = false
+        queue.sync { didReportFailure = false; isStopping = false }
         mixWriteBackpressure.withLock { $0 = (0, 0) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -99,8 +106,9 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
                 }
                 guard admitted, let copy = Self.copyBuffer(buffer) else {
                     if !admitted { return }
-                    // Copy failed after admission: release the slot.
-                    self.mixWriteBackpressure.withLock { $0.pending -= 1 }
+                    // Copy failed after admission: release the slot and count it
+                    // as a drop, same as backpressure rejection.
+                    self.mixWriteBackpressure.withLock { $0.pending -= 1; $0.dropped += 1 }
                     return
                 }
                 self.queue.async {
@@ -239,7 +247,11 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         return out.frameLength > 0 ? out : nil
     }
 
-    func stop() async throws {
+    func stop() async throws -> RecorderStopDiagnostics {
+        // Set before anything else so a capture-failure report racing this stop
+        // (e.g. `didStopWithError` firing from SCK's own teardown) is suppressed
+        // instead of misreporting an intentional stop as a failure.
+        queue.sync { isStopping = true }
         log("stop")
         // The unstructured start Task may still be mid-setup (e.g. awaiting
         // SCShareableContent.current); cancel and await it before touching
@@ -269,17 +281,19 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         engine.detach(systemPlayer)
         engine.detach(micPlayer)
         engine.detach(captureMixer)
+        var dropped = 0
         queue.sync {
             systemConverter = nil
             micConverter = nil
             audioFile = nil  // closes/finalizes the file
             micFile = nil       // finalize/close the track files
             systemFile = nil
-            let dropped = mixWriteBackpressure.withLock { $0.dropped }
+            dropped = mixWriteBackpressure.withLock { $0.dropped }
             if dropped > 0 { logHandle?.write(Data("[\(Date())] dropped \(dropped) mix buffers (slow disk)\n".utf8)) }
             try? logHandle?.close()
             logHandle = nil
         }
+        return RecorderStopDiagnostics(droppedMixBuffers: dropped)
     }
 
     /// Copies a canonical-format buffer so the render thread can hand it off
@@ -324,6 +338,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     /// outside any lock context so it can freely re-enter the recorder.
     private func reportCaptureFailure(_ message: String) {
         queue.async {
+            guard !self.isStopping else { return }
             guard !self.didReportFailure else { return }
             self.didReportFailure = true
             self.onCaptureFailure?(message)

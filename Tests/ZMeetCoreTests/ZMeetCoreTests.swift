@@ -176,6 +176,41 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(FileManager.default.fileExists(atPath: processed.notePath!))
 }
 
+/// Dropped mix buffers must not be silently swallowed: a stubbed-drop stop
+/// still yields a `.recorded` session (dropping frames isn't a hard failure),
+/// but carries a user-facing warning describing the loss.
+@Test func stopWithDroppedAudioCarriesWarningMessage() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let recorder = MockRecorder()
+    recorder.stubbedDiagnostics = RecorderStopDiagnostics(droppedMixBuffers: 469) // ~40s
+    let manager = SessionManager(config: config, recorder: recorder)
+
+    _ = try manager.start(title: "Weekly Sync", sourceApp: nil)
+    let stopped = try await manager.stop()
+
+    #expect(stopped.status == .recorded)
+    #expect(stopped.errorMessage != nil)
+    #expect(stopped.errorMessage?.contains("dropped") == true)
+}
+
+/// Regression guard for the above: a stop with no dropped buffers must leave
+/// `errorMessage` nil — the warning path must not fire unconditionally.
+@Test func stopWithoutDroppedAudioLeavesNoWarningMessage() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let recorder = MockRecorder()
+    let manager = SessionManager(config: config, recorder: recorder)
+
+    _ = try manager.start(title: "Weekly Sync", sourceApp: nil)
+    let stopped = try await manager.stop()
+
+    #expect(stopped.status == .recorded)
+    #expect(stopped.errorMessage == nil)
+}
+
 /// A re-process (of an already-`.processed` meeting) that fails mid-write must
 /// not downgrade the session — its prior notes are still intact on disk and the
 /// Library must keep showing them.

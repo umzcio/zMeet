@@ -12,6 +12,9 @@ final class MockRecorder: MeetingRecorder, @unchecked Sendable {
     var audioFileSize: Int
     var startError: Error?
     var stopError: Error?
+    /// Diagnostics returned by the next (and every subsequent) `stop()` call.
+    /// Defaults to no drops — set to inject a dropped-audio warning in tests.
+    var stubbedDiagnostics = RecorderStopDiagnostics()
     var onCaptureFailure: (@Sendable (String) -> Void)?
     /// Optional hook awaited at the very start of stop(), before stopCount is
     /// incremented. Lets tests deterministically sequence their own assertions
@@ -44,9 +47,10 @@ final class MockRecorder: MeetingRecorder, @unchecked Sendable {
         }
     }
 
-    func stop() async throws {
+    func stop() async throws -> RecorderStopDiagnostics {
         if let beforeStop { await beforeStop() }
         stopCount += 1
         if let stopError { throw stopError }
+        return stubbedDiagnostics
     }
 }

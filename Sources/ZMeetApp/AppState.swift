@@ -115,8 +115,14 @@ final class AppState: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.lastError = message
-                if case .recording = self.phase,
-                   let active = self.allSessions.first(where: { $0.status == .recording }) {
+                // The menu (where `lastError` renders) is closed 99% of the time —
+                // also raise the failure banner so a mid-recording death is visible
+                // without opening the menu.
+                let active = self.allSessions.first(where: { $0.status == .recording })
+                self.notesReadyPopup.show(kind: .failure, title: active?.title ?? "Recording") { [weak self] in
+                    self?.openLibrary(select: active?.id)
+                }
+                if case .recording = self.phase, let active {
                     _ = try? await self.manager.stop()
                     _ = try? self.manager.markFailed(id: active.id, message: message)
                     self.phase = .idle
@@ -464,6 +470,12 @@ final class AppState: ObservableObject {
         Task {
             do {
                 let stopped = try await manager.stop()
+                if let warning = stopped.errorMessage {
+                    notesReadyPopup.show(kind: .failure, title: stopped.title) { [weak self] in
+                        self?.openLibrary(select: stopped.id)
+                    }
+                    lastError = warning
+                }
                 // Best-effort offline noise cleanup (in place). A failure keeps the
                 // original recording and must never block notes or surface an error.
                 if config.noiseSuppression {

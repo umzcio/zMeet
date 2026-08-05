@@ -101,7 +101,7 @@ public final class SessionManager {
             let folder = meetingFolder
             let log = logURL
             Task {
-                try? await recorder.stop()
+                _ = try? await recorder.stop()
                 try? FileManager.default.removeItem(at: folder)
                 try? FileManager.default.removeItem(at: log)
             }
@@ -121,8 +121,9 @@ public final class SessionManager {
             throw ZMeetError.noActiveSession
         }
 
+        let diagnostics: RecorderStopDiagnostics
         do {
-            try await recorder.stop()
+            diagnostics = try await recorder.stop()
         } catch {
             session.status = .failed
             session.errorMessage = error.localizedDescription
@@ -133,6 +134,9 @@ public final class SessionManager {
 
         session.endedAt = Date()
         session.status = .recorded
+        if diagnostics.droppedMixBuffers > 0 {
+            session.errorMessage = "Recording dropped ~\(Int(diagnostics.droppedSeconds.rounded()))s of audio (disk couldn't keep up)."
+        }
         try save(session)
         return session
     }
