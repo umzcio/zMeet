@@ -256,7 +256,11 @@ final class AppState: ObservableObject {
     func saveAPIKey(_ key: String) {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        try? secretStore.write(trimmed, account: SecretAccount.anthropicAPIKey)
+        do {
+            try secretStore.write(trimmed, account: SecretAccount.anthropicAPIKey)
+        } catch {
+            lastError = "Couldn't save the API key to your Keychain (error \((error as NSError).code)). Your previous key was not changed."
+        }
         refreshHasAPIKey()
     }
 

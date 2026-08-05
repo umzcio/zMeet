@@ -26,13 +26,17 @@ struct KeychainSecretStore: SecretStore {
 
     func write(_ value: String, account: String) throws {
         let data = Data(value.utf8)
-        // Delete any existing item first so write is an upsert.
-        SecItemDelete(baseQuery(account: account) as CFDictionary)
-        var attrs = baseQuery(account: account)
-        attrs[kSecValueData as String] = data
-        attrs[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        attrs[kSecAttrSynchronizable as String] = false
-        let status = SecItemAdd(attrs as CFDictionary, nil)
+        // Update in place first — the existing (working) item must never be
+        // destroyed by a failed write. Add only when no item exists yet.
+        let update: [String: Any] = [kSecValueData as String: data]
+        var status = SecItemUpdate(baseQuery(account: account) as CFDictionary, update as CFDictionary)
+        if status == errSecItemNotFound {
+            var attrs = baseQuery(account: account)
+            attrs[kSecValueData as String] = data
+            attrs[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            attrs[kSecAttrSynchronizable as String] = false
+            status = SecItemAdd(attrs as CFDictionary, nil)
+        }
         guard status == errSecSuccess else {
             throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
         }
