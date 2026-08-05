@@ -5,12 +5,17 @@ import SwiftUI
 struct DialogScaffold<Content: View>: View {
     let onDismiss: () -> Void
     @ViewBuilder var content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static var appear: Animation { .easeOut(duration: 0.18) }
+    static var disappear: Animation { .easeOut(duration: 0.15) }
 
     var body: some View {
         ZStack {
             Color.black.opacity(0.5)
                 .ignoresSafeArea()
                 .onTapGesture { onDismiss() }
+                .transition(.opacity)
             content
                 .padding(22)
                 .frame(width: 380)
@@ -19,6 +24,9 @@ struct DialogScaffold<Content: View>: View {
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(LibraryView.hairline, lineWidth: 1))
                 .shadow(color: .black.opacity(0.5), radius: 30, y: 14)
+                .transition(reduceMotion
+                    ? AnyTransition.opacity
+                    : .scale(scale: 0.97).combined(with: .opacity))
         }
         .transition(.opacity)
     }

@@ -51,6 +51,8 @@ struct LibraryView: View {
                 deleteAudioDialog(session)
             }
         }
+        .animation(state.libraryDialog == nil ? DialogScaffold<EmptyView>.disappear : DialogScaffold<EmptyView>.appear,
+                   value: state.libraryDialog)
         // Read rail-row anchors from the whole tree (the rows live in railColumn)
         // and float the right-click menu under the clicked row.
         .overlayPreferenceValue(RailRowAnchorKey.self) { anchors in
