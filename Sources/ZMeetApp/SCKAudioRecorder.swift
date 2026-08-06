@@ -48,8 +48,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     /// drop the incoming buffer (newest) (drops are counted and logged at
     /// stop). 64 × 4096 frames ≈ 5.5 s of audio in flight at 48 kHz before
     /// dropping.
-    private let mixWriteBackpressure = OSAllocatedUnfairLock(initialState: (pending: 0, dropped: 0))
-    private static let maxPendingMixWrites = 64
+    private let mixWriteBackpressure = OSAllocatedUnfairLock(initialState: MixWriteBackpressure(capacity: 64))
 
     override init() {
         super.init()
@@ -58,7 +57,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
 
     func start(to url: URL, logURL: URL, audio: AudioConfig) throws {
         queue.sync { didReportFailure = false; isStopping = false }
-        mixWriteBackpressure.withLock { $0 = (0, 0) }
+        mixWriteBackpressure.withLock { $0.reset() }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
@@ -103,20 +102,16 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
             captureMixer.installTap(onBus: 0, bufferSize: 4096, format: canonical) { [weak self] buffer, _ in
                 guard let self, let tapFile, buffer.frameLength > 0 else { return }
                 // Render thread: copy + enqueue only. Encoding and I/O happen on `queue`.
-                let admitted = self.mixWriteBackpressure.withLock { state -> Bool in
-                    if state.pending >= Self.maxPendingMixWrites { state.dropped += 1; return false }
-                    state.pending += 1
-                    return true
-                }
+                let admitted = self.mixWriteBackpressure.withLock { $0.admit() }
                 guard admitted, let copy = Self.copyBuffer(buffer) else {
                     if !admitted { return }
                     // Copy failed after admission: release the slot and count it
                     // as a drop, same as backpressure rejection.
-                    self.mixWriteBackpressure.withLock { $0.pending -= 1; $0.dropped += 1 }
+                    self.mixWriteBackpressure.withLock { $0.releaseDropping() }
                     return
                 }
                 self.queue.async {
-                    defer { self.mixWriteBackpressure.withLock { $0.pending -= 1 } }
+                    defer { self.mixWriteBackpressure.withLock { $0.release() } }
                     do { try tapFile.write(from: copy) } catch { self.log("write error: \(error)") }
                 }
             }
