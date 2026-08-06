@@ -224,6 +224,8 @@ private struct ToolbarIcon: View {
             Image(systemName: systemName)
                 .font(.body)
                 .foregroundStyle(hover ? Color.primary : Color.secondary)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())
         .onHover { hover = $0 }

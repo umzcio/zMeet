@@ -207,7 +207,7 @@ struct SettingsView: View {
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Self.hairline, lineWidth: 1))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .anchorPreference(key: DropdownAnchorKey.self, value: .bounds) { [id: $0] }
     }
 
@@ -278,6 +278,7 @@ struct SettingsView: View {
             .background(selected ? ZMeetPalette.mint : .clear, in: RoundedRectangle(cornerRadius: 8))
             .contentShape(Rectangle())
         }
+        // Rows/tabs don't depress (PressableStyle is for discrete controls) — hover carries the affordance.
         .buttonStyle(.plain)
         .padding(.horizontal, 10)
     }
@@ -285,8 +286,10 @@ struct SettingsView: View {
     private func sidebarMiniButton(_ icon: String, _ help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon).foregroundStyle(.secondary)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .help(help)
     }
 

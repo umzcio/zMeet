@@ -43,7 +43,7 @@ struct ModeChoiceView: View {
             .padding(.horizontal, 22)
 
             Button("Cancel", action: onCancel)
-                .buttonStyle(.plain)
+                .buttonStyle(PressableStyle())
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 18)
@@ -82,13 +82,14 @@ struct ModeChoiceView: View {
 
 /// Subtle press/hover feedback for the choice cards.
 private struct ModeCardButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(ZMeetPalette.mint, lineWidth: configuration.isPressed ? 2 : 0)
-            )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .overlay(RoundedRectangle(cornerRadius: 14)
+                .stroke(ZMeetPalette.mint, lineWidth: configuration.isPressed ? 2 : 0))
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(ZMeetMotion.press, value: configuration.isPressed)
     }
 }
 

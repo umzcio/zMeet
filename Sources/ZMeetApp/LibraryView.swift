@@ -276,6 +276,7 @@ struct LibraryView: View {
             .background(active ? ZMeetPalette.mint.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 10))
             .contentShape(Rectangle())
         }
+        // Rows/tabs don't depress (PressableStyle is for discrete controls) — hover carries the affordance.
         .buttonStyle(.plain)
         .overlay(RightClickCatcher { showContextMenu(session) })
         .anchorPreference(key: RailRowAnchorKey.self, value: .bounds) { [session.id: $0] }
@@ -376,7 +377,7 @@ struct LibraryView: View {
             Image(systemName: icon).font(.system(size: 15)).foregroundStyle(ZMeetPalette.faint)
                 .frame(width: 30, height: 30)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .help(help)
     }
 
@@ -465,7 +466,7 @@ struct LibraryView: View {
                 .frame(width: 38, height: 38)
                 .background(ZMeetPalette.card, in: RoundedRectangle(cornerRadius: 10))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableStyle())
         .help(help)
     }
 
@@ -527,6 +528,7 @@ struct LibraryView: View {
             }
             .padding(.top, 4)
         }
+        // Rows/tabs don't depress (PressableStyle is for discrete controls) — hover carries the affordance.
         .buttonStyle(.plain)
         .fixedSize()
     }
@@ -704,6 +706,7 @@ struct LibraryView: View {
             .background(ZMeetPalette.card.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
             .contentShape(Rectangle())
         }
+        // Rows/tabs don't depress (PressableStyle is for discrete controls) — hover carries the affordance.
         .buttonStyle(.plain)
     }
 
@@ -857,7 +860,7 @@ private struct PlayerBar: View {
                     .background(ZMeetPalette.mint, in: Circle())
                     .opacity(audio.duration <= 0 ? 0.4 : 1)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableStyle())
             .disabled(audio.duration <= 0)
 
             Text(timeString(scrubFraction.map { $0 * audio.duration } ?? audio.currentTime))

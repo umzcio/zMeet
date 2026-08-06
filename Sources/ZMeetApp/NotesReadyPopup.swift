@@ -47,7 +47,7 @@ struct OutcomePopupView: View {
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableStyle())
             .padding(7)
             .help("Dismiss")
         }
