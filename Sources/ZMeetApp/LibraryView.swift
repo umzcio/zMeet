@@ -38,6 +38,7 @@ struct LibraryView: View {
                 railColumn
                 Rectangle().fill(ZMeetPalette.hairline).frame(width: 1)
                 mainColumn
+                    .animation(ZMeetMotion.exit, value: isSearching)
             }
 
             // Scoped to just the dialog overlay so its animated transaction
@@ -311,6 +312,7 @@ struct LibraryView: View {
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
+            .animation(ZMeetMotion.enter, value: meetings.map(\.id))
         }
         .frame(maxHeight: .infinity)
     }
@@ -347,6 +349,7 @@ struct LibraryView: View {
         .buttonStyle(.plain)
         .overlay(RightClickCatcher { showContextMenu(session) })
         .anchorPreference(key: RailRowAnchorKey.self, value: .bounds) { [session.id: $0] }
+        .transition(.opacity)
     }
 
     /// The combined VoiceOver label for a rail row: title, subtitle, and the
@@ -494,6 +497,7 @@ struct LibraryView: View {
     private var mainColumn: some View {
         if isSearching {
             searchResultsPanel
+                .transition(.opacity)
         } else if let session = selected {
             VStack(spacing: 0) {
                 meetingHeader(session)
@@ -507,6 +511,7 @@ struct LibraryView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(ZMeetPalette.bg)
+            .transition(.opacity)
         } else {
             emptyState
         }
@@ -537,12 +542,14 @@ struct LibraryView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(ZMeetPalette.card, in: Capsule())
+                .transition(.opacity)
             }
             headerActions(session)
         }
         .padding(.horizontal, 32)
         .padding(.top, 26)
         .padding(.bottom, 18)
+        .animation(ZMeetMotion.enter, value: selectedIsProcessing)
     }
 
     private func headerActions(_ session: MeetingSession) -> some View {
@@ -686,6 +693,7 @@ struct LibraryView: View {
                         .textSelection(.enabled)
                 }
             }
+            .transition(.opacity)
         } else if session.status == .processed && !transcriptLoaded {
             ProgressView().controlSize(.small)
         } else {
@@ -846,7 +854,9 @@ struct LibraryView: View {
             if Task.isCancelled { return }
             let hits = await state.searchMeetings(raw)
             if Task.isCancelled { return }
-            searchHits = hits
+            withAnimation(ZMeetMotion.exit) {
+                searchHits = hits
+            }
         }
     }
 
@@ -860,7 +870,9 @@ struct LibraryView: View {
         guard let session = selected else {
             noteBlocks = []; return
         }
-        noteBlocks = NoteDocument.parse(state.readNote(session) ?? "")
+        withAnimation(ZMeetMotion.enter) {
+            noteBlocks = NoteDocument.parse(state.readNote(session) ?? "")
+        }
         let url = URL(fileURLWithPath: session.audioPath)
         if FileManager.default.fileExists(atPath: url.path) {
             audio.load(url)
@@ -891,9 +903,13 @@ struct LibraryView: View {
         }
         // The selection may have changed while the read was in flight.
         guard selected?.id == session.id, tab == .transcript else { return }
-        transcriptText = result.text
-        transcriptParagraphs = result.paragraphs
-        transcriptLoaded = true
+        // Opacity-only crossfade (see transcriptBody's .transition(.opacity)) —
+        // reduce-motion-safe by construction, no extra gating needed.
+        withAnimation(ZMeetMotion.enter) {
+            transcriptText = result.text
+            transcriptParagraphs = result.paragraphs
+            transcriptLoaded = true
+        }
     }
 
     private func railSubtitle(_ session: MeetingSession) -> String {

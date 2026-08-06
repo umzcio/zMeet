@@ -44,7 +44,11 @@ struct OnboardingView: View {
         .frame(width: 460, height: 540)
         .background(Color(red: 0.051, green: 0.067, blue: 0.059))
         .onAppear { state.refreshPermissions() }
-        .onReceive(poll) { _ in state.refreshPermissions() }
+        // Live poll while the user is looking at System Settings — the moment a
+        // permission flips is the one high-emotion beat in onboarding, so the
+        // checkmark/border swap crossfades instead of teleporting. Opacity/color
+        // only, reduce-motion-safe by construction.
+        .onReceive(poll) { _ in withAnimation(ZMeetMotion.enter) { state.refreshPermissions() } }
     }
 
     private var header: some View {
