@@ -8,7 +8,7 @@ import ZMeetCore
 /// Stateless (a value type), so it's trivially Sendable and safe to call from
 /// any actor. The speech model is system-managed and downloaded on first use.
 struct SpeechTranscription: Sendable {
-    func transcribe(audioURL: URL) async throws -> String {
+    func transcribe(audioURL: URL, onProgress: (@Sendable (Double) -> Void)? = nil) async throws -> String {
         guard await ensureAuthorized() else {
             throw TranscriptionError.notAuthorized
         }
@@ -22,6 +22,7 @@ struct SpeechTranscription: Sendable {
         }
 
         let audioFile = try AVAudioFile(forReading: audioURL)
+        let duration = Double(audioFile.length) / audioFile.fileFormat.sampleRate
         let analyzer = SpeechAnalyzer(modules: [transcriber])
 
         // Collect transcript text as results stream in.
@@ -29,6 +30,7 @@ struct SpeechTranscription: Sendable {
             var text = AttributedString()
             for try await result in transcriber.results {
                 text.append(result.text)
+                if duration > 0 { onProgress?(min(1, result.range.end.seconds / duration)) }
             }
             return text
         }
@@ -47,7 +49,7 @@ struct SpeechTranscription: Sendable {
         return plain.isEmpty ? "(No speech detected in the recording.)" : plain
     }
 
-    func transcribeSegments(audioURL: URL) async throws -> [TranscriptSegment] {
+    func transcribeSegments(audioURL: URL, onProgress: (@Sendable (Double) -> Void)? = nil) async throws -> [TranscriptSegment] {
         guard await ensureAuthorized() else { throw TranscriptionError.notAuthorized }
         let locale = bestLocale()
         let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
@@ -55,6 +57,7 @@ struct SpeechTranscription: Sendable {
             try await installation.downloadAndInstall()
         }
         let audioFile = try AVAudioFile(forReading: audioURL)
+        let duration = Double(audioFile.length) / audioFile.fileFormat.sampleRate
         let analyzer = SpeechAnalyzer(modules: [transcriber])
 
         let collector = Task { () -> [TranscriptSegment] in
@@ -63,6 +66,7 @@ struct SpeechTranscription: Sendable {
                 let text = String(result.text.characters)
                 let start = result.range.start.seconds
                 segments.append(TranscriptSegment(text: text, start: start))
+                if duration > 0 { onProgress?(min(1, result.range.end.seconds / duration)) }
             }
             return segments
         }

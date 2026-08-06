@@ -34,16 +34,21 @@ struct MenuContentView: View {
                 .padding(.vertical, 12)
                 .animation(ZMeetMotion.exit, value: state.phase)
 
-            if state.phase == .idle, state.isProcessing {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Processing…").font(.caption).foregroundStyle(.secondary)
+            VStack(spacing: 0) {
+                if state.phase == .idle, state.isProcessing {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(processingStatusText).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
+                    .transition(.opacity)
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 10)
-                .transition(.opacity)
-                .animation(ZMeetMotion.exit, value: state.isProcessing)
             }
+            // Moved out of the `if` (was on the HStack, where it can't see the
+            // row's own insertion/removal) so the transition actually animates
+            // instead of popping — see plan 056.
+            .animation(ZMeetMotion.exit, value: state.isProcessing)
 
             if let notice = state.notice {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -110,6 +115,15 @@ struct MenuContentView: View {
         .padding(.horizontal, 14)
         .padding(.top, 11)
         .padding(.bottom, 12)
+    }
+
+    /// The processing status row's text: the single meeting's stage when only
+    /// one is processing, else a count — per-meeting stage text would be
+    /// ambiguous with more than one in flight.
+    private var processingStatusText: String {
+        let stages = state.processingStages
+        if stages.count > 1 { return "Processing \(stages.count) meetings…" }
+        return stages.values.first ?? "Processing…"
     }
 
     private var statusText: String {

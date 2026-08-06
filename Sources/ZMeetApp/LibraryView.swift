@@ -517,7 +517,7 @@ struct LibraryView: View {
             if selectedIsProcessing {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small).scaleEffect(0.8)
-                    Text("Processing…").font(.system(size: 12)).foregroundStyle(ZMeetPalette.muted)
+                    Text(state.processingStages[session.id] ?? "Processing…").font(.system(size: 12)).foregroundStyle(ZMeetPalette.muted)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)

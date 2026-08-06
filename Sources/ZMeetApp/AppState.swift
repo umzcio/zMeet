@@ -22,6 +22,12 @@ final class AppState: ObservableObject {
     /// (guarding a duplicate process(id:)) is held until the background publish
     /// finishes. One @Published struct, so mutations publish automatically.
     @Published private(set) var processing = ProcessingRegistry()
+    /// Human-readable stage per processing session id ("Transcribing…",
+    /// "Summarizing…"), for the menu status row and the Library header capsule.
+    /// Set during `produceNotes`/`process`; cleared exactly where `processing`
+    /// transitions past the UI-visible lifecycle (notes-ready / endProcess) so
+    /// the two can't drift apart. A missing entry just falls back to "Processing…".
+    @Published private(set) var processingStages: [String: String] = [:]
     /// Progress of a "publish all to Obsidian" backfill, while one is running (nil
     /// otherwise). Drives the Settings button label + disabled state.
     @Published private(set) var obsidianBackfill: BackfillProgress?
@@ -543,6 +549,28 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Sets (or, when `text` is nil, clears) the human-readable processing stage
+    /// shown for a meeting. nil removes the entry entirely rather than storing
+    /// an empty string, so `processingStages.values.first` / `[id]` lookups fall
+    /// back to "Processing…" uniformly.
+    private func setStage(_ id: String, _ text: String?) {
+        if let text {
+            processingStages[id] = text
+        } else {
+            processingStages.removeValue(forKey: id)
+        }
+    }
+
+    /// Updates a transcribing stage with a rounded-to-10% progress suffix (e.g.
+    /// "Transcribing… 40%"). Hops back to the main actor since the transcriber's
+    /// progress callback is `@Sendable` and fires off-actor.
+    private nonisolated func reportTranscribingProgress(_ id: String, label: String, fraction: Double) {
+        let percent = Int((max(0, min(1, fraction)) * 10).rounded()) * 10
+        Task { @MainActor [weak self] in
+            self?.setStage(id, "\(label) \(percent)%")
+        }
+    }
+
     func process(id: String) {
         // Ignore a duplicate (re)process for a meeting whose process+publish is still
         // running — the publish continues after the UI returns to idle, so without
@@ -595,6 +623,12 @@ final class AppState: ObservableObject {
             // (`processing.isProcessing(id)`) stays held until endProcess below, so a
             // duplicate process(id:) is still rejected while the publish runs.
             processing.markNotesReady(id: id)
+            // The stage row/capsule reads processingStages while isVisiblyProcessing
+            // is true; clear it here too so nothing lingers if the visible lifecycle
+            // ever ends without a fresh stage having been set. The Obsidian publish
+            // below stays invisible (spinner already cleared above), so no
+            // "Publishing…" stage is introduced for it.
+            setStage(id, nil)
             reloadRecent()
             // Obsidian publish is a best-effort background step that runs AFTER the
             // UI is freed, so a slow entity-extraction call can't pin the icon in
@@ -603,6 +637,7 @@ final class AppState: ObservableObject {
                 await publishToObsidianIfEnabled(session: toPublish.session, transcript: toPublish.transcript, summary: toPublish.summary)
             }
             processing.endProcess(id: id)
+            setStage(id, nil)
         }
     }
 
@@ -614,21 +649,30 @@ final class AppState: ObservableObject {
         return t.isEmpty || t == "Untitled Meeting"
     }
 
-    private func transcribeForNotes(audioURL: URL) async throws -> String {
+    private func transcribeForNotes(audioURL: URL, id: String) async throws -> String {
         let folder = audioURL.deletingLastPathComponent()
         let micURL = folder.appendingPathComponent("mic.m4a")
         let systemURL = folder.appendingPathComponent("system.m4a")
         let fm = FileManager.default
         guard fm.fileExists(atPath: micURL.path), fm.fileExists(atPath: systemURL.path) else {
-            return try await SpeechTranscription().transcribe(audioURL: audioURL)
+            setStage(id, "Transcribing…")
+            return try await SpeechTranscription().transcribe(audioURL: audioURL) { [weak self] fraction in
+                self?.reportTranscribingProgress(id, label: "Transcribing…", fraction: fraction)
+            }
         }
         // Diarize: transcribe each side (sequential — one shared speech model),
         // interleave, then drop the transient tracks. A corrupt/unfinalized track
         // (e.g. from a killed recording) must not block notes — drop the tracks and
         // fall back to the mixed recording.
         do {
-            let you = try await SpeechTranscription().transcribeSegments(audioURL: micURL)
-            let others = try await SpeechTranscription().transcribeSegments(audioURL: systemURL)
+            setStage(id, "Transcribing (you)…")
+            let you = try await SpeechTranscription().transcribeSegments(audioURL: micURL) { [weak self] fraction in
+                self?.reportTranscribingProgress(id, label: "Transcribing (you)…", fraction: fraction)
+            }
+            setStage(id, "Transcribing (others)…")
+            let others = try await SpeechTranscription().transcribeSegments(audioURL: systemURL) { [weak self] fraction in
+                self?.reportTranscribingProgress(id, label: "Transcribing (others)…", fraction: fraction)
+            }
             let labeled = Diarizer().merge(you: you, others: others)
             try? fm.removeItem(at: micURL)
             try? fm.removeItem(at: systemURL)
@@ -637,11 +681,15 @@ final class AppState: ObservableObject {
             try? fm.removeItem(at: micURL)
             try? fm.removeItem(at: systemURL)
         }
-        return try await SpeechTranscription().transcribe(audioURL: audioURL)
+        setStage(id, "Transcribing…")
+        return try await SpeechTranscription().transcribe(audioURL: audioURL) { [weak self] fraction in
+            self?.reportTranscribingProgress(id, label: "Transcribing…", fraction: fraction)
+        }
     }
 
     private func produceNotes(session: MeetingSession) async throws -> (transcript: String, summary: String, engine: SummaryEngine) {
         let transcript = try await transcript(for: session)
+        setStage(session.id, "Summarizing…")
         let onDevice = MeetingSummarizer()
         var cloud: (any Summarizer)?
         if config.useCloudSummaries,
@@ -666,7 +714,7 @@ final class AppState: ObservableObject {
     private func transcript(for session: MeetingSession) async throws -> String {
         let audioURL = URL(fileURLWithPath: session.audioPath)
         if FileManager.default.fileExists(atPath: audioURL.path) {
-            return try await transcribeForNotes(audioURL: audioURL)
+            return try await transcribeForNotes(audioURL: audioURL, id: session.id)
         }
         if let path = session.transcriptPath,
            FileManager.default.fileExists(atPath: path),
