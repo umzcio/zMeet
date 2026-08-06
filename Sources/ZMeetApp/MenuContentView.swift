@@ -223,6 +223,7 @@ private struct RecordingDot: View {
             }
         }
         .frame(width: 9, height: 9)
+        .accessibilityHidden(true)
     }
 }
 
@@ -243,6 +244,7 @@ private struct ToolbarIcon: View {
         .buttonStyle(PressableStyle())
         .onHover { hover = $0 }
         .help(help)
+        .accessibilityLabel(help)
     }
 }
 

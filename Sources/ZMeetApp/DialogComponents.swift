@@ -24,6 +24,7 @@ struct DialogScaffold<Content: View>: View {
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(ZMeetPalette.hairline, lineWidth: 1))
                 .shadow(color: .black.opacity(0.5), radius: 30, y: 14)
+                .accessibilityAddTraits(.isModal)
                 .transition(reduceMotion
                     ? AnyTransition.opacity
                     : .scale(scale: 0.97).combined(with: .opacity))

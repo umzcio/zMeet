@@ -269,6 +269,7 @@ struct LibraryView: View {
                 }
                 .buttonStyle(PressableStyle())
                 .help("Clear search")
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 13)
@@ -333,11 +334,30 @@ struct LibraryView: View {
             .padding(.vertical, 9)
             .background(active ? ZMeetPalette.mint.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 10))
             .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(railAccessibilityLabel(session))
         }
         // Rows/tabs don't depress (PressableStyle is for discrete controls) — hover carries the affordance.
         .buttonStyle(.plain)
         .overlay(RightClickCatcher { showContextMenu(session) })
         .anchorPreference(key: RailRowAnchorKey.self, value: .bounds) { [session.id: $0] }
+    }
+
+    /// The combined VoiceOver label for a rail row: title, subtitle, and the
+    /// same status derived by `railStatus` (kept in sync with its conditions).
+    private func railAccessibilityLabel(_ session: MeetingSession) -> String {
+        var label = "\(session.title), \(railSubtitle(session))"
+        if state.processing.isVisiblyProcessing(session.id) {
+            label += ", processing"
+        } else {
+            switch session.status {
+            case .recording: label += ", recording"
+            case .failed: label += ", failed"
+            case .recorded: label += ", not yet processed"
+            case .processed: break
+            }
+        }
+        return label
     }
 
     private func showContextMenu(_ session: MeetingSession) {
@@ -390,8 +410,10 @@ struct LibraryView: View {
             Image(nsImage: SourceAppIcons.icon(for: session.sourceApp, title: session.title))
                 .resizable()
                 .frame(width: 17, height: 17)
+                .accessibilityHidden(true)
         case .generic:
             Circle().fill(ZMeetPalette.mint).frame(width: 9, height: 9)
+                .accessibilityHidden(true)
         }
     }
 
@@ -437,6 +459,7 @@ struct LibraryView: View {
         }
         .buttonStyle(PressableStyle())
         .help(help)
+        .accessibilityLabel(help)
     }
 
     // MARK: Main column
@@ -526,6 +549,7 @@ struct LibraryView: View {
         }
         .buttonStyle(PressableStyle())
         .help(help)
+        .accessibilityLabel(help)
     }
 
     /// A custom, in-app styled dropdown (replaces the system context menu) for the
@@ -767,6 +791,8 @@ struct LibraryView: View {
             .padding(.horizontal, 12).padding(.vertical, 12)
             .background(ZMeetPalette.card.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
             .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(session.title), \(metaLine(session))")
         }
         // Rows/tabs don't depress (PressableStyle is for discrete controls) — hover carries the affordance.
         .buttonStyle(.plain)
@@ -924,6 +950,8 @@ private struct PlayerBar: View {
             }
             .buttonStyle(PressableStyle())
             .disabled(audio.duration <= 0)
+            .help(audio.isPlaying ? "Pause" : "Play")
+            .accessibilityLabel(audio.isPlaying ? "Pause" : "Play")
 
             Text(timeString(scrubFraction.map { $0 * audio.duration } ?? audio.currentTime))
                 .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(ZMeetPalette.muted)

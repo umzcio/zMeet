@@ -50,6 +50,7 @@ struct OutcomePopupView: View {
             .buttonStyle(PressableStyle())
             .padding(7)
             .help("Dismiss")
+            .accessibilityLabel("Dismiss")
         }
         .onHover(perform: onHover)
     }

@@ -295,6 +295,7 @@ struct SettingsView: View {
         }
         .buttonStyle(PressableStyle())
         .help(help)
+        .accessibilityLabel(help)
     }
 
     // MARK: Content

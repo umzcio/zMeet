@@ -9,6 +9,8 @@ struct ZMeetApp: App {
             MenuContentView(state: state)
         } label: {
             Image(nsImage: MenuBarIcon.image(for: state.iconState))
+                .accessibilityLabel(MenuBarIcon.accessibilityDescription(for: state.iconState))
+                .help(MenuBarIcon.accessibilityDescription(for: state.iconState))
         }
         .menuBarExtraStyle(.window)
     }
