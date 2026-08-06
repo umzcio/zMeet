@@ -102,6 +102,14 @@ final class AppState: ObservableObject {
 
         // Finalize any session interrupted by a previous crash/quit.
         _ = try? manager.recoverInterruptedSessions()
+        // One-time (idempotent) tightening of any pre-v1.15.3 tree that still
+        // has default (world-readable) permissions. Fire-and-forget so launch
+        // is never blocked on a full directory walk. Captures only the (Sendable)
+        // root URLs, not `manager` itself, which isn't Sendable.
+        let sweepRoots = manager.permissionSweepRoots
+        Task.detached(priority: .utility) {
+            SessionManager.tightenPermissions(roots: sweepRoots)
+        }
         reloadRecent()
         manager.purgeExpiredAudio()
         refreshHasAPIKey()

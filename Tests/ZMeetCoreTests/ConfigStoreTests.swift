@@ -137,6 +137,24 @@ import Testing
     #expect(unchangedBytes == corruptBytes)
 }
 
+/// Permission 036: `write()` must leave `config.json` owner-only (0600) and
+/// `~/.zmeet` owner-only (0700) — config holds the output/app-data paths and
+/// (via the vault path) hints at the user's Obsidian setup.
+@Test func writeRestrictsConfigFilePermissions() throws {
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent("zmeet-config-tests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: home) }
+
+    let store = ConfigStore(home: home)
+    let config = try store.bootstrap()
+    try store.write(config)
+
+    let configPerms = (try? FileManager.default.attributesOfItem(atPath: store.configURL.path))?[.posixPermissions] as? Int
+    #expect(configPerms == 0o600)
+    let dirPerms = (try? FileManager.default.attributesOfItem(atPath: store.configDirectory.path))?[.posixPermissions] as? Int
+    #expect(dirPerms == 0o700)
+}
+
 @Test func missingConfigBootstrapsWithoutBackup() throws {
     let home = FileManager.default.temporaryDirectory.appendingPathComponent("zmeet-config-tests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)

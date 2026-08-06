@@ -126,6 +126,20 @@ import Testing
     #expect(started.mode == .inPerson)
 }
 
+/// Locks/unlocks a directory against writes via the BSD "user immutable" flag
+/// (`chflags uchg`), rather than a POSIX-mode `chmod`. Permission 036 added a
+/// self-healing `setAttributes(.posixPermissions:)` reassertion to every
+/// directory-creation call in the write paths under test here, which would
+/// silently undo a plain `chmod 555` lockdown before the write we're trying
+/// to fail ever runs. The immutable flag is untouched by a `posixPermissions`
+/// set, so the simulated failure survives.
+private func setDirectoryLocked(_ url: URL, _ locked: Bool) throws {
+    var url = url
+    var values = URLResourceValues()
+    values.isUserImmutable = locked
+    try url.setResourceValues(values)
+}
+
 private func makeTempConfig() -> (ZMeetConfig, URL) {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("zmeet-tests-\(UUID().uuidString)", isDirectory: true)
@@ -308,14 +322,14 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     defer { try? FileManager.default.removeItem(at: root) }
 
     // Pre-create the sessions directory (ensureDirectory on an already-existing
-    // dir succeeds even when it's read-only), then lock it down so only the
+    // dir succeeds even when it's locked), then lock it down so only the
     // final `save()` write inside `start()` fails — recorder.start() and the
     // meeting-folder creation happen elsewhere and must still succeed.
     let sessionsDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
         .appendingPathComponent("sessions", isDirectory: true)
     try FileManager.default.createDirectory(at: sessionsDir, withIntermediateDirectories: true)
-    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: sessionsDir.path)
-    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: sessionsDir.path) }
+    try setDirectoryLocked(sessionsDir, true)
+    defer { try? setDirectoryLocked(sessionsDir, false) }
 
     let mock = MockRecorder()
     // The compensating Task calls recorder.stop() before removing the folder
@@ -1070,8 +1084,8 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
     // Lock the sessions directory so the next save's write fails mid-write.
     let sessionsDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
         .appendingPathComponent("sessions", isDirectory: true)
-    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: sessionsDir.path)
-    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: sessionsDir.path) }
+    try setDirectoryLocked(sessionsDir, true)
+    defer { try? setDirectoryLocked(sessionsDir, false) }
 
     #expect(throws: (any Error).self) {
         _ = try manager.start(title: "ShouldFail", sourceApp: nil)
@@ -1083,4 +1097,64 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
     #expect(listed.count == 1)
     #expect(listed.first?.id == processed.id)
     #expect(listed.first?.status == .processed)
+}
+
+// MARK: - Permission 036: private files
+
+private func posixPermissions(_ url: URL) -> Int? {
+    (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? Int
+}
+
+/// Every zMeet-owned directory and file written during a normal record →
+/// stop → process flow must end up owner-only: 0700 dirs, 0600 files. Nothing
+/// under `~/.zmeet` or the output root should be world-readable.
+@Test func recordAndProcessFlowRestrictsFilePermissions() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Private Sync", sourceApp: nil)
+
+    let appDataDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(config.appDataPath), isDirectory: true)
+    let sessionsDir = appDataDir.appendingPathComponent("sessions", isDirectory: true)
+    #expect(posixPermissions(sessionsDir) == 0o700)
+
+    let sessionJSON = sessionsDir.appendingPathComponent("\(started.id).json")
+    #expect(posixPermissions(sessionJSON) == 0o600)
+
+    let meetingFolder = URL(fileURLWithPath: started.audioPath).deletingLastPathComponent()
+    #expect(posixPermissions(meetingFolder) == 0o700)
+
+    _ = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
+
+    #expect(posixPermissions(URL(fileURLWithPath: processed.transcriptPath!)) == 0o600)
+    #expect(posixPermissions(URL(fileURLWithPath: processed.notePath!)) == 0o600)
+    // Re-saved session JSON stays restricted after the status update too.
+    #expect(posixPermissions(sessionJSON) == 0o600)
+}
+
+/// `tightenPermissions()` is the one-time sweep for trees created before this
+/// permission-hardening shipped: it must fix a file/dir that was left at the
+/// old (world-readable) default permissions.
+@Test func tightenPermissionsFixesLoosePreExistingFiles() async throws {
+    let (config, root) = makeTempConfig()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let manager = SessionManager(config: config, recorder: MockRecorder())
+
+    let started = try manager.start(title: "Legacy", sourceApp: nil)
+    _ = try await manager.stop()
+    let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
+
+    let noteURL = URL(fileURLWithPath: processed.notePath!)
+    let meetingFolder = noteURL.deletingLastPathComponent()
+    // Simulate a pre-v1.15.3 file/dir that still has the old default (world-
+    // readable) permissions.
+    try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: noteURL.path)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: meetingFolder.path)
+
+    manager.tightenPermissions()
+
+    #expect(posixPermissions(noteURL) == 0o600)
+    #expect(posixPermissions(meetingFolder) == 0o700)
 }

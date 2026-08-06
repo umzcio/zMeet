@@ -17,6 +17,22 @@ public enum ZMeetPaths {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     }
 
+    /// Creates the directory (if needed) and restricts it to the current user.
+    /// zMeet's data dirs hold meeting audio/transcripts — never world-readable.
+    public static func ensurePrivateDirectory(_ url: URL) throws {
+        try FileManager.default.createDirectory(
+            at: url, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        // createDirectory attributes only apply on creation; enforce on the leaf
+        // for pre-existing dirs.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+    }
+
+    /// Owner-only permissions on an existing file (0600). Best-effort.
+    public static func restrictFile(_ url: URL) {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
     public static func relativePath(fromDirectory baseDirectory: URL, to target: URL) -> String {
         let baseComponents = baseDirectory.standardizedFileURL.pathComponents
         let targetComponents = target.standardizedFileURL.pathComponents

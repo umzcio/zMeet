@@ -21,9 +21,10 @@ public final class ConfigStore {
     }
 
     public func write(_ config: ZMeetConfig) throws {
-        try ZMeetPaths.ensureDirectory(configDirectory)
+        try ZMeetPaths.ensurePrivateDirectory(configDirectory)
         let data = try JSONEncoder.zmeet.encode(config)
         try data.write(to: configURL, options: [.atomic])
+        ZMeetPaths.restrictFile(configURL)
     }
 
     public func bootstrap(outputPath rawOutputPath: String? = nil) throws -> ZMeetConfig {
@@ -31,8 +32,8 @@ public final class ConfigStore {
         let config = ZMeetConfig.default(outputPath: outputPath, home: home)
 
         try write(config)
-        try ZMeetPaths.ensureDirectory(URL(fileURLWithPath: config.appDataPath, isDirectory: true))
-        try ZMeetPaths.ensureDirectory(URL(fileURLWithPath: config.outputPath, isDirectory: true))
+        try ZMeetPaths.ensurePrivateDirectory(URL(fileURLWithPath: config.appDataPath, isDirectory: true))
+        try ZMeetPaths.ensurePrivateDirectory(URL(fileURLWithPath: config.outputPath, isDirectory: true))
 
         return config
     }

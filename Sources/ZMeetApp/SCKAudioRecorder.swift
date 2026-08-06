@@ -62,6 +62,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        ZMeetPaths.restrictFile(logURL)
         logHandle = try? FileHandle(forWritingTo: logURL)
         log("start \(url.lastPathComponent)")
 
@@ -72,6 +73,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
                 AVNumberOfChannelsKey: canonical.channelCount,
                 AVEncoderBitRateKey: audio.bitrate
             ])
+            ZMeetPaths.restrictFile(url)
 
             if audio.separateTracks {
                 let folder = url.deletingLastPathComponent()
@@ -84,6 +86,8 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
                 // Best-effort: a track-file failure must never abort the recording.
                 micFile = try? AVAudioFile(forWriting: folder.appendingPathComponent("mic.m4a"), settings: trackSettings)
                 systemFile = try? AVAudioFile(forWriting: folder.appendingPathComponent("system.m4a"), settings: trackSettings)
+                if micFile != nil { ZMeetPaths.restrictFile(folder.appendingPathComponent("mic.m4a")) }
+                if systemFile != nil { ZMeetPaths.restrictFile(folder.appendingPathComponent("system.m4a")) }
                 log("separate tracks: mic=\(micFile != nil) system=\(systemFile != nil)")
             }
 

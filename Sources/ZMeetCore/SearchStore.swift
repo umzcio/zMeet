@@ -54,11 +54,13 @@ public final class SearchStore: @unchecked Sendable {
     private let queue = DispatchQueue(label: "edu.umontana.zmeet.search")
 
     public init(databaseURL: URL) throws {
-        try FileManager.default.createDirectory(
-            at: databaseURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
+        try ZMeetPaths.ensurePrivateDirectory(databaseURL.deletingLastPathComponent())
         try open(at: databaseURL)
+        // Best-effort: -wal/-shm siblings may not exist yet (WAL mode not
+        // triggered, or a fresh open) — restrictFile no-ops on a missing path.
+        ZMeetPaths.restrictFile(databaseURL)
+        ZMeetPaths.restrictFile(URL(fileURLWithPath: databaseURL.path + "-wal"))
+        ZMeetPaths.restrictFile(URL(fileURLWithPath: databaseURL.path + "-shm"))
     }
 
     deinit {

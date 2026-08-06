@@ -65,7 +65,7 @@ public final class SessionManager {
         // One folder per meeting (Zoom-style), holding the recording, transcript,
         // and notes together under the output root.
         let meetingFolder = uniqueMeetingFolderURL(title: title, startedAt: startedAt)
-        try ZMeetPaths.ensureDirectory(meetingFolder)
+        try ZMeetPaths.ensurePrivateDirectory(meetingFolder)
 
         let audioURL = meetingFolder.appendingPathComponent("recording.m4a")
         let logURL = logsURL.appendingPathComponent("\(id).recorder.log")
@@ -175,8 +175,16 @@ public final class SessionManager {
         let noteURL = noteURL(for: session)
 
         do {
+            // Deliberately NOT ensurePrivateDirectory here: this folder is the
+            // meeting folder, already created 0700 in start(); forcing a
+            // permission reset on every (re)process would also silently
+            // re-open a folder an operator had locked down for another
+            // reason. The launch-time tightenPermissions() sweep still
+            // catches a folder that was recreated with default perms (e.g.
+            // after external deletion) on the next app start.
             try ZMeetPaths.ensureDirectory(transcriptURL.deletingLastPathComponent())
             try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
+            ZMeetPaths.restrictFile(transcriptURL)
             let note = MarkdownRenderer().renderProcessedNote(
                 session: session,
                 transcriptURL: transcriptURL,
@@ -185,6 +193,7 @@ public final class SessionManager {
                 summaryEngine: engine
             )
             try note.write(to: noteURL, atomically: true, encoding: .utf8)
+            ZMeetPaths.restrictFile(noteURL)
             session.status = .processed
             session.transcriptPath = transcriptURL.path
             session.notePath = noteURL.path
@@ -465,6 +474,7 @@ public final class SessionManager {
             let url = sessionsURL.appendingPathComponent("\(session.id).json")
             let data = try JSONEncoder.zmeet.encode(session)
             try data.write(to: url, options: [.atomic])
+            ZMeetPaths.restrictFile(url)
             sessionCache?[session.id] = session
         } catch {
             // Any failure mid-write leaves the cache's relationship to disk
@@ -475,10 +485,42 @@ public final class SessionManager {
     }
 
     private func ensureRuntimeDirectories() throws {
-        try ZMeetPaths.ensureDirectory(appDataURL)
-        try ZMeetPaths.ensureDirectory(sessionsURL)
-        try ZMeetPaths.ensureDirectory(logsURL)
-        try ZMeetPaths.ensureDirectory(outputURL)
+        try ZMeetPaths.ensurePrivateDirectory(appDataURL)
+        try ZMeetPaths.ensurePrivateDirectory(sessionsURL)
+        try ZMeetPaths.ensurePrivateDirectory(logsURL)
+        try ZMeetPaths.ensurePrivateDirectory(outputURL)
+    }
+
+    /// The app-data and output roots the permission sweep tightens, as plain
+    /// `URL`s (Sendable) — so a caller on another actor (see `AppState.init`)
+    /// can run the sweep off the main actor via `Task.detached` without
+    /// capturing this `SessionManager` instance itself, which isn't `Sendable`.
+    public var permissionSweepRoots: [URL] { [appDataURL, outputURL] }
+
+    /// One-time pass tightening pre-existing trees created before v1.15.3 set
+    /// permissions: 0700 dirs / 0600 files under the app-data and output roots.
+    /// Best-effort per item; a locked/unreadable item is skipped rather than
+    /// aborting the sweep. Idempotent, safe to call on every launch.
+    public func tightenPermissions() {
+        Self.tightenPermissions(roots: permissionSweepRoots)
+    }
+
+    /// Sendable-safe worker behind `tightenPermissions()`/`permissionSweepRoots`:
+    /// takes only `URL`s so it can run detached from the main actor.
+    public static func tightenPermissions(roots: [URL]) {
+        let fileManager = FileManager.default
+        for root in roots {
+            guard let enumerator = fileManager.enumerator(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey],
+                options: [], errorHandler: { _, _ in true }
+            ) else { continue }
+            for case let url as URL in enumerator {
+                let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                let mode = isDirectory ? 0o700 : 0o600
+                try? fileManager.setAttributes([.posixPermissions: mode], ofItemAtPath: url.path)
+            }
+            try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+        }
     }
 
     /// A unique per-meeting folder like `2026-05-26 1755 Weekly Sync` under the
