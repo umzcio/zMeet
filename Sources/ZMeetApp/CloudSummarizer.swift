@@ -18,7 +18,7 @@ struct CloudSummarizer: Summarizer {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await AnthropicHTTP.session.data(for: request)
         } catch {
             throw CloudSummaryError.network
         }
@@ -33,7 +33,7 @@ struct CloudSummarizer: Summarizer {
         let request = AnthropicSummary.makeValidationRequest(key: apiKey)
         let response: URLResponse
         do {
-            (_, response) = try await URLSession.shared.data(for: request)
+            (_, response) = try await AnthropicHTTP.session.data(for: request)
         } catch {
             throw CloudSummaryError.network
         }

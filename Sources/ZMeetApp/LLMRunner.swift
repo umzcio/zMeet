@@ -21,7 +21,7 @@ struct LLMRunner {
     private func runCloud(prompt: String, key: String) async -> String? {
         do {
             let request = try AnthropicSummary.makeRequest(key: key, prompt: prompt)
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await AnthropicHTTP.session.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             return try AnthropicSummary.parseSummary(data: data, status: status)
         } catch {
