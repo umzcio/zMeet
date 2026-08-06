@@ -16,14 +16,15 @@ APP_NAME="zMeet"
 APP_DIR="$ROOT/build/$APP_NAME.app"
 DIST="$ROOT/build/dist"
 DMG="$ROOT/build/$APP_NAME-$VERSION.dmg"
-SPARKLE_ART="$(ls -d "$ROOT"/.build*/artifacts/sparkle/Sparkle 2>/dev/null | head -1 || true)"
+SCRATCH="${ZMEET_SCRATCH:-$ROOT/.build}"
+SPARKLE_ART="$SCRATCH/artifacts/sparkle/Sparkle"
 if [[ -z "$SPARKLE_ART" || ! -e "$SPARKLE_ART" ]]; then
-  echo "error: Sparkle artifacts not found. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
+  echo "error: Sparkle artifacts not found in $SCRATCH. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
   exit 1
 fi
 SPARKLE_BIN="$SPARKLE_ART/bin"
 if [[ ! -e "$SPARKLE_BIN" ]]; then
-  echo "error: Sparkle artifacts not found. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
+  echo "error: Sparkle artifacts not found in $SCRATCH. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
   exit 1
 fi
 
@@ -38,7 +39,7 @@ if [[ "$VERSION" != "$SCRIPT_VERSION" ]]; then
 fi
 
 echo "==> [1/7] Run tests"
-swift test --scratch-path "$ROOT/.build-ci" --package-path "$ROOT"
+swift test --scratch-path "$SCRATCH" --package-path "$ROOT"
 
 echo "==> [2/7] Build + sign app"
 bash "$ROOT/scripts/build-app.sh"

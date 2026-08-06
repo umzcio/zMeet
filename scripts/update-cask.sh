@@ -9,15 +9,15 @@ set -euo pipefail
 # Usage: scripts/update-cask.sh 1.0.0
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${1:?usage: update-cask.sh <version>  e.g. 1.0.0}"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "error: version must be X.Y.Z" >&2; exit 1; }
 DMG="$ROOT/build/dist/zMeet-$VERSION.dmg"
 TAP_REPO="git@github.com:umzcio/homebrew-tap.git"
 
 if [[ -f "$DMG" ]]; then
     SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
 else
-    echo "==> No local $DMG; hashing the published release asset instead"
-    URL="https://github.com/umzcio/zMeet/releases/download/v$VERSION/zMeet-$VERSION.dmg"
-    SHA="$(curl -fsSL "$URL" | shasum -a 256 | awk '{print $1}')"
+    echo "error: $DMG not found — run this from the machine that built the release (the cask hash must come from the artifact you notarized)" >&2
+    exit 1
 fi
 
 TMP="$(mktemp -d)"

@@ -10,6 +10,7 @@ APP_DIR="$ROOT/build/$APP_NAME.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RES_DIR="$APP_DIR/Contents/Resources"
 FW_DIR="$APP_DIR/Contents/Frameworks"
+SCRATCH="${ZMEET_SCRATCH:-$ROOT/.build}"
 
 # App version (also stamped into the appcast on release).
 # Single source of truth: release.sh asserts its version argument matches this.
@@ -21,22 +22,22 @@ BUILD="${ZMEET_BUILD:-23}"
 SU_FEED_URL="https://raw.githubusercontent.com/umzcio/zMeet/main/appcast.xml"
 SU_PUBLIC_ED_KEY="7KQVNte/Z3ts81v6gETASf21YKulzZZTiqMpF8uv5G8="
 
-SPARKLE_ART="$(ls -d "$ROOT"/.build*/artifacts/sparkle/Sparkle 2>/dev/null | head -1 || true)"
+SPARKLE_ART="$SCRATCH/artifacts/sparkle/Sparkle"
 if [[ -z "$SPARKLE_ART" || ! -e "$SPARKLE_ART" ]]; then
-  echo "error: Sparkle artifacts not found. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
+  echo "error: Sparkle artifacts not found in $SCRATCH. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
   exit 1
 fi
 SPARKLE_FW="$SPARKLE_ART/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 if [[ ! -e "$SPARKLE_FW" ]]; then
-  echo "error: Sparkle artifacts not found. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
+  echo "error: Sparkle artifacts not found in $SCRATCH. Run: rm -rf .build && swift build   (stale artifact cache)" >&2
   exit 1
 fi
 
 echo "==> Compiling ZMeetApp (release)"
 # The extra rpath lets the bundled binary find Sparkle.framework in Contents/Frameworks.
 RPATH_FLAGS="-Xlinker -rpath -Xlinker @executable_path/../Frameworks"
-swift build -c release --product ZMeetApp --package-path "$ROOT" $RPATH_FLAGS
-BIN="$(swift build -c release --product ZMeetApp --package-path "$ROOT" --show-bin-path)/ZMeetApp"
+swift build -c release --product ZMeetApp --package-path "$ROOT" --scratch-path "$SCRATCH" $RPATH_FLAGS
+BIN="$(swift build -c release --product ZMeetApp --package-path "$ROOT" --scratch-path "$SCRATCH" --show-bin-path)/ZMeetApp"
 
 echo "==> Assembling bundle at $APP_DIR"
 rm -rf "$APP_DIR"
