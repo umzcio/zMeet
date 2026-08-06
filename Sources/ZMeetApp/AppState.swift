@@ -834,7 +834,8 @@ final class AppState: ObservableObject {
 
     private func reloadRecent() {
         let sessions = (try? manager.listSessions()) ?? []
-        allSessions = sessions
-        recent = Array(sessions.prefix(10))
+        if sessions != allSessions { allSessions = sessions }
+        let newRecent = Array(sessions.prefix(10))
+        if newRecent != recent { recent = newRecent }
     }
 }

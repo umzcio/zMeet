@@ -15,6 +15,9 @@ struct LibraryView: View {
     @State private var tab: Tab = .notes
     @State private var noteBlocks: [NoteElement] = []
     @State private var transcriptText: String?
+    // Paragraphs of `transcriptText`, split once by the loader (off the render
+    // path) rather than on every body evaluation while the tab is open.
+    @State private var transcriptParagraphs: [String] = []
     // Distinguishes "not loaded yet" (nil text, spinner) from "loaded and
     // genuinely empty" (nil text, "no transcript" message) — both leave
     // transcriptText nil, so this flag disambiguates them.
@@ -22,8 +25,6 @@ struct LibraryView: View {
     @State private var renameText = ""
     @State private var searchHits: [SearchHit] = []
     @State private var searchTask: Task<Void, Never>?
-
-    private let ticker = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     enum Tab { case notes, transcript }
 
@@ -59,11 +60,14 @@ struct LibraryView: View {
         .background(ZMeetPalette.bg)
         .preferredColorScheme(.dark)
         .tint(ZMeetPalette.mint)
-        .onReceive(ticker) { _ in if audio.isPlaying { audio.tick() } }
         .task(id: reloadKey) { await loadSelected() }
         .task(id: transcriptLoadKey) { await loadTranscriptIfNeeded() }
         .onChange(of: selected?.id) { state.showLibraryActions = false; state.libraryContextSession = nil }
         .onChange(of: query) { runSearch() }
+        // The playback timer is model-owned (starts/stops with playback itself),
+        // but the model doesn't know when its owning window closes — belt-and-
+        // suspenders stop so the timer can't outlive this view.
+        .onDisappear { audio.stop() }
     }
 
     // MARK: In-app dialogs (custom, to match the app rather than system alerts)
@@ -216,20 +220,26 @@ struct LibraryView: View {
     }
 
     private var meetingList: some View {
-        ScrollView {
+        // Resolve the active id once per render — `selected` is a linear scan
+        // over `allSessions`, so reading it inside the row loop below would make
+        // this O(n²) instead of O(n). Same for the date grouping: computed once
+        // here, not re-run per row.
+        let selectedID = selected?.id
+        let groups = MeetingGrouping.groups(meetings)
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 1, pinnedViews: []) {
                 if meetings.isEmpty {
                     Text("No meetings yet")
                         .font(.system(size: 13)).foregroundStyle(ZMeetPalette.muted)
                         .padding(.horizontal, 18).padding(.top, 16)
                 } else {
-                    ForEach(MeetingGrouping.groups(meetings), id: \.title) { group in
+                    ForEach(groups, id: \.title) { group in
                         Text(group.title)
                             .font(.system(size: 11.5, weight: .semibold))
                             .foregroundStyle(ZMeetPalette.faint)
                             .padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 6)
                         ForEach(group.sessions, id: \.id) { session in
-                            railRow(session)
+                            railRow(session, activeID: selectedID)
                         }
                     }
                 }
@@ -240,8 +250,8 @@ struct LibraryView: View {
         .frame(maxHeight: .infinity)
     }
 
-    private func railRow(_ session: MeetingSession) -> some View {
-        let active = session.id == selected?.id
+    private func railRow(_ session: MeetingSession, activeID: String?) -> some View {
+        let active = session.id == activeID
         return Button {
             state.showLibraryActions = false
             state.librarySelectedID = session.id
@@ -560,12 +570,10 @@ struct LibraryView: View {
             // Chunked into paragraphs (rather than one monolithic Text) so a long
             // transcript lays out incrementally instead of re-flowing 50-150KB of
             // text on every invalidation. Trade-off: text selection no longer
-            // spans across paragraph breaks.
-            let paragraphs = text.components(separatedBy: "\n\n").filter {
-                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
+            // spans across paragraph breaks. Split happens once in
+            // loadTranscriptIfNeeded, not here in the builder.
             LazyVStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, paragraph in
+                ForEach(Array(transcriptParagraphs.enumerated()), id: \.offset) { _, paragraph in
                     Text(paragraph)
                         .font(.system(size: 14.5))
                         .foregroundStyle(ZMeetPalette.body)
@@ -737,6 +745,7 @@ struct LibraryView: View {
         tab = .notes
         audio.stop()
         transcriptText = nil
+        transcriptParagraphs = []
         transcriptLoaded = false
         guard let session = selected else {
             noteBlocks = []; return
@@ -756,16 +765,24 @@ struct LibraryView: View {
     private func loadTranscriptIfNeeded() async {
         guard tab == .transcript, !transcriptLoaded, let session = selected else { return }
         let path = session.transcriptPath
-        let text: String? = if let path {
+        // Split into paragraphs here (Sendable String in, [String] out) instead
+        // of in the @ViewBuilder, so a long transcript isn't re-split on every
+        // body evaluation while the tab is open.
+        let result: (text: String?, paragraphs: [String]) = if let path {
             await Task.detached(priority: .userInitiated) {
-                try? String(contentsOfFile: path, encoding: .utf8)
+                let text = try? String(contentsOfFile: path, encoding: .utf8)
+                let paragraphs = text?.components(separatedBy: "\n\n").filter {
+                    !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                } ?? []
+                return (text, paragraphs)
             }.value
         } else {
-            nil
+            (nil, [])
         }
         // The selection may have changed while the read was in flight.
         guard selected?.id == session.id, tab == .transcript else { return }
-        transcriptText = text
+        transcriptText = result.text
+        transcriptParagraphs = result.paragraphs
         transcriptLoaded = true
     }
 
@@ -1034,6 +1051,12 @@ final class AudioPlayerModel: NSObject, ObservableObject {
     @Published var duration: Double = 0
 
     private var player: AVAudioPlayer?
+    // Owns its own 4Hz scrubber timer, live only while something is actually
+    // playing — not for the window's whole lifetime. Scheduled in `.default`
+    // run loop mode (not `.common`) so scrubber ticks don't also fire while the
+    // user is scroll-tracking elsewhere in the window; that's not worth the
+    // wakeups.
+    private var timer: Timer?
 
     func load(_ url: URL) {
         stop()
@@ -1047,8 +1070,10 @@ final class AudioPlayerModel: NSObject, ObservableObject {
         guard let player else { return }
         if player.isPlaying {
             player.pause(); isPlaying = false
+            stopTimer()
         } else {
             player.play(); isPlaying = true
+            startTimer()
         }
     }
 
@@ -1064,9 +1089,24 @@ final class AudioPlayerModel: NSObject, ObservableObject {
         isPlaying = false
         currentTime = 0
         duration = 0
+        stopTimer()
     }
 
-    /// Called on a timer from the view to advance the scrubber.
+    private func startTimer() {
+        stopTimer()
+        let t = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
+        RunLoop.main.add(t, forMode: .default)
+        timer = t
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    /// Called on the model's own timer to advance the scrubber.
     func tick() {
         guard let player else { return }
         if currentTime != player.currentTime {
@@ -1077,6 +1117,7 @@ final class AudioPlayerModel: NSObject, ObservableObject {
             isPlaying = false
             currentTime = 0
             player.currentTime = 0
+            stopTimer()
         }
     }
 }
