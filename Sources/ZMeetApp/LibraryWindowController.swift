@@ -38,6 +38,7 @@ final class LibraryWindowController: NSObject, NSWindowDelegate {
                 state.libraryContextSession = nil
                 return true
             }
+            if !state.libraryQuery.isEmpty { state.libraryQuery = ""; return true }
             return false
         }
         window.contentView = NSHostingView(rootView: view)

@@ -44,7 +44,15 @@ final class AppState: ObservableObject {
     enum LibraryDialog: Equatable { case rename, delete, deleteAudio }
     @Published var showLibraryActions = false
     @Published var libraryContextSession: MeetingSession?
+    /// The Library search field's text. Held here (not view-local @State) so the
+    /// window controller's Esc handler can clear it before falling through to
+    /// closing the window — see LibraryWindowController.onEsc.
+    @Published var libraryQuery = ""
     @Published var settingsMenu: SettingsMenuKind?
+    /// Whether the Settings "Free up space?" confirm dialog is open. Held here
+    /// (not view-local @State) so SettingsWindowController's Esc handler can
+    /// dismiss it before falling through to closing the window.
+    @Published var settingsConfirmFreeUp = false
 
     enum SettingsMenuKind: Hashable { case retention, quality, microphone, micGain, captureMode, obsidianVault }
     @Published var draftTitle: String = ""

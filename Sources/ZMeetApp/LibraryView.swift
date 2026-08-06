@@ -11,7 +11,6 @@ struct LibraryView: View {
     // re-render the whole window. Only PlayerBar observes it.
     @State private var audio = AudioPlayerModel()
 
-    @State private var query = ""
     @State private var tab: Tab = .notes
     @State private var noteBlocks: [NoteElement] = []
     @State private var transcriptText: String?
@@ -25,6 +24,7 @@ struct LibraryView: View {
     @State private var renameText = ""
     @State private var searchHits: [SearchHit] = []
     @State private var searchTask: Task<Void, Never>?
+    @FocusState private var searchFocused: Bool
 
     enum Tab { case notes, transcript }
 
@@ -63,11 +63,31 @@ struct LibraryView: View {
         .task(id: reloadKey) { await loadSelected() }
         .task(id: transcriptLoadKey) { await loadTranscriptIfNeeded() }
         .onChange(of: selected?.id) { state.showLibraryActions = false; state.libraryContextSession = nil }
-        .onChange(of: query) { runSearch() }
+        .onChange(of: state.libraryQuery) { runSearch() }
         // The playback timer is model-owned (starts/stops with playback itself),
         // but the model doesn't know when its owning window closes — belt-and-
         // suspenders stop so the timer can't outlive this view.
         .onDisappear { audio.stop() }
+        // Hidden ⌘F anchor: focuses the search field without a visible control.
+        .background(
+            Button("") { searchFocused = true }
+                .keyboardShortcut("f")
+                .opacity(0)
+                .accessibilityHidden(true)
+        )
+        // Rail arrow-key navigation. Only active with no dialog open and not
+        // searching (search results have their own list); otherwise `.ignored`
+        // so the key falls through (e.g. to a focused text field).
+        .onKeyPress(.downArrow) {
+            guard state.libraryDialog == nil, !isSearching else { return .ignored }
+            moveSelection(by: 1)
+            return .handled
+        }
+        .onKeyPress(.upArrow) {
+            guard state.libraryDialog == nil, !isSearching else { return .ignored }
+            moveSelection(by: -1)
+            return .handled
+        }
     }
 
     // MARK: In-app dialogs (custom, to match the app rather than system alerts)
@@ -86,7 +106,9 @@ struct LibraryView: View {
                 HStack(spacing: 10) {
                     Spacer()
                     DialogButton(title: "Cancel", kind: .secondary) { state.libraryDialog = nil }
+                        .keyboardShortcut(.cancelAction)
                     DialogButton(title: "Rename", kind: .primary) { commitRename(session) }
+                        .keyboardShortcut(.defaultAction)
                 }
             }
         }
@@ -106,6 +128,11 @@ struct LibraryView: View {
                 HStack(spacing: 10) {
                     Spacer()
                     DialogButton(title: "Cancel", kind: .secondary) { state.libraryDialog = nil }
+                        .keyboardShortcut(.cancelAction)
+                    // Return is deliberately unbound here: HIG makes the safe button
+                    // the default in destructive dialogs, and SwiftUI can't give one
+                    // button both roles — Esc→Cancel plus an unbound Return is the
+                    // correct shape, not an omission.
                     DialogButton(title: "Delete", kind: .destructive) {
                         let wasSelected = session.id
                         state.deleteMeeting(id: session.id)
@@ -131,6 +158,10 @@ struct LibraryView: View {
                     Spacer()
                     DialogButton(title: "Cancel", kind: .secondary) { state.libraryDialog = nil }
                         .keyboardShortcut(.cancelAction)
+                    // Return is deliberately unbound here: HIG makes the safe button
+                    // the default in destructive dialogs, and SwiftUI can't give one
+                    // button both roles — Esc→Cancel plus an unbound Return is the
+                    // correct shape, not an omission.
                     DialogButton(title: "Delete Audio", kind: .destructive) {
                         state.deleteAudio(id: session.id)
                         state.libraryDialog = nil
@@ -151,12 +182,27 @@ struct LibraryView: View {
     private var meetings: [MeetingSession] { state.allSessions }
 
     private var isSearching: Bool {
-        !query.trimmingCharacters(in: .whitespaces).isEmpty
+        !state.libraryQuery.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var selected: MeetingSession? {
         let id = state.librarySelectedID
         return state.allSessions.first { $0.id == id } ?? state.allSessions.first
+    }
+
+    /// Moves `librarySelectedID` to the next/previous meeting in rail order
+    /// (`meetings`, which is already the flattened order the date-grouped rail
+    /// displays — grouping only partitions it, it never reorders within a
+    /// group). No current selection just selects the first row.
+    private func moveSelection(by delta: Int) {
+        let ids = meetings.map(\.id)
+        guard !ids.isEmpty else { return }
+        guard let current = selected?.id, let idx = ids.firstIndex(of: current) else {
+            state.librarySelectedID = ids.first
+            return
+        }
+        let newIndex = min(max(idx + delta, 0), ids.count - 1)
+        state.librarySelectedID = ids[newIndex]
     }
 
     /// Reload the reader whenever the selected meeting — or its processing
@@ -208,10 +254,22 @@ struct LibraryView: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(ZMeetPalette.muted)
-            TextField("Search meetings", text: $query)
+            TextField("Search meetings", text: $state.libraryQuery)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13.5))
                 .foregroundStyle(ZMeetPalette.light)
+                .focused($searchFocused)
+            if !state.libraryQuery.isEmpty {
+                Button {
+                    state.libraryQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(ZMeetPalette.faint)
+                }
+                .buttonStyle(PressableStyle())
+                .help("Clear search")
+            }
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 10)
@@ -508,7 +566,9 @@ struct LibraryView: View {
     private var tabBar: some View {
         HStack(spacing: 26) {
             tabButton("Notes", .notes)
+                .keyboardShortcut("1")
             tabButton("Transcript", .transcript)
+                .keyboardShortcut("2")
             Spacer()
         }
         .padding(.horizontal, 34)
@@ -651,7 +711,7 @@ struct LibraryView: View {
 
     private var searchResultsPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Results for \u{201C}\(query.trimmingCharacters(in: .whitespaces))\u{201D}")
+            Text("Results for \u{201C}\(state.libraryQuery.trimmingCharacters(in: .whitespaces))\u{201D}")
                 .font(.system(size: 13)).foregroundStyle(ZMeetPalette.muted)
                 .padding(.horizontal, 32).padding(.top, 26).padding(.bottom, 14)
 
@@ -659,7 +719,9 @@ struct LibraryView: View {
                 VStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 40, weight: .light)).foregroundStyle(ZMeetPalette.faint)
-                    Text("No results").font(.system(size: 16, weight: .semibold)).foregroundStyle(ZMeetPalette.light)
+                    Text("No results for \u{201C}\(state.libraryQuery.trimmingCharacters(in: .whitespaces))\u{201D}")
+                        .font(.system(size: 16, weight: .semibold)).foregroundStyle(ZMeetPalette.light)
+                    DialogButton(title: "Clear search", kind: .secondary) { state.libraryQuery = "" }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -682,7 +744,7 @@ struct LibraryView: View {
     private func searchResultRow(_ session: MeetingSession, hit: SearchHit) -> some View {
         Button {
             state.librarySelectedID = session.id
-            query = ""
+            state.libraryQuery = ""
             searchHits = []
         } label: {
             HStack(alignment: .top, spacing: 12) {
@@ -732,7 +794,7 @@ struct LibraryView: View {
 
     private func runSearch() {
         searchTask?.cancel()
-        let raw = query.trimmingCharacters(in: .whitespaces)
+        let raw = state.libraryQuery.trimmingCharacters(in: .whitespaces)
         guard !raw.isEmpty else { searchHits = []; return }
         searchTask = Task {
             try? await Task.sleep(nanoseconds: 150_000_000)

@@ -28,9 +28,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.isMovableByWindowBackground = true
         window.center()
         window.onEsc = { [weak state] in
-            guard let state, state.settingsMenu != nil else { return false }
-            state.settingsMenu = nil
-            return true
+            guard let state else { return false }
+            if state.settingsConfirmFreeUp { state.settingsConfirmFreeUp = false; return true }
+            if state.settingsMenu != nil { state.settingsMenu = nil; return true }
+            return false
         }
         window.contentView = NSHostingView(rootView: view)
         window.isReleasedWhenClosed = false

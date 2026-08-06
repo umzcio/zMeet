@@ -9,7 +9,6 @@ struct SettingsView: View {
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var inputDevices: [AudioInputs.Device] = []
     @State private var reclaimable: Int64 = 0
-    @State private var confirmFreeUp = false
     @State private var apiKeyInput = ""
     @State private var keyTestResult: KeyTestResult?
     @State private var testingKey = false
@@ -85,8 +84,8 @@ struct SettingsView: View {
                 }
             }
 
-            if confirmFreeUp {
-                DialogScaffold(onDismiss: { confirmFreeUp = false }) {
+            if state.settingsConfirmFreeUp {
+                DialogScaffold(onDismiss: { state.settingsConfirmFreeUp = false }) {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Free up space?")
                             .font(.system(size: 16, weight: .semibold))
@@ -97,11 +96,16 @@ struct SettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 10) {
                             Spacer()
-                            DialogButton(title: "Cancel", kind: .secondary) { confirmFreeUp = false }
+                            DialogButton(title: "Cancel", kind: .secondary) { state.settingsConfirmFreeUp = false }
+                                .keyboardShortcut(.cancelAction)
+                            // Return is deliberately unbound here: HIG makes the safe
+                            // button the default in destructive dialogs, and SwiftUI
+                            // can't give one button both roles — Esc→Cancel plus an
+                            // unbound Return is the correct shape, not an omission.
                             DialogButton(title: "Delete Audio", kind: .destructive) {
                                 state.freeUpAllAudio()
                                 reclaimable = state.reclaimableAudioBytes()
-                                confirmFreeUp = false
+                                state.settingsConfirmFreeUp = false
                             }
                         }
                     }
@@ -492,7 +496,7 @@ struct SettingsView: View {
                 divider
                 row("Recorded audio", "Free up space by deleting audio for processed meetings.") {
                     Button(reclaimable > 0 ? "Free up \(formattedBytes(reclaimable))" : "Nothing to free") {
-                        confirmFreeUp = true
+                        state.settingsConfirmFreeUp = true
                     }
                     .disabled(reclaimable == 0)
                 }
