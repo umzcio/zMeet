@@ -56,7 +56,13 @@ final class AppState: ObservableObject {
 
     enum SettingsMenuKind: Hashable { case retention, quality, microphone, micGain, captureMode, obsidianVault }
     @Published var draftTitle: String = ""
-    @Published private(set) var lastError: String?
+    /// A user-facing notice for the menu: feedback kind drives icon + color.
+    struct UserNotice: Equatable {
+        enum Kind { case info, warning, error }
+        var kind: Kind
+        var message: String
+    }
+    @Published private(set) var notice: UserNotice?
     @Published private(set) var micGranted: Bool = false
     @Published private(set) var screenGranted: Bool = false
     @Published private(set) var speechGranted: Bool = false
@@ -89,7 +95,7 @@ final class AppState: ObservableObject {
 
     init(recorder: MeetingRecorder) {
         // Load config; a corrupt file is backed up (never clobbered) and replaced
-        // with defaults, and the user is told below via lastError.
+        // with defaults, and the user is told below via `notice`.
         let loaded: ZMeetConfig
         var configRecoveryNote: String?
         switch store.loadOrBackupAndBootstrap() {
@@ -128,7 +134,7 @@ final class AppState: ObservableObject {
         }
         refreshHasAPIKey()
         refreshPermissions()
-        if let configRecoveryNote { lastError = configRecoveryNote }
+        if let configRecoveryNote { notice = UserNotice(kind: .info, message: configRecoveryNote) }
         if config.detectMeetings { startMeetingDetection() }
 
         // Report a capture failure that happens after `start()` returned (async
@@ -138,8 +144,8 @@ final class AppState: ObservableObject {
         self.recorder.onCaptureFailure = { [weak self] message in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.lastError = message
-                // The menu (where `lastError` renders) is closed 99% of the time —
+                self.notice = UserNotice(kind: .error, message: message)
+                // The menu (where `notice` renders) is closed 99% of the time —
                 // also raise the failure banner so a mid-recording death is visible
                 // without opening the menu.
                 let active = self.allSessions.first(where: { $0.status == .recording })
@@ -161,6 +167,9 @@ final class AppState: ObservableObject {
             self.onboarding.showIfNeeded(state: self)
         }
     }
+
+    /// Dismiss the current menu notice.
+    func dismissNotice() { notice = nil }
 
     /// Re-open the setup window on demand (from the menu's permission hint).
     func openOnboarding() {
@@ -199,7 +208,7 @@ final class AppState: ObservableObject {
         do {
             try manager.delete(id: id)
         } catch {
-            lastError = "Couldn't delete: \(error.localizedDescription)"
+            notice = UserNotice(kind: .error, message: "Couldn't delete: \(error.localizedDescription)")
         }
         reloadRecent()
     }
@@ -209,7 +218,7 @@ final class AppState: ObservableObject {
         do {
             try manager.deleteAudio(id: id)
         } catch {
-            lastError = "Couldn't delete: \(error.localizedDescription)"
+            notice = UserNotice(kind: .error, message: "Couldn't delete: \(error.localizedDescription)")
         }
         reloadRecent()
     }
@@ -300,7 +309,7 @@ final class AppState: ObservableObject {
         do {
             try secretStore.write(trimmed, account: SecretAccount.anthropicAPIKey)
         } catch {
-            lastError = "Couldn't save the API key to your Keychain (error \((error as NSError).code)). Your previous key was not changed."
+            notice = UserNotice(kind: .error, message: "Couldn't save the API key to your Keychain (error \((error as NSError).code)). Your previous key was not changed.")
         }
         refreshHasAPIKey()
     }
@@ -404,7 +413,7 @@ final class AppState: ObservableObject {
     }
 
     func startRecording(mode: RecordingMode, sourceApp: String? = nil) {
-        lastError = nil
+        notice = nil
         meetingPopup.hide()
         Task {
             // If a stop is still in flight, wait for it — otherwise this can hit
@@ -412,7 +421,7 @@ final class AppState: ObservableObject {
             await stopTask?.value
             let ok = await requestPermissions()
             guard ok else {
-                lastError = "Microphone and Screen Recording permission are required. Grant them in System Settings → Privacy & Security, then try again."
+                notice = UserNotice(kind: .error, message: "Microphone and Screen Recording permission are required. Grant them in System Settings → Privacy & Security, then try again.")
                 Permissions.openScreenRecordingSettings()
                 return
             }
@@ -435,7 +444,7 @@ final class AppState: ObservableObject {
                 draftTitle = ""
                 reloadRecent()
             } catch {
-                lastError = error.localizedDescription
+                notice = UserNotice(kind: .error, message: "Couldn't start recording: \(error.localizedDescription)")
             }
         }
     }
@@ -498,7 +507,7 @@ final class AppState: ObservableObject {
         // duplicate `manager.stop()` that finds no active session and surfaces a
         // spurious error. Flipping phase synchronously closes that window.
         guard isRecording else { return }
-        lastError = nil
+        notice = nil
         recordingFromDetection = false
         // Return to idle immediately — processing (if any) is now tracked entirely
         // via `processing`/`isProcessing`, independent of `phase`, so a
@@ -511,7 +520,7 @@ final class AppState: ObservableObject {
                     notesReadyPopup.show(kind: .failure, title: stopped.title) { [weak self] in
                         self?.openLibrary(select: stopped.id)
                     }
-                    lastError = warning
+                    notice = UserNotice(kind: .warning, message: warning)
                 }
                 // Best-effort offline noise cleanup (in place). A failure keeps the
                 // original recording and must never block notes or surface an error.
@@ -527,7 +536,7 @@ final class AppState: ObservableObject {
                     process(id: stopped.id)
                 }
             } catch {
-                lastError = error.localizedDescription
+                notice = UserNotice(kind: .error, message: "Couldn't stop cleanly: \(error.localizedDescription)")
                 reloadRecent()
             }
             stopTask = nil
@@ -543,7 +552,7 @@ final class AppState: ObservableObject {
         // re-processing an already-`.processed` meeting doesn't change its status,
         // so the Library can't detect completion from status alone.
         guard processing.beginProcess(id: id) else { return }
-        lastError = nil
+        notice = nil
         Task {
             // Carries the inputs for the background Obsidian publish, set only on success.
             var toPublish: (session: MeetingSession, transcript: String, summary: String)?
@@ -554,7 +563,7 @@ final class AppState: ObservableObject {
                 let session = try manager.session(id: id)
                 let (transcript, summary, engine) = try await produceNotes(session: session)
                 if engine == .onDeviceAfterCloudFailure {
-                    lastError = "Cloud summary failed — this meeting's notes were generated on-device. Check your API key in Settings."
+                    notice = UserNotice(kind: .warning, message: "Cloud summary failed — this meeting's notes were generated on-device. Check your API key in Settings.")
                 }
                 // Give untitled meetings (in-person / manual) a descriptive title from
                 // their notes, before the note is written + published so it carries
@@ -576,7 +585,7 @@ final class AppState: ObservableObject {
                 manager.purgeExpiredAudio()
                 toPublish = (processed, transcript, summary)
             } catch {
-                lastError = error.localizedDescription
+                notice = UserNotice(kind: .error, message: "Couldn't create notes: \(error.localizedDescription)")
                 let failedTitle = (try? manager.session(id: id))?.title ?? "Meeting"
                 notesReadyPopup.show(kind: .failure, title: failedTitle) { [weak self] in
                     self?.openLibrary(select: id)

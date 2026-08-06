@@ -45,13 +45,24 @@ struct MenuContentView: View {
                 .animation(ZMeetMotion.exit, value: state.isProcessing)
             }
 
-            if let error = state.lastError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 10)
+            if let notice = state.notice {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: icon(for: notice.kind))
+                        .font(.caption)
+                        .foregroundStyle(color(for: notice.kind))
+                    Text(notice.message)
+                        .font(.caption)
+                        .foregroundStyle(notice.kind == .error ? .red : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button { state.dismissNotice() } label: {
+                        Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(PressableStyle())
+                    .accessibilityLabel("Dismiss notice")
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
             }
 
             if state.phase == .idle, !(state.micGranted && state.screenGranted) {
@@ -202,6 +213,24 @@ struct MenuContentView: View {
     private func elapsed(since: Date) -> String {
         let total = Int(Date().timeIntervalSince(since))
         return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    // MARK: Notice presentation — icon + color by feedback kind
+
+    private func icon(for kind: AppState.UserNotice.Kind) -> String {
+        switch kind {
+        case .info: return "info.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .error: return "exclamationmark.octagon.fill"
+        }
+    }
+
+    private func color(for kind: AppState.UserNotice.Kind) -> Color {
+        switch kind {
+        case .info: return .secondary
+        case .warning: return .orange
+        case .error: return .red
+        }
     }
 }
 
