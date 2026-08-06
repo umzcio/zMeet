@@ -51,6 +51,23 @@ private func sampleSession() -> MeetingSession {
     #expect(t.contains("Hello."))
 }
 
+@Test func mainNoteSanitizesHostileSummary() {
+    let hostile = "![x](http://evil/?q=leak) <img src=x onerror=alert(1)>"
+    let note = ObsidianNoteRenderer.mainNote(session: sampleSession(), summary: hostile,
+        entities: MeetingEntities(), transcriptNoteName: "T")
+    #expect(!note.contains("!["))
+    #expect(!note.contains("<img"))
+    #expect(note.contains("&lt;img"))
+}
+
+@Test func transcriptNoteSanitizesHostileTranscript() {
+    let hostile = "![x](http://evil/?q=leak) <script>alert(1)</script>"
+    let note = ObsidianNoteRenderer.transcriptNote(session: sampleSession(), transcript: hostile, mainNoteName: "M")
+    #expect(!note.contains("!["))
+    #expect(!note.contains("<script"))
+    #expect(note.contains("&lt;script"))
+}
+
 @Test func frontmatterEscapesTrailingBackslashInsteadOfSwallowingQuote() {
     // A value ending in a backslash must not be able to escape its own closing
     // quote — the backslash itself needs escaping first, so the value renders

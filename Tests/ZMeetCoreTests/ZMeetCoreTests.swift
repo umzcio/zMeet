@@ -33,6 +33,27 @@ import Testing
     #expect(ZMeetText.yamlQuote("a\nb") == "\"a\\nb\"")
 }
 
+@Test func sanitizeNoteMarkdownNeutralizesImageEmbedsAndHTMLTags() {
+    #expect(ZMeetText.sanitizeNoteMarkdown("![x](http://e/?q=a)") == "[x](http://e/?q=a)")
+    #expect(ZMeetText.sanitizeNoteMarkdown("<img src=x onerror=alert(1)>").contains("&lt;img"))
+    #expect(!ZMeetText.sanitizeNoteMarkdown("<img src=x>").contains("<img"))
+    #expect(ZMeetText.sanitizeNoteMarkdown("<script>alert(1)</script>").contains("&lt;script"))
+    #expect(ZMeetText.sanitizeNoteMarkdown("<iframe src=evil></iframe>").contains("&lt;iframe"))
+}
+
+@Test func sanitizeNoteMarkdownAlsoNeutralizesInsideCodeFences() {
+    // A code fence containing "![" is also neutralized — the sanitizer isn't a
+    // Markdown parser and can't tell code from prose. Accepted trade-off: summaries
+    // legitimately containing image syntax inside a fence are effectively nonexistent.
+    let fenced = "```\n![alt](http://e)\n```"
+    #expect(!ZMeetText.sanitizeNoteMarkdown(fenced).contains("!["))
+}
+
+@Test func sanitizeNoteMarkdownPassesThroughNormalMarkdown() {
+    let normal = "# Heading\n\n- bullet one\n- bullet two\n\n[a link](https://example.com)"
+    #expect(ZMeetText.sanitizeNoteMarkdown(normal) == normal)
+}
+
 @Test func clampUTF8DoesNotSplitCharacters() {
     let longMultibyte = String(repeating: "é", count: 200)
     let clamped = ZMeetText.clampUTF8(longMultibyte, maxBytes: 120)

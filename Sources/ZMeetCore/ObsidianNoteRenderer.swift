@@ -22,7 +22,8 @@ public enum ObsidianNoteRenderer {
         fm.append("tags: [meeting]")
         fm.append("---")
 
-        var body = [fm.joined(separator: "\n"), "", "# \(session.title)", "", summary.trimmingCharacters(in: .whitespacesAndNewlines)]
+        var body = [fm.joined(separator: "\n"), "", "# \(session.title)", "",
+                    ZMeetText.sanitizeNoteMarkdown(summary).trimmingCharacters(in: .whitespacesAndNewlines)]
         func linkSection(_ heading: String, _ items: [String]) {
             guard !items.isEmpty else { return }
             body.append("")
@@ -49,7 +50,7 @@ public enum ObsidianNoteRenderer {
 
         Meeting: [[\(mainNoteName)]]
 
-        \(transcript.trimmingCharacters(in: .whitespacesAndNewlines))
+        \(ZMeetText.sanitizeNoteMarkdown(transcript).trimmingCharacters(in: .whitespacesAndNewlines))
         """ + "\n"
     }
 

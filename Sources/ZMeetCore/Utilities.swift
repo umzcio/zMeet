@@ -119,6 +119,18 @@ public enum ZMeetText {
             .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 
+    /// Neutralizes Markdown that turns a note into an egress or execution channel
+    /// when rendered (Obsidian fetches remote images automatically): image embeds
+    /// become plain links, raw HTML img/script/iframe tags are escaped. Everything
+    /// else (headings, lists, code fences, normal links) passes through.
+    public static func sanitizeNoteMarkdown(_ md: String) -> String {
+        var out = md.replacingOccurrences(of: "![", with: "[")
+        for tag in ["<img", "<script", "<iframe", "<IMG", "<SCRIPT", "<IFRAME"] {
+            out = out.replacingOccurrences(of: tag, with: "&lt;" + tag.dropFirst())
+        }
+        return out
+    }
+
     public static func yamlQuote(_ value: String) -> String {
         let escaped = value
             .replacingOccurrences(of: "\\", with: "\\\\")

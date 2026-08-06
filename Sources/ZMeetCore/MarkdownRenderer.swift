@@ -40,7 +40,7 @@ public struct MarkdownRenderer {
 
         # \(session.title)
 
-        \(summaryMarkdown.trimmingCharacters(in: .whitespacesAndNewlines))
+        \(ZMeetText.sanitizeNoteMarkdown(summaryMarkdown).trimmingCharacters(in: .whitespacesAndNewlines))
 
         ## Transcript
 
