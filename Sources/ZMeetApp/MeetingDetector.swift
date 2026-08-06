@@ -26,6 +26,10 @@ final class MeetingDetector {
     private let disappearThreshold = 6
     private var missCount = 0
 
+    /// Consecutive idle ticks (no detected window, not in meeting) — drives the
+    /// cadence backoff in `DetectorGate.nextInterval`. Resets on any activity.
+    private var consecutiveIdleScans = 0
+
     /// Audio-based "are we actually in a call" tracker — the reliable signal for
     /// starting/stopping a recording, independent of window titles (and lobbies).
     private let audioProbe = ProcessAudioProbe()
@@ -42,10 +46,7 @@ final class MeetingDetector {
 
     func start() {
         guard timer == nil else { return }
-        scan()
-        timer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.scan() }
-        }
+        scanAndReschedule()
     }
 
     func stop() {
@@ -54,16 +55,41 @@ final class MeetingDetector {
         missCount = 0
         current = nil
         audioActivity = MeetingAudioActivity()
+        consecutiveIdleScans = 0
     }
 
-    private func scan() {
+    /// Runs one tick, then schedules the next at a cadence that eases off (4 s → 15 s)
+    /// once a resident-but-idle meeting app has produced 15 consecutive idle ticks, and
+    /// restores 4 s immediately on any detected window or in-meeting audio. The
+    /// NSWorkspace "is a meeting app running" check is computed once here and shared
+    /// between the scan gate and the cadence decision — don't re-query it in `scan()`.
+    private func scanAndReschedule() {
+        let running = ProcessAudioProbe.meetingAppProcessRunning()
+        scan(meetingAppRunning: running)
+        let active = current != nil || audioActivity.isInMeeting
+        consecutiveIdleScans = active ? 0 : consecutiveIdleScans + 1
+        let interval = DetectorGate.nextInterval(
+            hasDetectedWindow: current != nil,
+            isInMeeting: audioActivity.isInMeeting,
+            meetingAppRunning: running,
+            consecutiveIdleScans: consecutiveIdleScans)
+        scheduleNext(after: interval)
+    }
+
+    private func scheduleNext(after interval: TimeInterval) {
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.scanAndReschedule() }
+        }
+    }
+
+    private func scan(meetingAppRunning: Bool) {
         // Cheap tier: skip the window + Core Audio IPC entirely when no meeting
         // app is even running and nothing is in flight. Never skip mid-meeting:
         // the audio reducer's .ended transition (auto-stop) needs its ticks.
         let shouldScan = DetectorGate.shouldFullScan(
             hasDetectedWindow: current != nil,
             isInMeeting: audioActivity.isInMeeting,
-            meetingAppRunning: ProcessAudioProbe.meetingAppProcessRunning())
+            meetingAppRunning: meetingAppRunning)
         if !shouldScan {
             _ = audioActivity.update(active: false)
             return

@@ -23,6 +23,50 @@ import Testing
     }
 }
 
+// MARK: - DetectorGate.nextInterval
+
+@Test func nextIntervalIsFastWhenWindowDetected() {
+    let interval = DetectorGate.nextInterval(
+        hasDetectedWindow: true, isInMeeting: false,
+        meetingAppRunning: true, consecutiveIdleScans: 999)
+    #expect(interval == DetectorGate.fastInterval)
+}
+
+@Test func nextIntervalIsFastWhenInMeeting() {
+    let interval = DetectorGate.nextInterval(
+        hasDetectedWindow: false, isInMeeting: true,
+        meetingAppRunning: true, consecutiveIdleScans: 999)
+    #expect(interval == DetectorGate.fastInterval)
+}
+
+@Test func nextIntervalIsSlowWhenNoMeetingAppProcess() {
+    let interval = DetectorGate.nextInterval(
+        hasDetectedWindow: false, isInMeeting: false,
+        meetingAppRunning: false, consecutiveIdleScans: 0)
+    #expect(interval == DetectorGate.slowInterval)
+}
+
+@Test func nextIntervalStaysFastForFirstIdleScansWithAppRunning() {
+    for idle in 0..<DetectorGate.idleScansBeforeSlowdown {
+        let interval = DetectorGate.nextInterval(
+            hasDetectedWindow: false, isInMeeting: false,
+            meetingAppRunning: true, consecutiveIdleScans: idle)
+        #expect(interval == DetectorGate.fastInterval, "consecutiveIdleScans=\(idle)")
+    }
+}
+
+@Test func nextIntervalSlowsAfterThresholdIdleScansWithAppRunning() {
+    let interval = DetectorGate.nextInterval(
+        hasDetectedWindow: false, isInMeeting: false,
+        meetingAppRunning: true, consecutiveIdleScans: DetectorGate.idleScansBeforeSlowdown)
+    #expect(interval == DetectorGate.slowInterval)
+
+    let laterInterval = DetectorGate.nextInterval(
+        hasDetectedWindow: false, isInMeeting: false,
+        meetingAppRunning: true, consecutiveIdleScans: DetectorGate.idleScansBeforeSlowdown + 50)
+    #expect(laterInterval == DetectorGate.slowInterval)
+}
+
 // MARK: - matchMeetingWindow
 
 @Test func zoomExactOwnerWithMeetingTitleMatches() {
