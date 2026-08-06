@@ -1057,13 +1057,31 @@ final class AudioPlayerModel: NSObject, ObservableObject {
     // user is scroll-tracking elsewhere in the window; that's not worth the
     // wakeups.
     private var timer: Timer?
+    private var loadGeneration = UUID()
 
+    /// Loads the file off the main actor (AVAudioPlayer init + prepareToPlay
+    /// parse the whole container); the published fields update back on main.
+    /// A stale completion (user already clicked another row) is discarded.
     func load(_ url: URL) {
         stop()
-        player = try? AVAudioPlayer(contentsOf: url)
-        player?.prepareToPlay()
-        duration = player?.duration ?? 0
-        currentTime = 0
+        let generation = UUID(); loadGeneration = generation
+        Task {
+            let loaded = await Task.detached(priority: .userInitiated) { () -> Loaded in
+                let p = try? AVAudioPlayer(contentsOf: url)
+                p?.prepareToPlay()
+                return Loaded(player: p)
+            }.value
+            guard loadGeneration == generation else { return }
+            player = loaded.player
+            duration = loaded.player?.duration ?? 0
+            currentTime = 0
+        }
+    }
+
+    /// AVAudioPlayer is not Sendable; this wraps a single hand-off from the
+    /// detached load task to the main actor, before any concurrent access.
+    private struct Loaded: @unchecked Sendable {
+        let player: AVAudioPlayer?
     }
 
     func toggle() {

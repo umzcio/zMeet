@@ -111,7 +111,13 @@ final class AppState: ObservableObject {
             SessionManager.tightenPermissions(roots: sweepRoots)
         }
         reloadRecent()
-        manager.purgeExpiredAudio()
+        // Deferred off the init critical path so the menu-bar icon appears
+        // first; still main-actor (`manager` isn't Sendable — the real fix is
+        // gated on the SessionManager isolation story), just scheduled after
+        // launch instead of blocking it.
+        Task { @MainActor [weak self] in
+            self?.manager.purgeExpiredAudio()
+        }
         refreshHasAPIKey()
         refreshPermissions()
         if let configRecoveryNote { lastError = configRecoveryNote }
@@ -720,15 +726,22 @@ final class AppState: ObservableObject {
                 ObsidianVaultFiles.remove(baseName: legacy, from: vault)
             }
         }
-        let main = ObsidianNoteRenderer.mainNote(
-            session: session, summary: summary, entities: entities,
-            transcriptNoteName: names.transcriptNoteName)
-        let tx = ObsidianNoteRenderer.transcriptNote(
-            session: session, transcript: transcript, mainNoteName: names.mainNoteName)
+        // Rendering (string work proportional to transcript length) + the write
+        // itself (~150KB across two files) run off the main actor; everything
+        // that touches `manager`/session state stays here. Inputs/outputs are
+        // all value types (String/URL/MeetingSession), so no isolation crosses
+        // with them.
         do {
-            try ObsidianVaultFiles.write(
-                main: main, transcript: tx,
-                mainName: names.main, transcriptName: names.transcript, into: vault)
+            try await Task.detached(priority: .utility) {
+                let main = ObsidianNoteRenderer.mainNote(
+                    session: session, summary: summary, entities: entities,
+                    transcriptNoteName: names.transcriptNoteName)
+                let tx = ObsidianNoteRenderer.transcriptNote(
+                    session: session, transcript: transcript, mainNoteName: names.mainNoteName)
+                try ObsidianVaultFiles.write(
+                    main: main, transcript: tx,
+                    mainName: names.main, transcriptName: names.transcript, into: vault)
+            }.value
             // Remember what we published so a future rename can clean up this pair.
             try? manager.setObsidianBaseName(id: session.id, to: names.mainNoteName)
         } catch {
@@ -752,23 +765,62 @@ final class AppState: ObservableObject {
         Task {
             var done = 0, published = 0, skipped = 0
             for session in sessions {
+                // The existence check + the two on-disk reads are pure, value-in
+                // file I/O — run them off the main actor so hundreds of 150KB
+                // reads don't serialize on the UI thread during a large backfill.
+                let check = await Task.detached(priority: .utility) {
+                    Self.checkBackfillFiles(session: session, vault: vault)
+                }.value
                 // Skip meetings already imported into THIS vault under their current
                 // name — so re-running the backfill only picks up new/renamed/missing
                 // meetings instead of re-publishing (and re-extracting) everything.
-                if isAlreadyPublished(session, in: vault) {
+                if check.alreadyPublished {
                     skipped += 1
-                } else if let notes = onDiskNotes(for: session) {
-                    await publishToObsidianIfEnabled(session: session, transcript: notes.transcript, summary: notes.summary)
+                } else if let transcript = check.transcript, let summary = check.summary {
+                    await publishToObsidianIfEnabled(session: session, transcript: transcript, summary: summary)
                     published += 1
                 } else {
                     skipped += 1  // no readable transcript/notes on disk
                 }
                 done += 1
-                obsidianBackfill = BackfillProgress(done: done, total: sessions.count)
+                // Throttled: a per-meeting @Published assignment re-renders both
+                // Settings and the Library, which adds up over hundreds of meetings.
+                if done % 5 == 0 || done == sessions.count {
+                    obsidianBackfill = BackfillProgress(done: done, total: sessions.count)
+                }
             }
             obsidianBackfill = nil
             obsidianBackfillMessage = Self.backfillSummary(published: published, skipped: skipped, total: sessions.count)
         }
+    }
+
+    /// Combined, off-main-actor version of `isAlreadyPublished` + `onDiskNotes`
+    /// for the backfill loop: one detached hop per meeting instead of two, and
+    /// skips the notes read entirely once already-published is known true.
+    /// Pure value-in/value-out — safe to run off the main actor.
+    private struct BackfillFileCheck: Sendable {
+        let alreadyPublished: Bool
+        let transcript: String?
+        let summary: String?
+    }
+    nonisolated private static func checkBackfillFiles(session: MeetingSession, vault: URL) -> BackfillFileCheck {
+        let names = ObsidianVaultFiles.names(for: session)
+        let alreadyPublished = session.obsidianBaseName == names.mainNoteName
+            && FileManager.default.fileExists(atPath: vault.appendingPathComponent(names.main).path)
+        guard !alreadyPublished else {
+            return BackfillFileCheck(alreadyPublished: true, transcript: nil, summary: nil)
+        }
+        guard let transcriptPath = session.transcriptPath,
+              let notePath = session.notePath,
+              let transcript = try? String(contentsOf: URL(fileURLWithPath: transcriptPath), encoding: .utf8),
+              let note = try? String(contentsOf: URL(fileURLWithPath: notePath), encoding: .utf8) else {
+            return BackfillFileCheck(alreadyPublished: false, transcript: nil, summary: nil)
+        }
+        let summary = MarkdownRenderer().summaryBody(fromProcessedNote: note)
+        guard !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return BackfillFileCheck(alreadyPublished: false, transcript: nil, summary: nil)
+        }
+        return BackfillFileCheck(alreadyPublished: false, transcript: transcript, summary: summary)
     }
 
     /// Human-readable outcome of a backfill run for the Settings UI.
