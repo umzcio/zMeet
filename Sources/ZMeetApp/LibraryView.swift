@@ -608,7 +608,7 @@ struct LibraryView: View {
         }
         .padding(.vertical, 5)
         .frame(width: 196)
-        .background(Color(red: 0.118, green: 0.137, blue: 0.129), in: RoundedRectangle(cornerRadius: 12))
+        .background(ZMeetPalette.field, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(ZMeetPalette.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
     }
@@ -978,7 +978,7 @@ private struct PlayerBar: View {
             Button { audio.toggle() } label: {
                 Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 16))
-                    .foregroundStyle(Color(red: 0.024, green: 0.157, blue: 0.102))
+                    .foregroundStyle(ZMeetPalette.accentDeep)
                     .frame(width: 44, height: 44)
                     .background(ZMeetPalette.mint, in: Circle())
                     .opacity(audio.duration <= 0 ? 0.4 : 1)

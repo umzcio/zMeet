@@ -32,9 +32,10 @@ enum PanelAnimator {
         panel.orderOut(nil)
     }
 
-    /// Fade the panel out (drifting up 6pt for banners), then order it out
-    /// and call `completion` for the caller to release its reference.
-    static func dismiss(_ panel: NSPanel, slide: CGFloat = 6, duration: TimeInterval = 0.16, completion: @escaping @MainActor () -> Void) {
+    /// Fade the panel out (drifting up 6pt for banners), then order it out.
+    /// Callers typically release their reference before dismissing; `completion`
+    /// fires after order-out for anything that must wait.
+    static func dismiss(_ panel: NSPanel, slide: CGFloat = 6, duration: TimeInterval = 0.16, completion: @escaping @MainActor () -> Void = {}) {
         let offset: CGFloat = reduceMotion ? 0 : slide
         let target = NSPoint(x: panel.frame.origin.x, y: panel.frame.origin.y + offset)
         NSAnimationContext.runAnimationGroup({ ctx in

@@ -78,7 +78,7 @@ struct DialogButton: View {
 
     private var foreground: Color {
         switch kind {
-        case .primary:     return Color(red: 0.024, green: 0.157, blue: 0.102)
+        case .primary:     return ZMeetPalette.accentDeep
         case .secondary:   return ZMeetPalette.light
         case .destructive: return .white
         }

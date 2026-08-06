@@ -228,7 +228,7 @@ struct SettingsView: View {
             }
         }
         .padding(.vertical, 5)
-        .background(Color(red: 0.118, green: 0.137, blue: 0.129), in: RoundedRectangle(cornerRadius: 12))
+        .background(ZMeetPalette.field, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Self.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
     }
@@ -656,7 +656,7 @@ private struct DropdownMenuRow: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(hover ? Color.white.opacity(0.06) : .clear)
+            .background(hover ? ZMeetPalette.hairline : .clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())

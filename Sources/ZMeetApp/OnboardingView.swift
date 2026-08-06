@@ -108,7 +108,7 @@ struct OnboardingView: View {
         .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(granted ? ZMeetPalette.mint.opacity(0.4) : Color.white.opacity(0.06), lineWidth: 1)
+                .stroke(granted ? ZMeetPalette.mint.opacity(0.4) : ZMeetPalette.hairline, lineWidth: 1)
         )
     }
 

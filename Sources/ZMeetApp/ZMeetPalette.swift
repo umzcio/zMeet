@@ -21,4 +21,9 @@ enum ZMeetPalette {
 
     /// Dialog scaffold card background (previously hard-coded in DialogComponents).
     static let dialogCard = Color(red: 0.105, green: 0.124, blue: 0.116)
+
+    /// Floating dropdown/menu background (Settings' dropdownMenu, Library's actionsDropdown).
+    static let field = Color(red: 0.118, green: 0.137, blue: 0.129)
+    /// Dark-mint foreground used on mint fills (e.g. play button glyph, primary dialog button label).
+    static let accentDeep = Color(red: 0.024, green: 0.157, blue: 0.102)
 }

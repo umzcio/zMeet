@@ -88,7 +88,7 @@ private struct OutcomePopupIcon: View {
 }
 
 @MainActor
-final class NotesReadyPopupController {
+final class OutcomePopupController {
     private var panel: NSPanel?
     private var autoDismiss: Timer?
 
@@ -158,7 +158,7 @@ final class NotesReadyPopupController {
         guard let panel = self.panel else { return }
         self.panel = nil   // re-entrant show() safe
         if animated {
-            PanelAnimator.dismiss(panel) { }
+            PanelAnimator.dismiss(panel)
         } else {
             PanelAnimator.dismissImmediately(panel)
         }

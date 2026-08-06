@@ -139,6 +139,6 @@ final class ModeChoicePopupController {
     func hide() {
         guard let panel = self.panel else { return }
         self.panel = nil   // re-entrant show() safe
-        PanelAnimator.dismiss(panel, slide: 0, duration: 0.15) { }
+        PanelAnimator.dismiss(panel, slide: 0, duration: 0.15)
     }
 }

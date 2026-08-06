@@ -70,7 +70,7 @@ final class MeetingPopupController {
         guard let panel = self.panel else { return }
         self.panel = nil   // isVisible false immediately; re-entrant show() safe
         if animated {
-            PanelAnimator.dismiss(panel) { }
+            PanelAnimator.dismiss(panel)
         } else {
             PanelAnimator.dismissImmediately(panel)
         }

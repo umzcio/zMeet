@@ -80,7 +80,7 @@ final class AppState: ObservableObject {
     private var manager: SessionManager
     private let detector = MeetingDetector()
     private let meetingPopup = MeetingPopupController()
-    private let notesReadyPopup = NotesReadyPopupController()
+    private let outcomePopup = OutcomePopupController()
     private let modeChoicePopup = ModeChoicePopupController()
     private let onboarding = OnboardingWindowController()
     private let settingsWindow = SettingsWindowController()
@@ -155,7 +155,7 @@ final class AppState: ObservableObject {
                 // also raise the failure banner so a mid-recording death is visible
                 // without opening the menu.
                 let active = self.allSessions.first(where: { $0.status == .recording })
-                self.notesReadyPopup.show(kind: .failure, title: active?.title ?? "Recording") { [weak self] in
+                self.outcomePopup.show(kind: .failure, title: active?.title ?? "Recording") { [weak self] in
                     self?.openLibrary(select: active?.id)
                 }
                 if case .recording = self.phase, let active {
@@ -523,7 +523,7 @@ final class AppState: ObservableObject {
             do {
                 let stopped = try await manager.stop()
                 if let warning = stopped.errorMessage {
-                    notesReadyPopup.show(kind: .failure, title: stopped.title) { [weak self] in
+                    outcomePopup.show(kind: .failure, title: stopped.title) { [weak self] in
                         self?.openLibrary(select: stopped.id)
                     }
                     notice = UserNotice(kind: .warning, message: warning)
@@ -607,7 +607,7 @@ final class AppState: ObservableObject {
                     }
                 }
                 let processed = try await manager.applyProcessedText(id: id, transcript: transcript, summary: summary, engine: engine)
-                notesReadyPopup.show(title: processed.title) { [weak self] in
+                outcomePopup.show(title: processed.title) { [weak self] in
                     self?.revealNote(processed)
                 }
                 manager.purgeExpiredAudio()
@@ -615,7 +615,7 @@ final class AppState: ObservableObject {
             } catch {
                 notice = UserNotice(kind: .error, message: "Couldn't create notes: \(error.localizedDescription)")
                 let failedTitle = (try? manager.session(id: id))?.title ?? "Meeting"
-                notesReadyPopup.show(kind: .failure, title: failedTitle) { [weak self] in
+                outcomePopup.show(kind: .failure, title: failedTitle) { [weak self] in
                     self?.openLibrary(select: id)
                 }
             }

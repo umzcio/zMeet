@@ -316,7 +316,7 @@ private struct OpenAppRow: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(hover ? Color.white.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .background(hover ? ZMeetPalette.hairline : .clear, in: RoundedRectangle(cornerRadius: 8))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())
