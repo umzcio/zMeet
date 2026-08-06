@@ -29,10 +29,21 @@ struct MenuContentView: View {
             Divider()
 
             primarySection
+                .frame(minHeight: 64, alignment: .top)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .animation(ZMeetMotion.exit, value: state.phase)
+
+            if state.phase == .idle, state.isProcessing {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Processing…").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
+                .transition(.opacity)
                 .animation(ZMeetMotion.exit, value: state.isProcessing)
+            }
 
             if let error = state.lastError {
                 Text(error)
@@ -126,14 +137,10 @@ struct MenuContentView: View {
             }
             .transition(.opacity)
 
-        case .idle where state.isProcessing:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Processing…").foregroundStyle(.secondary)
-            }
-            .transition(.opacity)
-
         case .idle:
+            // Always shows the title field + Start, even while a background
+            // (re)process is running — a background job must never take away
+            // the ability to start recording. See the status row in `body`.
             VStack(alignment: .leading, spacing: 8) {
                 TextField("Meeting title", text: $state.draftTitle)
                     .textFieldStyle(.roundedBorder)
@@ -199,17 +206,23 @@ struct MenuContentView: View {
 }
 
 private struct RecordingDot: View {
-    @State private var dim = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        Circle().fill(.red).frame(width: 9, height: 9)
-            .opacity(dim ? 0.45 : 1.0)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                    dim = true
+        Group {
+            if reduceMotion {
+                Circle().fill(.red)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
+                    // 1.2s sine pulse between 0.65 and 1.0 opacity — a pulse,
+                    // not a breath. TimelineView pauses off-screen, so nothing
+                    // animates behind a closed menu.
+                    let t = tl.date.timeIntervalSinceReferenceDate
+                    let phase = (sin(t * 2 * .pi / 1.2) + 1) / 2
+                    Circle().fill(.red).opacity(0.65 + 0.35 * phase)
                 }
             }
+        }
+        .frame(width: 9, height: 9)
     }
 }
 
