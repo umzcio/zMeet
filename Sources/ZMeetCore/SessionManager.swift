@@ -163,8 +163,14 @@ public final class SessionManager {
     /// Writes an externally-produced transcript + summary into the meeting folder,
     /// renders the note, and marks the session processed. Used by the app's
     /// on-device transcription/summarization path (keeps async work out of Core).
+    //
+    // `nonisolated(nonsending)` so this runs in the caller's isolation domain
+    // (see `stop()` above for the pattern) rather than hopping to a nonisolated
+    // executor — only the pure render + file writes + FTS indexing hop off it
+    // inside the detached task below, carrying nothing but Sendable values
+    // (SessionManager itself never crosses actors).
     @discardableResult
-    public func applyProcessedText(id: String, transcript: String, summary: String, engine: SummaryEngine = .onDevice) throws -> MeetingSession {
+    public nonisolated(nonsending) func applyProcessedText(id: String, transcript: String, summary: String, engine: SummaryEngine = .onDevice) async throws -> MeetingSession {
         var session = try loadSession(id: id)
         // Don't finalize a session that's still recording.
         guard session.status != .recording else {
@@ -175,16 +181,6 @@ public final class SessionManager {
         let noteURL = noteURL(for: session)
 
         do {
-            // Deliberately NOT ensurePrivateDirectory here: this folder is the
-            // meeting folder, already created 0700 in start(); forcing a
-            // permission reset on every (re)process would also silently
-            // re-open a folder an operator had locked down for another
-            // reason. The launch-time tightenPermissions() sweep still
-            // catches a folder that was recreated with default perms (e.g.
-            // after external deletion) on the next app start.
-            try ZMeetPaths.ensureDirectory(transcriptURL.deletingLastPathComponent())
-            try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
-            ZMeetPaths.restrictFile(transcriptURL)
             let note = MarkdownRenderer().renderProcessedNote(
                 session: session,
                 transcriptURL: transcriptURL,
@@ -192,20 +188,39 @@ public final class SessionManager {
                 summaryMarkdown: summary,
                 summaryEngine: engine
             )
-            try note.write(to: noteURL, atomically: true, encoding: .utf8)
-            ZMeetPaths.restrictFile(noteURL)
+            let store = searchStore
+            let sessionID = session.id
+            let title = session.title
+            // Heavy I/O + FTS indexing hop off the caller's isolation; the
+            // detached task completes (`.value`) BEFORE the session record
+            // flips to `.processed` below, so a crash mid-write leaves the
+            // record un-flipped, same as before this was made async.
+            try await Task.detached(priority: .userInitiated) {
+                // Deliberately NOT ensurePrivateDirectory here: this folder is the
+                // meeting folder, already created 0700 in start(); forcing a
+                // permission reset on every (re)process would also silently
+                // re-open a folder an operator had locked down for another
+                // reason. The launch-time tightenPermissions() sweep still
+                // catches a folder that was recreated with default perms (e.g.
+                // after external deletion) on the next app start.
+                try ZMeetPaths.ensureDirectory(transcriptURL.deletingLastPathComponent())
+                try transcript.write(to: transcriptURL, atomically: true, encoding: .utf8)
+                ZMeetPaths.restrictFile(transcriptURL)
+                try note.write(to: noteURL, atomically: true, encoding: .utf8)
+                ZMeetPaths.restrictFile(noteURL)
+                // Index the title-free summary as the notes column (not the full
+                // rendered note, which embeds the title/frontmatter/paths) so the
+                // title lives only in the title column and rename can update it cleanly.
+                try? store?.index(
+                    sessionID: sessionID, title: title,
+                    notes: summary, transcript: transcript
+                )
+            }.value
             session.status = .processed
             session.transcriptPath = transcriptURL.path
             session.notePath = noteURL.path
             session.errorMessage = nil
             try save(session)
-            // Index the title-free summary as the notes column (not the full
-            // rendered note, which embeds the title/frontmatter/paths) so the
-            // title lives only in the title column and rename can update it cleanly.
-            try? searchStore?.index(
-                sessionID: session.id, title: session.title,
-                notes: summary, transcript: transcript
-            )
             return session
         } catch {
             // A failed re-process of an already-processed meeting must not hide

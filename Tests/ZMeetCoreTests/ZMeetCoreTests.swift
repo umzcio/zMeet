@@ -205,7 +205,7 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     #expect(stopped.endedAt != nil)
     #expect(recorder.stopCount == 1)
 
-    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "Hello, this is the transcript.", summary: "## Summary\n\n- Discussed the plan.")
+    let processed = try await manager.applyProcessedText(id: stopped.id, transcript: "Hello, this is the transcript.", summary: "## Summary\n\n- Discussed the plan.")
     #expect(processed.status == .processed)
     #expect(processed.notePath != nil)
     #expect(FileManager.default.fileExists(atPath: processed.notePath!))
@@ -258,7 +258,7 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
 
     let started = try manager.start(title: "Weekly Sync", sourceApp: nil)
     let stopped = try await manager.stop()
-    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "First pass.", summary: "## Summary\n\n- First.")
+    let processed = try await manager.applyProcessedText(id: stopped.id, transcript: "First pass.", summary: "## Summary\n\n- First.")
     #expect(processed.status == .processed)
 
     // Force the second write to fail mid-write (inside the catch-guarded block):
@@ -267,8 +267,8 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
     defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
 
-    #expect(throws: (any Error).self) {
-        _ = try manager.applyProcessedText(id: started.id, transcript: "Second pass.", summary: "## Summary\n\n- Second.")
+    await #expect(throws: (any Error).self) {
+        _ = try await manager.applyProcessedText(id: started.id, transcript: "Second pass.", summary: "## Summary\n\n- Second.")
     }
 
     let reloaded = try manager.session(id: started.id)
@@ -294,8 +294,8 @@ private func makeTempConfig() -> (ZMeetConfig, URL) {
     try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
     defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
 
-    #expect(throws: (any Error).self) {
-        _ = try manager.applyProcessedText(id: started.id, transcript: "Never lands.", summary: "## Summary\n\n- Never.")
+    await #expect(throws: (any Error).self) {
+        _ = try await manager.applyProcessedText(id: started.id, transcript: "Never lands.", summary: "## Summary\n\n- Never.")
     }
 
     let reloaded = try manager.session(id: started.id)
@@ -421,7 +421,7 @@ private actor TestSignal {
     // A processed session is left alone by markFailed — its notes stay intact.
     _ = try manager.start(title: "Done", sourceApp: nil)
     let stopped = try await manager.stop()
-    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+    let processed = try await manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
     #expect(processed.status == .processed)
     let untouched = try manager.markFailed(id: processed.id, message: "should not apply")
     #expect(untouched.status == .processed)
@@ -639,7 +639,7 @@ private final class CapturedMessageBox: @unchecked Sendable {
 
     let started = try manager.start(title: "Roadmap Review", sourceApp: nil)
     _ = try await manager.stop()
-    _ = try manager.applyProcessedText(
+    _ = try await manager.applyProcessedText(
         id: started.id,
         transcript: "we agreed to ship the meeting detector next sprint",
         summary: "Shipping detection."
@@ -671,7 +671,7 @@ private final class CapturedMessageBox: @unchecked Sendable {
     let started = try manager.start(title: "Sync", sourceApp: nil)
     _ = try await manager.stop()
 
-    let processed = try manager.applyProcessedText(
+    let processed = try await manager.applyProcessedText(
         id: started.id, transcript: "hello world", summary: "## Summary\n- ok", engine: .cloud)
 
     let note = try String(contentsOfFile: processed.notePath!, encoding: .utf8)
@@ -682,7 +682,7 @@ private final class CapturedMessageBox: @unchecked Sendable {
 private func makeProcessedMeeting(_ manager: SessionManager, title: String, daysAgo: Int) async throws -> MeetingSession {
     let started = try manager.start(title: title, sourceApp: nil)
     _ = try await manager.stop()
-    let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
+    let processed = try await manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
     // Backdate the session so retention math sees it as old.
     var dated = processed
     dated.startedAt = Date().addingTimeInterval(-Double(daysAgo) * 86_400)
@@ -798,7 +798,7 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
 
     let started = try manager.start(title: "Logged", sourceApp: nil)
     let stopped = try await manager.stop()
-    _ = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+    _ = try await manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
 
     // MockRecorder doesn't write a log file — create the one the session record
     // points at so we can verify delete() removes it.
@@ -822,7 +822,7 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
 
     let started = try manager.start(title: "Vanishing", sourceApp: nil)
     let stopped = try await manager.stop()
-    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+    let processed = try await manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
 
     let logPath = try #require(processed.recorderLogPath)
     try FileManager.default.createDirectory(
@@ -853,7 +853,7 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
 
     let started = try manager.start(title: "Moving", sourceApp: nil)
     let stopped = try await manager.stop()
-    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+    let processed = try await manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
     let folder = URL(fileURLWithPath: processed.audioPath).deletingLastPathComponent()
     #expect(FileManager.default.fileExists(atPath: folder.path))
 
@@ -934,7 +934,7 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
     #expect(afterStart.first { $0.id == started.id }?.status == .recording)
 
     let stopped = try await manager.stop()
-    let processed = try manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
+    let processed = try await manager.applyProcessedText(id: stopped.id, transcript: "t", summary: "s")
 
     let afterProcess = try manager.listSessions()
     #expect(afterProcess.first { $0.id == started.id }?.status == .processed)
@@ -949,7 +949,7 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
 
     let started = try manager.start(title: "Gone Soon", sourceApp: nil)
     _ = try await manager.stop()
-    let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
+    let processed = try await manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
     #expect(try manager.listSessions().contains { $0.id == processed.id })
 
     try manager.delete(id: processed.id)
@@ -1004,7 +1004,7 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
 
     let started = try manager.start(title: "Persisted", sourceApp: nil)
     _ = try await manager.stop()
-    let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
+    let processed = try await manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
 
     // Prime the first manager's cache, then construct a second manager on the
     // identical config — its cache starts nil and must scan disk on first read.
@@ -1099,7 +1099,7 @@ private func makeTempConfigUnderHome() -> (ZMeetConfig, URL) {
     // A prior, successfully saved session — populates the cache from disk.
     let started = try manager.start(title: "Prior", sourceApp: nil)
     _ = try await manager.stop()
-    let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
+    let processed = try await manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
     #expect(try manager.listSessions().contains { $0.id == processed.id })
 
     // Lock the sessions directory so the next save's write fails mid-write.
@@ -1147,7 +1147,7 @@ private func posixPermissions(_ url: URL) -> Int? {
     #expect(posixPermissions(meetingFolder) == 0o700)
 
     _ = try await manager.stop()
-    let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
+    let processed = try await manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
 
     #expect(posixPermissions(URL(fileURLWithPath: processed.transcriptPath!)) == 0o600)
     #expect(posixPermissions(URL(fileURLWithPath: processed.notePath!)) == 0o600)
@@ -1165,7 +1165,7 @@ private func posixPermissions(_ url: URL) -> Int? {
 
     let started = try manager.start(title: "Legacy", sourceApp: nil)
     _ = try await manager.stop()
-    let processed = try manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
+    let processed = try await manager.applyProcessedText(id: started.id, transcript: "t", summary: "s")
 
     let noteURL = URL(fileURLWithPath: processed.notePath!)
     let meetingFolder = noteURL.deletingLastPathComponent()

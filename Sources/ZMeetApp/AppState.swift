@@ -535,7 +535,8 @@ final class AppState: ObservableObject {
             var toPublish: (session: MeetingSession, transcript: String, summary: String)?
             do {
                 // The async Apple speech/LLM work runs off the main actor; the
-                // synchronous Core write happens back on the main actor.
+                // Core write below hops its heavy I/O off-actor internally and
+                // only touches session state back on the caller's actor.
                 let session = try manager.session(id: id)
                 let (transcript, summary, engine) = try await produceNotes(session: session)
                 if engine == .onDeviceAfterCloudFailure {
@@ -554,7 +555,7 @@ final class AppState: ObservableObject {
                         _ = try? manager.setTitle(id: id, to: generated)
                     }
                 }
-                let processed = try manager.applyProcessedText(id: id, transcript: transcript, summary: summary, engine: engine)
+                let processed = try await manager.applyProcessedText(id: id, transcript: transcript, summary: summary, engine: engine)
                 notesReadyPopup.show(title: processed.title) { [weak self] in
                     self?.revealNote(processed)
                 }
