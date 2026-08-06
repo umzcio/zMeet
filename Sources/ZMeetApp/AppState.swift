@@ -182,13 +182,21 @@ final class AppState: ObservableObject {
 
     /// Delete a meeting (folder + record), then refresh the lists.
     func deleteMeeting(id: String) {
-        try? manager.delete(id: id)
+        do {
+            try manager.delete(id: id)
+        } catch {
+            lastError = "Couldn't delete: \(error.localizedDescription)"
+        }
         reloadRecent()
     }
 
     /// Manually purge a single meeting's audio (keeps transcript + notes).
     func deleteAudio(id: String) {
-        try? manager.deleteAudio(id: id)
+        do {
+            try manager.deleteAudio(id: id)
+        } catch {
+            lastError = "Couldn't delete: \(error.localizedDescription)"
+        }
         reloadRecent()
     }
 

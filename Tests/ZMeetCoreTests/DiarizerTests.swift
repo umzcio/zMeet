@@ -24,3 +24,14 @@ import Testing
     #expect(out == "**You:** Real.")
     #expect(Diarizer().merge(you: [], others: []) == "")
 }
+
+@Test func diarizerBreaksEqualStartTiesDeterministicallyYouFirst() {
+    let you = [TranscriptSegment(text: "You side.", start: 0.0)]
+    let others = [TranscriptSegment(text: "Others side.", start: 0.0)]
+    // Same inputs, many runs: the merge must consistently put You before
+    // Others when both start at the same offset, regardless of sort stability.
+    for _ in 0..<20 {
+        let out = Diarizer().merge(you: you, others: others)
+        #expect(out == "**You:** You side.\n\n**Others:** Others side.")
+    }
+}

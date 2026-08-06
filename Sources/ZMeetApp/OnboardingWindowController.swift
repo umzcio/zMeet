@@ -33,7 +33,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
             self?.close()
         })
 
-        let window = NSWindow(
+        let window = EscClosableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 460, height: 540),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,

@@ -34,8 +34,13 @@ struct SpeechTranscription: Sendable {
         }
         defer { collector.cancel() }
 
-        _ = try await analyzer.analyzeSequence(from: audioFile)
-        try await analyzer.finalizeAndFinishThroughEndOfInput()
+        do {
+            _ = try await analyzer.analyzeSequence(from: audioFile)
+            try await analyzer.finalizeAndFinishThroughEndOfInput()
+        } catch {
+            await analyzer.cancelAndFinishNow()
+            throw error
+        }
 
         let attributed = try await collector.value
         let plain = String(attributed.characters).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -62,8 +67,13 @@ struct SpeechTranscription: Sendable {
             return segments
         }
         defer { collector.cancel() }
-        _ = try await analyzer.analyzeSequence(from: audioFile)
-        try await analyzer.finalizeAndFinishThroughEndOfInput()
+        do {
+            _ = try await analyzer.analyzeSequence(from: audioFile)
+            try await analyzer.finalizeAndFinishThroughEndOfInput()
+        } catch {
+            await analyzer.cancelAndFinishNow()
+            throw error
+        }
         return try await collector.value
     }
 

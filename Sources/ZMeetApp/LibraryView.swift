@@ -219,7 +219,7 @@ struct LibraryView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 1, pinnedViews: []) {
                 if meetings.isEmpty {
-                    Text(query.isEmpty ? "No meetings yet" : "No matches")
+                    Text("No meetings yet")
                         .font(.system(size: 13)).foregroundStyle(ZMeetPalette.muted)
                         .padding(.horizontal, 18).padding(.top, 16)
                 } else {
@@ -253,6 +253,7 @@ struct LibraryView: View {
                         .font(.system(size: 13.5, weight: .semibold))
                         .foregroundStyle(active ? ZMeetPalette.mint : ZMeetPalette.light)
                         .lineLimit(1)
+                        .help(session.title)
                     Text(railSubtitle(session))
                         .font(.system(size: 11.5))
                         .foregroundStyle(ZMeetPalette.muted)
@@ -415,6 +416,7 @@ struct LibraryView: View {
                     .font(.system(size: 21, weight: .bold))
                     .foregroundStyle(ZMeetPalette.light)
                     .lineLimit(1)
+                    .help(session.title)
                 Text(metaLine(session))
                     .font(.system(size: 13))
                     .foregroundStyle(ZMeetPalette.muted)
@@ -834,6 +836,7 @@ private struct PlayerBar: View {
                     .foregroundStyle(Color(red: 0.024, green: 0.157, blue: 0.102))
                     .frame(width: 44, height: 44)
                     .background(ZMeetPalette.mint, in: Circle())
+                    .opacity(audio.duration <= 0 ? 0.4 : 1)
             }
             .buttonStyle(.plain)
             .disabled(audio.duration <= 0)

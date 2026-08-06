@@ -17,9 +17,14 @@ public struct Diarizer: Sendable {
 
     public func merge(you: [TranscriptSegment], others: [TranscriptSegment]) -> String {
         struct Tagged { let speaker: String; let start: TimeInterval; let text: String }
+        // Swift's sort isn't guaranteed stable, so tie-break on a stable index
+        // for equal starts. You-segments enumerate first, so equal starts keep
+        // You before Others deterministically.
         let tagged = (you.map { Tagged(speaker: "You", start: $0.start, text: $0.text) }
                       + others.map { Tagged(speaker: "Others", start: $0.start, text: $0.text) })
-            .sorted { $0.start < $1.start }
+            .enumerated()
+            .sorted { ($0.element.start, $0.offset) < ($1.element.start, $1.offset) }
+            .map(\.element)
 
         var blocks: [(speaker: String, text: String)] = []
         for t in tagged {
