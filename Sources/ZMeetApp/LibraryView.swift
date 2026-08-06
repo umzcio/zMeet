@@ -844,6 +844,8 @@ struct LibraryView: View {
 /// invalidates this small subtree instead of the whole library window.
 private struct PlayerBar: View {
     @ObservedObject var audio: AudioPlayerModel
+    @State private var scrubFraction: Double? = nil
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 18) {
@@ -858,7 +860,7 @@ private struct PlayerBar: View {
             .buttonStyle(.plain)
             .disabled(audio.duration <= 0)
 
-            Text(timeString(audio.currentTime))
+            Text(timeString(scrubFraction.map { $0 * audio.duration } ?? audio.currentTime))
                 .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(ZMeetPalette.muted)
 
             scrubber
@@ -873,21 +875,49 @@ private struct PlayerBar: View {
 
     private var scrubber: some View {
         GeometryReader { geo in
-            let fraction = audio.duration > 0 ? audio.currentTime / audio.duration : 0
+            // While dragging, the fill follows the pointer (scrubFraction);
+            // otherwise it follows playback.
+            let playFraction = audio.duration > 0 ? audio.currentTime / audio.duration : 0
+            let fraction = scrubFraction ?? playFraction
             ZStack(alignment: .leading) {
-                Capsule().fill(ZMeetPalette.card)
-                Capsule().fill(ZMeetPalette.mint).frame(width: max(0, geo.size.width * fraction))
+                Capsule().fill(ZMeetPalette.card).frame(height: 5)
+                Capsule().fill(ZMeetPalette.mint)
+                    .frame(width: max(0, geo.size.width * fraction), height: 5)
+                Circle().fill(ZMeetPalette.mint)
+                    .frame(width: 11, height: 11)
+                    .offset(x: max(0, geo.size.width * fraction - 5.5))
+                    .opacity(hovering || scrubFraction != nil ? 1 : 0)
             }
-            .contentShape(Rectangle())
+            .frame(maxHeight: .infinity)          // center the 5pt track in the 24pt hit area
+            .contentShape(Rectangle())            // the WHOLE 24pt-tall region is grabbable
+            .onHover { hovering = $0 }
             .gesture(
-                DragGesture(minimumDistance: 0).onEnded { value in
-                    let f = min(max(0, value.location.x / geo.size.width), 1)
-                    audio.seek(toFraction: f)
-                }
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        scrubFraction = min(max(0, value.location.x / geo.size.width), 1)
+                    }
+                    .onEnded { value in
+                        let f = min(max(0, value.location.x / geo.size.width), 1)
+                        audio.seek(toFraction: f)
+                        scrubFraction = nil
+                    }
             )
         }
-        .frame(height: 5)
+        .frame(height: 24)
         .frame(maxWidth: .infinity)
+        // Reduce-motion note: this is a linear tween of the 4Hz progress
+        // ticks into continuous STATUS motion, not decorative movement —
+        // deliberately not gated behind Reduce Motion.
+        .animation(scrubFraction == nil ? .linear(duration: 0.25) : nil, value: audio.currentTime)
+        .accessibilityElement()
+        .accessibilityLabel("Playback position")
+        .accessibilityValue("\(timeString(audio.currentTime)) of \(timeString(audio.duration))")
+        .accessibilityAdjustableAction { direction in
+            let step = 5.0
+            let t = direction == .increment ? audio.currentTime + step : audio.currentTime - step
+            guard audio.duration > 0 else { return }
+            audio.seek(toFraction: min(max(0, t / audio.duration), 1))
+        }
     }
 
     private func timeString(_ t: Double) -> String {
@@ -1098,7 +1128,10 @@ final class AudioPlayerModel: NSObject, ObservableObject {
     func seek(toFraction f: Double) {
         guard let player, duration > 0 else { return }
         player.currentTime = f * duration
-        currentTime = player.currentTime
+        // The user just pointed somewhere — the fill is already there from
+        // the drag; a tween from the old position would double-move.
+        var t = Transaction(); t.disablesAnimations = true
+        withTransaction(t) { currentTime = player.currentTime }
     }
 
     func stop() {
@@ -1131,9 +1164,11 @@ final class AudioPlayerModel: NSObject, ObservableObject {
             currentTime = player.currentTime
         }
         if isPlaying && !player.isPlaying {
-            // Reached the end.
+            // Reached the end. Snap the fill home rather than tweening
+            // backwards across the whole bar.
             isPlaying = false
-            currentTime = 0
+            var t = Transaction(); t.disablesAnimations = true
+            withTransaction(t) { currentTime = 0 }
             player.currentTime = 0
             stopTimer()
         }
