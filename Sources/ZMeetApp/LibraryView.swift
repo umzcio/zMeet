@@ -13,7 +13,7 @@ struct LibraryView: View {
 
     @State private var query = ""
     @State private var tab: Tab = .notes
-    @State private var noteBlocks: [NoteBlock] = []
+    @State private var noteBlocks: [NoteElement] = []
     @State private var transcriptText: String?
     // Distinguishes "not loaded yet" (nil text, spinner) from "loaded and
     // genuinely empty" (nil text, "no transcript" message) — both leave
@@ -739,7 +739,7 @@ struct LibraryView: View {
         guard let session = selected else {
             noteBlocks = []; return
         }
-        noteBlocks = NoteBlock.parse(state.readNote(session) ?? "")
+        noteBlocks = NoteDocument.parse(state.readNote(session) ?? "")
         let url = URL(fileURLWithPath: session.audioPath)
         if FileManager.default.fileExists(atPath: url.path) {
             audio.load(url)
@@ -975,45 +975,11 @@ enum MeetingGrouping {
 
 // MARK: - Lightweight Markdown rendering for notes.md
 
-enum NoteBlock {
-    case h2(String)
-    case h3(String)
-    case bullet(String)
-    case paragraph(String)
-
-    /// Parses a notes.md document into renderable blocks. Strips YAML frontmatter,
-    /// the leading `# Title` (shown in the header), and the trailing transcript
-    /// link section (the Transcript tab covers it).
-    static func parse(_ raw: String) -> [NoteBlock] {
-        var lines = raw.components(separatedBy: "\n")
-
-        // Drop YAML frontmatter.
-        if lines.first?.trimmingCharacters(in: .whitespaces) == "---" {
-            if let end = lines.dropFirst().firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "---" }) {
-                lines = Array(lines[(end + 1)...])
-            }
-        }
-
-        var blocks: [NoteBlock] = []
-        for line in lines {
-            let t = line.trimmingCharacters(in: .whitespaces)
-            if t.isEmpty { continue }
-            if t.hasPrefix("# ") { continue } // title shown in header
-            if t.lowercased() == "## transcript" { break } // tab covers the transcript
-            if t.hasPrefix("### ") {
-                blocks.append(.h3(String(t.dropFirst(4))))
-            } else if t.hasPrefix("## ") {
-                blocks.append(.h2(String(t.dropFirst(3))))
-            } else if t.hasPrefix("- ") || t.hasPrefix("* ") {
-                let item = String(t.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-                if !item.isEmpty { blocks.append(.bullet(item)) }
-            } else {
-                blocks.append(.paragraph(t))
-            }
-        }
-        return blocks
-    }
-
+/// SwiftUI rendering for `NoteElement` (parsing itself lives in
+/// ZMeetCore/NoteDocument.swift — see NoteDocument.parse). Kept as an extension
+/// on the Core type rather than a wrapping enum so the data/view split stays
+/// mechanical: this file owns presentation only.
+extension NoteElement {
     @ViewBuilder
     var view: some View {
         switch self {
@@ -1031,13 +997,13 @@ enum NoteBlock {
         case .bullet(let s):
             HStack(alignment: .top, spacing: 10) {
                 Circle().fill(ZMeetPalette.muted).frame(width: 5, height: 5).padding(.top, 9)
-                NoteBlock.inline(s)
+                NoteElement.inline(s)
                     .font(.system(size: 15)).foregroundStyle(ZMeetPalette.body)
                     .lineSpacing(5)
             }
             .padding(.vertical, 3)
         case .paragraph(let s):
-            NoteBlock.inline(s)
+            NoteElement.inline(s)
                 .font(.system(size: 15)).foregroundStyle(ZMeetPalette.body)
                 .lineSpacing(5)
                 .padding(.vertical, 5)
