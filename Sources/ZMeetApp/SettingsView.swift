@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var keyTestResult: KeyTestResult?
     @State private var testingKey = false
     @State private var obsidianVaults: [ObsidianVaults.Vault] = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Outcome of the "Test key" check. A typed result so the success styling
     /// isn't driven by comparing display strings.
@@ -410,8 +411,8 @@ struct SettingsView: View {
                         if let progress = state.obsidianBackfill {
                             Text("Publishing \(progress.done) of \(progress.total)…")
                                 .font(.system(size: 13)).foregroundStyle(.secondary)
-                                .contentTransition(.numericText())
-                                .animation(.easeOut(duration: 0.2), value: progress.done)
+                                .contentTransition(reduceMotion ? .identity : .numericText())
+                                .animation(ZMeetMotion.exit, value: progress.done)
                         } else {
                             VStack(alignment: .trailing, spacing: 4) {
                                 Button("Publish all to vault") { state.publishAllToObsidian() }

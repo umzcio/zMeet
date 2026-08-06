@@ -31,8 +31,8 @@ struct MenuContentView: View {
             primarySection
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .animation(.easeOut(duration: 0.15), value: state.phase)
-                .animation(.easeOut(duration: 0.15), value: state.isProcessing)
+                .animation(ZMeetMotion.exit, value: state.phase)
+                .animation(ZMeetMotion.exit, value: state.isProcessing)
 
             if let error = state.lastError {
                 Text(error)

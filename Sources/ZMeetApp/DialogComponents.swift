@@ -7,8 +7,8 @@ struct DialogScaffold<Content: View>: View {
     @ViewBuilder var content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    static var appear: Animation { .easeOut(duration: 0.18) }
-    static var disappear: Animation { .easeOut(duration: 0.15) }
+    static var appear: Animation { ZMeetMotion.enter }
+    static var disappear: Animation { ZMeetMotion.exit }
 
     var body: some View {
         ZStack {
@@ -100,6 +100,6 @@ struct PressableStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1.0)
             .opacity(configuration.isPressed ? 0.9 : 1.0)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+            .animation(ZMeetMotion.press, value: configuration.isPressed)
     }
 }
