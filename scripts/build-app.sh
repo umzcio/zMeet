@@ -14,8 +14,8 @@ SCRATCH="${ZMEET_SCRATCH:-$ROOT/.build}"
 
 # App version (also stamped into the appcast on release).
 # Single source of truth: release.sh asserts its version argument matches this.
-VERSION="${ZMEET_VERSION:-1.15.2}"
-BUILD="${ZMEET_BUILD:-23}"
+VERSION="${ZMEET_VERSION:-1.15.3}"
+BUILD="${ZMEET_BUILD:-24}"
 
 # Sparkle auto-update: appcast feed URL + EdDSA public key (private key is in the
 # login keychain via generate_keys).
