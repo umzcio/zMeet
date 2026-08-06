@@ -276,7 +276,7 @@ public final class SessionManager {
         // predate `outputRoot`, preserving prior behavior for them.
         let root = URL(fileURLWithPath: session.outputRoot ?? outputURL.path).standardizedFileURL.path
         if folder.standardizedFileURL.path.hasPrefix(root + "/") {
-            try? fileManager.removeItem(at: folder)
+            trashOrRemove(at: folder)
         }
         try? fileManager.removeItem(at: sessionsURL.appendingPathComponent("\(id).json"))
         sessionCache?.removeValue(forKey: id)
@@ -348,7 +348,21 @@ public final class SessionManager {
         // so deleting/purging audio reclaims them too, not just the mixed recording.
         let folder = url.deletingLastPathComponent()
         for track in ["mic.m4a", "system.m4a"] {
-            try? fileManager.removeItem(at: folder.appendingPathComponent(track))
+            trashOrRemove(at: folder.appendingPathComponent(track))
+        }
+        return trashOrRemove(at: url)
+    }
+
+    /// Moves a user document (a recording or a meeting folder) to the Trash,
+    /// falling back to permanent removal only when Trash isn't available (e.g.
+    /// a non-Trash volume). Returns whether the item was removed by either
+    /// path. Session JSON, the search index row, and the recorder log are
+    /// records rather than user documents and are removed permanently
+    /// elsewhere — this helper is only for what the user actually created.
+    @discardableResult
+    private func trashOrRemove(at url: URL) -> Bool {
+        if (try? fileManager.trashItem(at: url, resultingItemURL: nil)) != nil {
+            return true
         }
         do { try fileManager.removeItem(at: url); return true } catch { return false }
     }

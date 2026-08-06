@@ -111,8 +111,10 @@ final class NotesReadyPopupController {
             }
         )
 
+        let host = NSHostingView(rootView: view)
+        let size = host.fittingSize
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 92),
+            contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.nonactivatingPanel, .fullSizeContentView, .borderless],
             backing: .buffered,
             defer: false
@@ -124,7 +126,7 @@ final class NotesReadyPopupController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: view)
+        panel.contentView = host
 
         if let screen = NSScreen.main {
             let v = screen.visibleFrame

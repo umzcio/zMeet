@@ -25,6 +25,7 @@ struct LibraryView: View {
     @State private var searchHits: [SearchHit] = []
     @State private var searchTask: Task<Void, Never>?
     @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     enum Tab { case notes, transcript }
 
@@ -39,24 +40,29 @@ struct LibraryView: View {
                 mainColumn
             }
 
-            if state.libraryDialog == .rename, let session = selected {
-                renameDialog(session)
+            // Scoped to just the dialog overlay so its animated transaction
+            // doesn't also implicitly animate concurrent geometry changes
+            // elsewhere in the tree (e.g. the rail reflowing on delete).
+            Group {
+                if state.libraryDialog == .rename, let session = selected {
+                    renameDialog(session)
+                }
+                if state.libraryDialog == .delete, let session = selected {
+                    deleteDialog(session)
+                }
+                if state.libraryDialog == .deleteAudio, let session = selected {
+                    deleteAudioDialog(session)
+                }
             }
-            if state.libraryDialog == .delete, let session = selected {
-                deleteDialog(session)
-            }
-            if state.libraryDialog == .deleteAudio, let session = selected {
-                deleteAudioDialog(session)
-            }
+            .animation(state.libraryDialog == nil ? DialogScaffold<EmptyView>.disappear : DialogScaffold<EmptyView>.appear,
+                       value: state.libraryDialog)
         }
-        .animation(state.libraryDialog == nil ? DialogScaffold<EmptyView>.disappear : DialogScaffold<EmptyView>.appear,
-                   value: state.libraryDialog)
         // Read rail-row anchors from the whole tree (the rows live in railColumn)
         // and float the right-click menu under the clicked row.
         .overlayPreferenceValue(RailRowAnchorKey.self) { anchors in
             contextMenu(anchors: anchors)
         }
-        .frame(width: 1000, height: 680)
+        .frame(minWidth: 900, minHeight: 600)
         .background(ZMeetPalette.bg)
         .preferredColorScheme(.dark)
         .tint(ZMeetPalette.mint)
@@ -120,7 +126,7 @@ struct LibraryView: View {
                 Text("Delete this meeting?")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(ZMeetPalette.light)
-                Text("This removes the recording, transcript, and notes for “\(session.title)”. This can't be undone.")
+                Text("This moves the recording, transcript, and notes for “\(session.title)” to the Trash.")
                     .font(.system(size: 13))
                     .foregroundStyle(ZMeetPalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -150,7 +156,7 @@ struct LibraryView: View {
                 Text("Delete audio for this meeting?")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(ZMeetPalette.light)
-                Text("Removes the recording for \u{201C}\(session.title)\u{201D} to save space. The transcript and notes are kept. This can't be undone.")
+                Text("Moves the recording for \u{201C}\(session.title)\u{201D} to the Trash to save space. The transcript and notes are kept.")
                     .font(.system(size: 13))
                     .foregroundStyle(ZMeetPalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -373,31 +379,51 @@ struct LibraryView: View {
         state.libraryContextSession = nil
     }
 
-    /// The rail right-click menu: the same actions dropdown, positioned at the
-    /// right-clicked row via its anchor, with a tap-catcher to dismiss.
+    /// Which actions dropdown (if any) is showing: the header ⋯ menu (anchored
+    /// to the actions button via a sentinel key) or the rail row right-click
+    /// menu (anchored to the clicked row). At most one is active at a time —
+    /// `showContextMenu` and the ⋯ toggle both clear the other's state.
+    private var activeDropdown: (session: MeetingSession, anchorKey: String, dismiss: () -> Void)? {
+        if state.showLibraryActions, let session = selected {
+            return (session, "header-actions", { state.showLibraryActions = false })
+        }
+        if let session = state.libraryContextSession {
+            return (session, session.id, { state.libraryContextSession = nil })
+        }
+        return nil
+    }
+
+    /// The actions dropdown, anchored under whichever trigger opened it, with a
+    /// tap-catcher to dismiss. Sized from the enclosing window's own proxy
+    /// (never hard-coded) so it stays correct as the window resizes.
     @ViewBuilder
     private func contextMenu(anchors: [String: Anchor<CGRect>]) -> some View {
-        if let session = state.libraryContextSession, let anchor = anchors[session.id] {
+        if let active = activeDropdown, let anchor = anchors[active.anchorKey] {
             GeometryReader { proxy in
                 let rect = proxy[anchor]
                 // Estimate the menu height to decide whether it fits below the row;
                 // if not, open it upward so it never clips at the window bottom.
-                let hasAudio = session.status == .processed
-                    && FileManager.default.fileExists(atPath: session.audioPath)
+                let hasAudio = active.session.status == .processed
+                    && FileManager.default.fileExists(atPath: active.session.audioPath)
                 let rowCount = 4 + (hasAudio ? 1 : 0)
                 let menuHeight = CGFloat(rowCount) * 34 + 19
                 let belowY = rect.maxY + 2
-                let y = (belowY + menuHeight > 680 - 8)
+                let y = (belowY + menuHeight > proxy.size.height - 8)
                     ? max(8, rect.minY - menuHeight - 2)
                     : belowY
                 ZStack(alignment: .topLeading) {
                     Color.black.opacity(0.001)
                         .contentShape(Rectangle())
-                        .onTapGesture { state.libraryContextSession = nil }
-                    actionsDropdown(session)
-                        .offset(x: min(rect.minX, 1000 - 196 - 8), y: y)
+                        .onTapGesture { active.dismiss() }
+                    actionsDropdown(active.session)
+                        .offset(x: min(rect.minX, proxy.size.width - 196 - 8), y: y)
+                        .transition(reduceMotion
+                            ? AnyTransition.opacity
+                            : .scale(scale: 0.97, anchor: .top).combined(with: .opacity))
                 }
             }
+            .animation(ZMeetMotion.enter, value: state.showLibraryActions)
+            .animation(ZMeetMotion.enter, value: state.libraryContextSession)
         }
     }
 
@@ -469,25 +495,14 @@ struct LibraryView: View {
         if isSearching {
             searchResultsPanel
         } else if let session = selected {
-            ZStack(alignment: .topTrailing) {
-                VStack(spacing: 0) {
-                    meetingHeader(session)
-                    tabBar
-                    reader(session)
-                    if FileManager.default.fileExists(atPath: session.audioPath) {
-                        PlayerBar(audio: audio)
-                    } else if session.status == .processed {
-                        audioRemovedCaption
-                    }
-                }
-
-                if state.showLibraryActions {
-                    // Tap-catcher to dismiss the in-app dropdown.
-                    Color.black.opacity(0.001)
-                        .onTapGesture { state.showLibraryActions = false }
-                    actionsDropdown(session)
-                        .padding(.top, 60)
-                        .padding(.trailing, 32)
+            VStack(spacing: 0) {
+                meetingHeader(session)
+                tabBar
+                reader(session)
+                if FileManager.default.fileExists(atPath: session.audioPath) {
+                    PlayerBar(audio: audio)
+                } else if session.status == .processed {
+                    audioRemovedCaption
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -536,6 +551,10 @@ struct LibraryView: View {
             actionButton("ellipsis", "Actions") {
                 state.showLibraryActions.toggle()
             }
+            // Anchors the ⋯ dropdown the same way rail rows anchor their
+            // right-click menu — a sentinel key rather than a session id,
+            // since this button isn't tied to any one row.
+            .anchorPreference(key: RailRowAnchorKey.self, value: .bounds) { ["header-actions": $0] }
         }
     }
 

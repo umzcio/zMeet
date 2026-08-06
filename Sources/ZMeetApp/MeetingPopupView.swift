@@ -17,6 +17,7 @@ struct MeetingPopupView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(appName) meeting detected")
                     .font(.headline)
+                    .lineLimit(1)
                 Text("Record notes with zMeet?")
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -19,7 +19,7 @@ final class LibraryWindowController: NSObject, NSWindowDelegate {
         let view = LibraryView(state: state)
         let window = EscClosableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 680),
-            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -27,6 +27,7 @@ final class LibraryWindowController: NSObject, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
+        window.minSize = NSSize(width: 900, height: 600)
         window.center()
         // Esc dismisses an open in-app dialog or menu first; only closes the
         // window when none is showing.

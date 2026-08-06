@@ -79,9 +79,13 @@ struct SettingsView: View {
                                 .frame(width: menuWidth)
                                 .offset(x: min(max(8, rect.maxX - menuWidth), 720 - menuWidth - 8),
                                         y: rect.maxY + 4)
+                                .transition(reduceMotion
+                                    ? AnyTransition.opacity
+                                    : .scale(scale: 0.97, anchor: .top).combined(with: .opacity))
                         }
                     }
                 }
+                .animation(ZMeetMotion.enter, value: state.settingsMenu)
             }
 
             if state.settingsConfirmFreeUp {
@@ -90,7 +94,7 @@ struct SettingsView: View {
                         Text("Free up space?")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.primary)
-                        Text("This deletes the recording for every processed meeting, keeping all transcripts and notes. This can't be undone.")
+                        Text("This moves the recording for every processed meeting to the Trash, keeping all transcripts and notes.")
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

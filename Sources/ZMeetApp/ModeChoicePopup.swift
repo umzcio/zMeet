@@ -4,12 +4,19 @@ import ZMeetCore
 
 /// Asked after a manual "Start Recording": is this a remote/hybrid meeting or an
 /// in-person one? (Detected Zoom/Teams meetings skip this — they're remote.)
+// A dimming scrim behind the panel is deliberately NOT added: this is a
+// nonactivating NSPanel, and a scrim would require a second full-screen
+// panel behind it. The content-scale appear below is the materialization
+// cue instead.
 struct ModeChoiceView: View {
     let onChoose: (RecordingMode) -> Void
     let onCancel: () -> Void
 
     static let bg = Color(red: 0.051, green: 0.067, blue: 0.059)
     static let card = Color(red: 0.118, green: 0.141, blue: 0.125)
+
+    @State private var appeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 16) {
@@ -51,6 +58,10 @@ struct ModeChoiceView: View {
         .frame(width: 680)
         .background(Self.bg)
         .preferredColorScheme(.dark)
+        .scaleEffect(appeared ? 1 : 0.97)
+        .onAppear {
+            withAnimation(reduceMotion ? nil : ZMeetMotion.enter) { appeared = true }
+        }
     }
 
     private func choiceCard(mode: RecordingMode, icon: String, title: String, detail: String) -> some View {
@@ -70,7 +81,7 @@ struct ModeChoiceView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 150)
+            .frame(minHeight: 150)
             .padding(.horizontal, 12)
             .background(Self.card, in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.08), lineWidth: 1))
