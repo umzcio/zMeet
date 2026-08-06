@@ -60,8 +60,11 @@ final class MeetingDetector {
         // Cheap tier: skip the window + Core Audio IPC entirely when no meeting
         // app is even running and nothing is in flight. Never skip mid-meeting:
         // the audio reducer's .ended transition (auto-stop) needs its ticks.
-        let inFlight = current != nil || audioActivity.isInMeeting
-        if !inFlight && !ProcessAudioProbe.meetingAppProcessRunning() {
+        let shouldScan = DetectorGate.shouldFullScan(
+            hasDetectedWindow: current != nil,
+            isInMeeting: audioActivity.isInMeeting,
+            meetingAppRunning: ProcessAudioProbe.meetingAppProcessRunning())
+        if !shouldScan {
             _ = audioActivity.update(active: false)
             return
         }
@@ -106,21 +109,8 @@ final class MeetingDetector {
             let owner = (window[kCGWindowOwnerName as String] as? String) ?? ""
             let title = (window[kCGWindowName as String] as? String) ?? ""
 
-            // Zoom: meeting window is titled "Zoom Meeting" / "Zoom Webinar";
-            // the idle app window is "Zoom" / "Zoom Workplace".
-            if owner == "zoom.us" {
-                if title.localizedCaseInsensitiveContains("Meeting")
-                    || title.localizedCaseInsensitiveContains("Webinar") {
-                    return DetectedMeeting(app: "Zoom", title: title.isEmpty ? "Zoom Meeting" : title)
-                }
-            }
-
-            // Teams: a call/meeting opens a window whose title mentions Meeting/Call.
-            if owner.localizedCaseInsensitiveContains("Microsoft Teams") || owner == "MSTeams" {
-                if title.localizedCaseInsensitiveContains("Meeting")
-                    || title.localizedCaseInsensitiveContains("Call") {
-                    return DetectedMeeting(app: "Microsoft Teams", title: title.isEmpty ? "Teams Meeting" : title)
-                }
+            if let m = MeetingAppCatalog.matchMeetingWindow(owner: owner, title: title) {
+                return DetectedMeeting(app: m.app, title: m.title)
             }
         }
         return nil

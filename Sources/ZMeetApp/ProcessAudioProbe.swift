@@ -1,6 +1,7 @@
 import AppKit
 import CoreAudio
 import Foundation
+import ZMeetCore
 
 /// Detects whether a known meeting app (Teams / Zoom) is currently moving audio, via
 /// macOS 14.4+ Core Audio per-process state. This is the reliable "you're in a call"
@@ -8,20 +9,13 @@ import Foundation
 /// unaffected by mute. Reading these properties needs no extra permission. zMeet's own
 /// capture doesn't pollute it: we query the *meeting app's* process, not the device.
 struct ProcessAudioProbe {
-    /// bundle-ID prefix → human app name. Teams audio runs in `.helper` processes, so
-    /// prefix matching catches them; Zoom is `us.zoom.xos` and helpers.
-    static let meetingApps: [(prefix: String, name: String)] = [
-        ("com.microsoft.teams", "Microsoft Teams"),
-        ("us.zoom", "Zoom"),
-    ]
-
     /// Cheap gate: is any known meeting app running as a PROCESS (no audio/window
     /// IPC)? NSWorkspace's runningApplications list is cached by AppKit, so this is
     /// far cheaper than enumerating Core Audio process objects or window-server state.
     static func meetingAppProcessRunning() -> Bool {
         NSWorkspace.shared.runningApplications.contains { app in
             guard let id = app.bundleIdentifier else { return false }
-            return meetingApps.contains { id.hasPrefix($0.prefix) }
+            return MeetingAppCatalog.appMatching(bundleID: id) != nil
         }
     }
 
@@ -30,7 +24,7 @@ struct ProcessAudioProbe {
     func activeMeetingApp() -> String? {
         for object in Self.processObjectList() {
             guard let bundle = Self.stringProperty(object, kAudioProcessPropertyBundleID),
-                  let app = Self.meetingApps.first(where: { bundle.hasPrefix($0.prefix) })?.name
+                  let app = MeetingAppCatalog.appMatching(bundleID: bundle)?.name
             else { continue }
             let input = Self.boolProperty(object, kAudioProcessPropertyIsRunningInput) ?? false
             let output = Self.boolProperty(object, kAudioProcessPropertyIsRunningOutput) ?? false
