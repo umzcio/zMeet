@@ -14,6 +14,7 @@ struct OutcomePopupView: View {
     let title: String
     let onAction: () -> Void
     let onDismiss: () -> Void
+    let onHover: (Bool) -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -50,6 +51,7 @@ struct OutcomePopupView: View {
             .padding(7)
             .help("Dismiss")
         }
+        .onHover(perform: onHover)
     }
 }
 
@@ -64,9 +66,12 @@ private struct OutcomePopupIcon: View {
             case .success:
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(ZMeetPalette.mint)
-                    .scaleEffect(shown || reduceMotion ? 1.0 : 0.5)
+                    .scaleEffect(shown || reduceMotion ? 1.0 : 0.9)
                     .onAppear {
-                        withAnimation(.spring(duration: 0.45, bounce: 0.35).delay(0.1)) {
+                        // Starts as the panel's own 0.22s entrance settles; gate the
+                        // ANIMATION (not just the value) so reduce-motion never
+                        // regains a spring if more properties join `shown`.
+                        withAnimation(reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.15).delay(0.2)) {
                             shown = true
                         }
                     }
@@ -87,13 +92,22 @@ final class NotesReadyPopupController {
     private var autoDismiss: Timer?
 
     func show(kind: OutcomePopupView.Kind = .success, title: String, onAction: @escaping () -> Void) {
-        hide()
+        hide(animated: false)
 
         let view = OutcomePopupView(
             kind: kind,
             title: title,
             onAction: { [weak self] in onAction(); self?.hide() },
-            onDismiss: { [weak self] in self?.hide() }
+            onDismiss: { [weak self] in self?.hide() },
+            onHover: { [weak self] hovering in
+                guard let self, kind == .success else { return }
+                if hovering {
+                    self.autoDismiss?.invalidate()
+                    self.autoDismiss = nil
+                } else {
+                    self.scheduleAutoDismiss()
+                }
+            }
         )
 
         let panel = NSPanel(
@@ -121,16 +135,29 @@ final class NotesReadyPopupController {
         }
         self.panel = panel
 
+        // A failure isn't acknowledged just by fading out — it stays until the
+        // user dismisses it or acts on it. Only success auto-dismisses.
+        if kind == .success {
+            scheduleAutoDismiss()
+        }
+    }
+
+    private func scheduleAutoDismiss() {
+        autoDismiss?.invalidate()
         autoDismiss = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.hide() }
         }
     }
 
-    func hide() {
+    func hide(animated: Bool = true) {
         autoDismiss?.invalidate()
         autoDismiss = nil
         guard let panel = self.panel else { return }
         self.panel = nil   // re-entrant show() safe
-        PanelAnimator.dismiss(panel) { }
+        if animated {
+            PanelAnimator.dismiss(panel) { }
+        } else {
+            PanelAnimator.dismissImmediately(panel)
+        }
     }
 }

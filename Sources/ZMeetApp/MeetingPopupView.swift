@@ -5,6 +5,7 @@ struct MeetingPopupView: View {
     let appName: String
     let onStart: () -> Void
     let onDismiss: () -> Void
+    let onHover: (Bool) -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -43,5 +44,6 @@ struct MeetingPopupView: View {
             .padding(7)
             .help("Dismiss")
         }
+        .onHover(perform: onHover)
     }
 }

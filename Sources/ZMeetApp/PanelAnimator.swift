@@ -26,6 +26,12 @@ enum PanelAnimator {
         }
     }
 
+    /// Order the panel out with no motion — for replacing a still-visible panel
+    /// with a new one (an animated fade under a new panel double-exposes).
+    static func dismissImmediately(_ panel: NSPanel) {
+        panel.orderOut(nil)
+    }
+
     /// Fade the panel out (drifting up 6pt for banners), then order it out
     /// and call `completion` for the caller to release its reference.
     static func dismiss(_ panel: NSPanel, slide: CGFloat = 6, duration: TimeInterval = 0.16, completion: @escaping @MainActor () -> Void) {

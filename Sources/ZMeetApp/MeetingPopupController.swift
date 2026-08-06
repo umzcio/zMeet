@@ -12,12 +12,21 @@ final class MeetingPopupController {
     var isVisible: Bool { panel != nil }
 
     func show(meeting: DetectedMeeting, onStart: @escaping () -> Void, onDismiss: @escaping () -> Void) {
-        hide()
+        hide(animated: false)
 
         let view = MeetingPopupView(
             appName: meeting.app,
             onStart: { [weak self] in onStart(); self?.hide() },
-            onDismiss: { [weak self] in onDismiss(); self?.hide() }
+            onDismiss: { [weak self] in onDismiss(); self?.hide() },
+            onHover: { [weak self] hovering in
+                guard let self else { return }
+                if hovering {
+                    self.autoDismiss?.invalidate()
+                    self.autoDismiss = nil
+                } else {
+                    self.scheduleAutoDismiss()
+                }
+            }
         )
 
         let panel = NSPanel(
@@ -43,17 +52,26 @@ final class MeetingPopupController {
         self.panel = panel
 
         // Auto-dismiss after 15s; the meeting can still be recorded from the menu.
+        scheduleAutoDismiss()
+    }
+
+    private func scheduleAutoDismiss() {
+        autoDismiss?.invalidate()
         autoDismiss = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.hide() }
         }
     }
 
-    func hide() {
+    func hide(animated: Bool = true) {
         autoDismiss?.invalidate()
         autoDismiss = nil
         guard let panel = self.panel else { return }
         self.panel = nil   // isVisible false immediately; re-entrant show() safe
-        PanelAnimator.dismiss(panel) { }
+        if animated {
+            PanelAnimator.dismiss(panel) { }
+        } else {
+            PanelAnimator.dismissImmediately(panel)
+        }
     }
 
     private func topRightOrigin(for panel: NSPanel) -> NSPoint? {
