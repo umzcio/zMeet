@@ -18,6 +18,12 @@ struct DetectedMeeting: Equatable {
 @MainActor
 final class MeetingDetector {
     private var timer: Timer?
+    /// True between start() and stop(). Guards scanAndReschedule() against a
+    /// straggler Task that was already queued on the main queue when stop() ran
+    /// (the timer fired, invalidate() happened before the Task executed) — without
+    /// this, that straggler would schedule a fresh timer and resurrect polling
+    /// permanently even though detection was disabled.
+    private var isRunning = false
     private(set) var current: DetectedMeeting?
 
     /// Consecutive scans with no meeting window before we drop the detected meeting.
@@ -45,11 +51,13 @@ final class MeetingDetector {
     var onAudioMeetingEnded: (() -> Void)?
 
     func start() {
-        guard timer == nil else { return }
+        guard !isRunning else { return }
+        isRunning = true
         scanAndReschedule()
     }
 
     func stop() {
+        isRunning = false
         timer?.invalidate()
         timer = nil
         missCount = 0
@@ -63,7 +71,12 @@ final class MeetingDetector {
     /// restores 4 s immediately on any detected window or in-meeting audio. The
     /// NSWorkspace "is a meeting app running" check is computed once here and shared
     /// between the scan gate and the cadence decision — don't re-query it in `scan()`.
+    ///
+    /// Guarded by `isRunning`: the timer closure hops to the main actor via `Task`, so
+    /// if `stop()` runs after the timer fires but before that Task executes, this call
+    /// must no-op instead of scheduling a fresh timer and resurrecting polling.
     private func scanAndReschedule() {
+        guard isRunning else { return }
         let running = ProcessAudioProbe.meetingAppProcessRunning()
         scan(meetingAppRunning: running)
         let active = current != nil || audioActivity.isInMeeting
