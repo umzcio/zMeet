@@ -12,7 +12,7 @@ import Testing
 
     let body = try #require(req.httpBody)
     let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-    #expect(json["model"] as? String == "claude-sonnet-4-6")
+    #expect(json["model"] as? String == "claude-sonnet-5")
     let messages = try #require(json["messages"] as? [[String: Any]])
     #expect(messages.first?["content"] as? String == "hello prompt")
 }

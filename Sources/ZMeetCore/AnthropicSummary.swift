@@ -15,7 +15,7 @@ public enum CloudSummaryError: Error, Equatable {
 public enum AnthropicSummary {
     public static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
     public static let modelsEndpoint = URL(string: "https://api.anthropic.com/v1/models")!
-    public static let model = "claude-sonnet-4-6"
+    public static let model = "claude-sonnet-5"
 
     /// A zero-cost key-validation request: `GET /v1/models` authenticates the key
     /// (200 = valid, 401 = rejected) without generating any tokens. Used by the
