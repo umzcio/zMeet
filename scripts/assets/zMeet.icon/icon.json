@@ -1,0 +1,44 @@
+{
+  "fill" : {
+    "linear-gradient" : [
+      "display-p3:0.49020,0.71729,0.21362,1.00000",
+      "extended-gray:0.00000,1.00000"
+    ]
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "umzcio_make_it_green_--ar_7959_--edit_httpss.mj.runwVe50nJ0uD_0122ca88-b70e-404e-a0d0-c4e24025f9af_0.png",
+          "name" : "umzcio_make_it_green_--ar_7959_--edit_httpss.mj.runwVe50nJ0uD_0122ca88-b70e-404e-a0d0-c4e24025f9af_0",
+          "position" : {
+            "scale" : 0.5,
+            "translation-in-points" : [
+              1.25,
+              1.25
+            ]
+          }
+        },
+        {
+          "image-name" : "umzcio_gooey_green_texture_background_--ar_43_--stylize_50_--_181b3720-3232-43e7-a918-c185b1e2db23_2.png",
+          "name" : "umzcio_gooey_green_texture_background_--ar_43_--stylize_50_--_181b3720-3232-43e7-a918-c185b1e2db23_2",
+          "opacity" : 0.35
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
