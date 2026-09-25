@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ZMeetCore
 
 /// Shows/hides a floating, non-activating panel near the top-right of the screen
 /// hosting the meeting-detected banner. Works from a menu-bar (accessory) app.

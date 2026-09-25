@@ -59,31 +59,67 @@ public enum DetectorGate {
 
     /// Idle-backoff cadence: the two-tier gate above only decides whether a tick does
     /// expensive work, but a meeting app resident all day (e.g. Teams) keeps the gate
-    /// open — and the cheap tier (NSWorkspace + a synthetic audio tick) firing every
-    /// 4 s indefinitely still isn't free. This picks how long to wait before the NEXT
-    /// tick, given what THIS tick observed.
+    /// open. This picks how long to wait before the NEXT tick, given what THIS tick
+    /// observed.
     ///
-    /// | State                                   | Cadence                          |
-    /// |------------------------------------------|-----------------------------------|
-    /// | In meeting (window or audio)              | 4 s (auto-stop stays 6×4 = 24 s) |
-    /// | Meeting app running, idle                 | 4 s for first 15 idle scans, then 15 s |
-    /// | No meeting app process                    | 15 s                              |
+    /// | State                                        | Cadence                            |
+    /// |-----------------------------------------------|-------------------------------------|
+    /// | Window detected, in meeting, or ANY meeting audio | 4 s (auto-stop stays 6×4 = 24 s) |
+    /// | Meeting app running, idle                      | 4 s for first 15 idle scans, then 8 s |
+    /// | No meeting app process                         | 8 s                                 |
     ///
-    /// Auto-stop latency is provably unchanged: slow cadence (15 s) only happens when
-    /// `isInMeeting == false`, so the `.ended` transition — which only fires while
-    /// `isInMeeting == true` — always ticks at the 4 s fast cadence.
+    /// Detection latency: the audio reducer confirms a call after 2 consecutive
+    /// active ticks, so the FIRST active tick must restore the fast cadence —
+    /// v1.15.3 keyed the restore on confirmation (`isInMeeting`) alone, which
+    /// ran both confirming ticks at the slow cadence (~30 s to notice a call).
+    /// Worst case now: one slow interval + one fast = `callConfirmationBudget`,
+    /// enforced by a test that drives `DetectorCadence` + `MeetingAudioActivity`.
+    ///
+    /// Auto-stop latency is unchanged: the slow cadence only happens while
+    /// `isInMeeting == false`, and `.ended` only fires while it's true.
     public static let fastInterval: TimeInterval = 4
-    public static let slowInterval: TimeInterval = 15
+    public static let slowInterval: TimeInterval = 8
     /// Scans at fast cadence with nothing detected before easing off.
     public static let idleScansBeforeSlowdown = 15
+    /// Worst-case seconds from call audio starting to the reducer confirming the
+    /// meeting (and the "Take notes" prompt appearing), from the idle cadence.
+    public static let callConfirmationBudget: TimeInterval = slowInterval + fastInterval
 
     /// Cadence for the NEXT tick given what this tick observed.
     public static func nextInterval(
-        hasDetectedWindow: Bool, isInMeeting: Bool,
+        hasDetectedWindow: Bool, isInMeeting: Bool, sawMeetingAudio: Bool,
         meetingAppRunning: Bool, consecutiveIdleScans: Int
     ) -> TimeInterval {
-        if hasDetectedWindow || isInMeeting { return fastInterval }
+        if hasDetectedWindow || isInMeeting || sawMeetingAudio { return fastInterval }
         if !meetingAppRunning { return slowInterval }
         return consecutiveIdleScans >= idleScansBeforeSlowdown ? slowInterval : fastInterval
     }
 }
+
+/// The detector's per-tick cadence state, fed once per scan. Lives in Core (not in
+/// the detector) because this glue — what counts as "idle", when to reset — is
+/// exactly where the v1.15.3 latency bug hid, untestable in the app target.
+public struct DetectorCadence: Equatable, Sendable {
+    public private(set) var consecutiveIdleScans = 0
+    private var lastAppRunning = false
+
+    public init() {}
+
+    /// Record one tick's observations and return the interval before the next tick.
+    public mutating func next(
+        hasDetectedWindow: Bool, isInMeeting: Bool, sawMeetingAudio: Bool,
+        meetingAppRunning: Bool
+    ) -> TimeInterval {
+        let active = hasDetectedWindow || isInMeeting || sawMeetingAudio
+        // A meeting app just launched: someone is likely about to join a call —
+        // look fast rather than inheriting the idle count from before launch.
+        let justLaunched = meetingAppRunning && !lastAppRunning
+        lastAppRunning = meetingAppRunning
+        consecutiveIdleScans = (active || justLaunched) ? 0 : consecutiveIdleScans + 1
+        return DetectorGate.nextInterval(
+            hasDetectedWindow: hasDetectedWindow, isInMeeting: isInMeeting,
+            sawMeetingAudio: sawMeetingAudio, meetingAppRunning: meetingAppRunning,
+            consecutiveIdleScans: consecutiveIdleScans)
+    }
+}
+

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ZMeetCore
 
@@ -27,21 +28,21 @@ import Testing
 
 @Test func nextIntervalIsFastWhenWindowDetected() {
     let interval = DetectorGate.nextInterval(
-        hasDetectedWindow: true, isInMeeting: false,
+        hasDetectedWindow: true, isInMeeting: false, sawMeetingAudio: false,
         meetingAppRunning: true, consecutiveIdleScans: 999)
     #expect(interval == DetectorGate.fastInterval)
 }
 
 @Test func nextIntervalIsFastWhenInMeeting() {
     let interval = DetectorGate.nextInterval(
-        hasDetectedWindow: false, isInMeeting: true,
+        hasDetectedWindow: false, isInMeeting: true, sawMeetingAudio: false,
         meetingAppRunning: true, consecutiveIdleScans: 999)
     #expect(interval == DetectorGate.fastInterval)
 }
 
 @Test func nextIntervalIsSlowWhenNoMeetingAppProcess() {
     let interval = DetectorGate.nextInterval(
-        hasDetectedWindow: false, isInMeeting: false,
+        hasDetectedWindow: false, isInMeeting: false, sawMeetingAudio: false,
         meetingAppRunning: false, consecutiveIdleScans: 0)
     #expect(interval == DetectorGate.slowInterval)
 }
@@ -49,7 +50,7 @@ import Testing
 @Test func nextIntervalStaysFastForFirstIdleScansWithAppRunning() {
     for idle in 0..<DetectorGate.idleScansBeforeSlowdown {
         let interval = DetectorGate.nextInterval(
-            hasDetectedWindow: false, isInMeeting: false,
+            hasDetectedWindow: false, isInMeeting: false, sawMeetingAudio: false,
             meetingAppRunning: true, consecutiveIdleScans: idle)
         #expect(interval == DetectorGate.fastInterval, "consecutiveIdleScans=\(idle)")
     }
@@ -57,12 +58,12 @@ import Testing
 
 @Test func nextIntervalSlowsAfterThresholdIdleScansWithAppRunning() {
     let interval = DetectorGate.nextInterval(
-        hasDetectedWindow: false, isInMeeting: false,
+        hasDetectedWindow: false, isInMeeting: false, sawMeetingAudio: false,
         meetingAppRunning: true, consecutiveIdleScans: DetectorGate.idleScansBeforeSlowdown)
     #expect(interval == DetectorGate.slowInterval)
 
     let laterInterval = DetectorGate.nextInterval(
-        hasDetectedWindow: false, isInMeeting: false,
+        hasDetectedWindow: false, isInMeeting: false, sawMeetingAudio: false,
         meetingAppRunning: true, consecutiveIdleScans: DetectorGate.idleScansBeforeSlowdown + 50)
     #expect(laterInterval == DetectorGate.slowInterval)
 }
@@ -122,4 +123,77 @@ import Testing
 
 @Test func appMatchingReturnsNilForUnrelatedBundleID() {
     #expect(MeetingAppCatalog.appMatching(bundleID: "com.apple.dt.Xcode") == nil)
+}
+
+// MARK: - Detection latency (regression: v1.15.3 took up to ~30 s to notice a call)
+
+/// The audio reducer needs two consecutive active ticks to confirm a call. The
+/// FIRST active tick must already restore fast polling — otherwise both
+/// confirming ticks happen at the slow idle cadence.
+@Test func nextIntervalIsFastWhenTickSawMeetingAudio() {
+    let interval = DetectorGate.nextInterval(
+        hasDetectedWindow: false, isInMeeting: false, sawMeetingAudio: true,
+        meetingAppRunning: true, consecutiveIdleScans: 999)
+    #expect(interval == DetectorGate.fastInterval)
+}
+
+@Test func cadenceAccumulatesIdleScansThenSlows() {
+    var cadence = DetectorCadence()
+    var interval: TimeInterval = 0
+    for _ in 0...DetectorGate.idleScansBeforeSlowdown {
+        interval = cadence.next(hasDetectedWindow: false, isInMeeting: false,
+                                sawMeetingAudio: false, meetingAppRunning: true)
+    }
+    #expect(interval == DetectorGate.slowInterval)
+}
+
+@Test func cadenceResetsOnMeetingAudio() {
+    var cadence = DetectorCadence()
+    for _ in 0..<100 {
+        _ = cadence.next(hasDetectedWindow: false, isInMeeting: false,
+                         sawMeetingAudio: false, meetingAppRunning: true)
+    }
+    let interval = cadence.next(hasDetectedWindow: false, isInMeeting: false,
+                                sawMeetingAudio: true, meetingAppRunning: true)
+    #expect(interval == DetectorGate.fastInterval)
+    #expect(cadence.consecutiveIdleScans == 0)
+}
+
+/// A meeting app launching usually means someone is about to join a call —
+/// look fast again instead of inheriting the idle count from before launch.
+@Test func cadenceResetsWhenMeetingAppLaunches() {
+    var cadence = DetectorCadence()
+    for _ in 0..<100 {
+        _ = cadence.next(hasDetectedWindow: false, isInMeeting: false,
+                         sawMeetingAudio: false, meetingAppRunning: false)
+    }
+    let interval = cadence.next(hasDetectedWindow: false, isInMeeting: false,
+                                sawMeetingAudio: false, meetingAppRunning: true)
+    #expect(interval == DetectorGate.fastInterval)
+    #expect(cadence.consecutiveIdleScans == 0)
+}
+
+/// End-to-end budget, driving the SAME cadence + reducer code the detector
+/// runs. Worst case: meeting app resident and idle long enough to sit at the
+/// slow cadence, and call audio starts just after a tick.
+@Test func callIsConfirmedWithinLatencyBudgetFromIdleCadence() {
+    var cadence = DetectorCadence()
+    var activity = MeetingAudioActivity()
+    var interval: TimeInterval = 0
+    for _ in 0..<200 {   // settle into the idle cadence
+        _ = activity.update(active: false)
+        interval = cadence.next(hasDetectedWindow: false, isInMeeting: false,
+                                sawMeetingAudio: false, meetingAppRunning: true)
+    }
+    #expect(interval == DetectorGate.slowInterval)
+
+    var elapsed = interval          // first tick after the call starts
+    for _ in 0..<50 {
+        if activity.update(active: true) == .started { break }
+        elapsed += cadence.next(hasDetectedWindow: false, isInMeeting: activity.isInMeeting,
+                                sawMeetingAudio: true, meetingAppRunning: true)
+    }
+    #expect(activity.isInMeeting)
+    #expect(elapsed <= DetectorGate.callConfirmationBudget,
+            "call took \(elapsed)s to confirm from idle; budget \(DetectorGate.callConfirmationBudget)s")
 }

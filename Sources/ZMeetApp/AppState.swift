@@ -22,6 +22,11 @@ final class AppState: ObservableObject {
     /// (guarding a duplicate process(id:)) is held until the background publish
     /// finishes. One @Published struct, so mutations publish automatically.
     @Published private(set) var processing = ProcessingRegistry()
+    /// Whether a meeting is live right now (window and/or audio signal). Drives the
+    /// menu's "Record" row and the menu-bar badge for the WHOLE meeting — unlike the
+    /// banner, it survives the banner being dismissed or timing out.
+    @Published private(set) var meetingTracker = DetectedMeetingTracker()
+    var detectedMeeting: DetectedMeeting? { meetingTracker.current }
     /// Human-readable stage per processing session id ("Transcribing…",
     /// "Summarizing…"), for the menu status row and the Library header capsule.
     /// Set during `produceNotes`/`process`; cleared exactly where `processing`
@@ -297,6 +302,7 @@ final class AppState: ObservableObject {
             startMeetingDetection()
         } else {
             detector.stop()
+            meetingTracker.reset()
             meetingPopup.hide()
         }
     }
@@ -345,37 +351,52 @@ final class AppState: ObservableObject {
     }
 
     private func startMeetingDetection() {
+        // Each signal updates the live-meeting state FIRST (unconditionally — the
+        // menu row must reflect reality even while the banner is up, dismissed, or
+        // gone), then the banner is reconciled against it.
         detector.onChange = { [weak self] meeting in
             guard let self else { return }
-            guard let meeting else {
-                // Meeting window gone: hide the popup and allow future meetings to
-                // prompt again. Auto-stop is NOT driven by windows anymore — a Teams
-                // lobby looks like "no window" yet the meeting hasn't ended. The
-                // recording is stopped by audio activity (onAudioMeetingEnded) instead.
-                self.meetingPopup.hide()
-                self.dismissedMeetingKeys.removeAll()
-                return
-            }
-            // Don't prompt while already recording, or for a meeting already dismissed.
-            guard !self.isRecording, !self.dismissedMeetingKeys.contains(meeting.key) else { return }
-            self.promptToTakeNotes(meeting)
+            self.meetingTracker.windowChanged(meeting)
+            self.meetingDetectionChanged()
         }
-        // Audio actually started (you're in the call) — prompt even if the window
-        // detector missed it. Once-per-meeting, so it won't nag.
         detector.onAudioMeetingStarted = { [weak self] app in
             guard let self else { return }
-            guard !self.isRecording, !self.meetingPopup.isVisible else { return }
-            self.promptToTakeNotes(DetectedMeeting(app: app, title: "\(app) Meeting"))
+            self.meetingTracker.audioStarted(app: app)
+            self.meetingDetectionChanged()
         }
         // Audio ended after a meeting was actually under way — auto-stop a recording
-        // that was started from detection. This is the reliable stop signal.
+        // that was started from detection. This is the reliable stop signal (a Teams
+        // lobby looks like "no window" yet the meeting hasn't ended).
         detector.onAudioMeetingEnded = { [weak self] in
             guard let self else { return }
+            self.meetingTracker.audioEnded()
             if self.isRecording, self.recordingFromDetection {
                 self.stopRecording()
             }
+            self.meetingDetectionChanged()
         }
         detector.start()
+    }
+
+    /// Reconcile the "Take notes" banner with the live detection state. The banner
+    /// is a one-shot nudge; the menu row and icon badge (driven by `detectedMeeting`)
+    /// carry the meeting for its whole duration.
+    private func meetingDetectionChanged() {
+        guard let meeting = detectedMeeting else {
+            // Meeting over — both signals gone. Hide the banner and let the next
+            // meeting prompt again.
+            meetingPopup.hide()
+            dismissedMeetingKeys.removeAll()
+            return
+        }
+        // Not while recording, not over a banner already up, and not for a meeting
+        // already dismissed or recorded. Audio confirming a window-detected meeting
+        // resolves to the SAME meeting here, so a dismissed banner doesn't come back
+        // as a second "Teams Meeting" prompt. (A banner that merely timed out can
+        // re-prompt once when audio confirms you're actually in the call.)
+        guard !isRecording, !meetingPopup.isVisible,
+              !dismissedMeetingKeys.contains(meeting.key) else { return }
+        promptToTakeNotes(meeting)
     }
 
     /// Show the "Take notes" prompt for a detected meeting.
@@ -383,15 +404,29 @@ final class AppState: ObservableObject {
         meetingPopup.show(
             meeting: meeting,
             onStart: { [weak self] in
-                guard let self else { return }
-                self.draftTitle = meeting.title
-                // Detected meetings are remote — no need to ask.
-                self.startRecording(mode: .remote, sourceApp: meeting.app)
+                self?.recordDetectedMeeting(meeting)
             },
             onDismiss: { [weak self] in
                 self?.dismissedMeetingKeys.insert(meeting.key)
             }
         )
+    }
+
+    /// Record the live detected meeting — from the menu row or the banner. Prefers
+    /// the freshest detection (the window may have resolved the real title since the
+    /// banner appeared) and falls back to the meeting the caller saw if detection
+    /// ended in between. Starts exactly like the banner always has: real title,
+    /// source app (which arms auto-stop at meeting end), remote mode.
+    func recordDetectedMeeting(_ fallback: DetectedMeeting? = nil) {
+        guard !isRecording, let meeting = detectedMeeting ?? fallback else { return }
+        // Recording a meeting answers its prompt. Without this, auto-stop at the
+        // meeting's end would re-run the reconciliation while the Teams window
+        // lingers and pop a fresh "Take notes" banner for the meeting just recorded.
+        // (The menu row stays, so a mistaken Stop can still be undone.)
+        dismissedMeetingKeys.insert(meeting.key)
+        draftTitle = meeting.title
+        // Detected meetings are remote — no need to ask.
+        startRecording(mode: .remote, sourceApp: meeting.app)
     }
 
     var isRecording: Bool {
@@ -407,6 +442,9 @@ final class AppState: ObservableObject {
 
     var iconState: MenuBarIcon.State {
         if case .recording = phase { return .recording }
+        // A live meeting you're not recording is actionable and time-sensitive, so
+        // it outranks background processing.
+        if detectedMeeting != nil { return .meetingDetected }
         if isProcessing { return .processing }
         return .idle
     }

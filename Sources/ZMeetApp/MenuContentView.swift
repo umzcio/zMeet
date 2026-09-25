@@ -28,6 +28,23 @@ struct MenuContentView: View {
             header
             Divider()
 
+            // A live meeting you're not recording, offered for its whole duration —
+            // missing or dismissing the banner no longer costs you the recording.
+            // Its own block (not inside primarySection) so the idle/recording
+            // crossfade keeps its stable height.
+            VStack(spacing: 0) {
+                if state.phase == .idle, let meeting = state.detectedMeeting {
+                    DetectedMeetingRow(meeting: meeting) {
+                        dismissMenuBar()
+                        state.recordDetectedMeeting()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.top, 10)
+                    .transition(.opacity)
+                }
+            }
+            .animation(ZMeetMotion.exit, value: state.detectedMeeting)
+
             primarySection
                 .frame(minHeight: 64, alignment: .top)
                 .padding(.horizontal, 14)
@@ -245,6 +262,42 @@ struct MenuContentView: View {
         case .warning: return .orange
         case .error: return .red
         }
+    }
+}
+
+/// "Teams meeting detected · Record" — the persistent counterpart to the banner.
+private struct DetectedMeetingRow: View {
+    let meeting: DetectedMeeting
+    let onRecord: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(nsImage: SourceAppIcons.icon(for: meeting.app))
+                .resizable()
+                .frame(width: 28, height: 28)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Meeting detected")
+                    .font(.caption)
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+                Text(meeting.title)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(meeting.title)
+            }
+            Spacer(minLength: 6)
+            Button("Record", action: onRecord)
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .controlSize(.small)
+            .accessibilityLabel("Record \(meeting.title)")
+        }
+        .padding(10)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(meeting.app) meeting detected: \(meeting.title)")
     }
 }
 

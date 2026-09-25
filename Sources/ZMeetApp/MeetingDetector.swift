@@ -3,14 +3,6 @@ import AppKit
 import CoreGraphics
 import ZMeetCore
 
-/// A meeting that appears to be in progress, identified from an on-screen window.
-struct DetectedMeeting: Equatable {
-    let app: String      // human-readable, e.g. "Zoom" / "Microsoft Teams"
-    let title: String    // the meeting window title (or a sensible default)
-
-    var key: String { "\(app)|\(title)" }
-}
-
 /// Polls the window list for Zoom/Teams *meeting* windows (not just the app
 /// being open) and reports changes. Reading window titles relies on the Screen
 /// Recording permission zMeet already holds; without it, titles are empty and
@@ -32,9 +24,9 @@ final class MeetingDetector {
     private let disappearThreshold = 6
     private var missCount = 0
 
-    /// Consecutive idle ticks (no detected window, not in meeting) — drives the
-    /// cadence backoff in `DetectorGate.nextInterval`. Resets on any activity.
-    private var consecutiveIdleScans = 0
+    /// Per-tick cadence state (idle backoff). Lives in Core so its reset rules are
+    /// tested end-to-end against the audio reducer — see `DetectorCadence`.
+    private var cadence = DetectorCadence()
 
     /// Audio-based "are we actually in a call" tracker — the reliable signal for
     /// starting/stopping a recording, independent of window titles (and lobbies).
@@ -63,12 +55,13 @@ final class MeetingDetector {
         missCount = 0
         current = nil
         audioActivity = MeetingAudioActivity()
-        consecutiveIdleScans = 0
+        cadence = DetectorCadence()
     }
 
-    /// Runs one tick, then schedules the next at a cadence that eases off (4 s → 15 s)
+    /// Runs one tick, then schedules the next at a cadence that eases off (4 s → 8 s)
     /// once a resident-but-idle meeting app has produced 15 consecutive idle ticks, and
-    /// restores 4 s immediately on any detected window or in-meeting audio. The
+    /// restores 4 s immediately on any detected window or ANY meeting audio (not just a
+    /// confirmed meeting — see `DetectorGate` for why that matters). The
     /// NSWorkspace "is a meeting app running" check is computed once here and shared
     /// between the scan gate and the cadence decision — don't re-query it in `scan()`.
     ///
@@ -78,14 +71,12 @@ final class MeetingDetector {
     private func scanAndReschedule() {
         guard isRunning else { return }
         let running = ProcessAudioProbe.meetingAppProcessRunning()
-        scan(meetingAppRunning: running)
-        let active = current != nil || audioActivity.isInMeeting
-        consecutiveIdleScans = active ? 0 : consecutiveIdleScans + 1
-        let interval = DetectorGate.nextInterval(
+        let sawMeetingAudio = scan(meetingAppRunning: running)
+        let interval = cadence.next(
             hasDetectedWindow: current != nil,
             isInMeeting: audioActivity.isInMeeting,
-            meetingAppRunning: running,
-            consecutiveIdleScans: consecutiveIdleScans)
+            sawMeetingAudio: sawMeetingAudio,
+            meetingAppRunning: running)
         scheduleNext(after: interval)
     }
 
@@ -95,7 +86,9 @@ final class MeetingDetector {
         }
     }
 
-    private func scan(meetingAppRunning: Bool) {
+    /// One detection pass. Returns whether a meeting app was moving audio this tick
+    /// (false on a gated tick), which drives the fast-cadence restore.
+    private func scan(meetingAppRunning: Bool) -> Bool {
         // Cheap tier: skip the window + Core Audio IPC entirely when no meeting
         // app is even running and nothing is in flight. Never skip mid-meeting:
         // the audio reducer's .ended transition (auto-stop) needs its ticks.
@@ -105,10 +98,10 @@ final class MeetingDetector {
             meetingAppRunning: meetingAppRunning)
         if !shouldScan {
             _ = audioActivity.update(active: false)
-            return
+            return false
         }
         scanWindows()
-        scanAudio()
+        return scanAudio()
     }
 
     private func scanWindows() {
@@ -129,13 +122,14 @@ final class MeetingDetector {
         }
     }
 
-    private func scanAudio() {
+    private func scanAudio() -> Bool {
         let app = audioProbe.activeMeetingApp()
         switch audioActivity.update(active: app != nil) {
         case .started: onAudioMeetingStarted?(app ?? "Microsoft Teams")  // app is non-nil on .started
         case .ended:   onAudioMeetingEnded?()
         case nil:      break
         }
+        return app != nil
     }
 
     private static func detectMeeting() -> DetectedMeeting? {

@@ -1,9 +1,10 @@
 import AppKit
 
-/// Renders the menu-bar status icon. Idle = plain template mic; recording = red
-/// mic-in-waveform; processing = mint wand (notes being generated).
+/// Renders the menu-bar status icon. Idle = plain template mic; meeting detected =
+/// template mic with a "+" badge (a live meeting you can record from the menu);
+/// recording = red mic-in-waveform; processing = mint wand (notes being generated).
 enum MenuBarIcon {
-    enum State { case idle, recording, processing }
+    enum State { case idle, meetingDetected, recording, processing }
 
     /// Per-state VoiceOver description — the menu-bar icon is the app's one
     /// persistent status surface, so this must actually distinguish state
@@ -11,6 +12,7 @@ enum MenuBarIcon {
     static func accessibilityDescription(for state: State) -> String {
         switch state {
         case .idle: "zMeet — idle"
+        case .meetingDetected: "zMeet — meeting detected, not recording"
         case .recording: "zMeet — recording"
         case .processing: "zMeet — processing notes"
         }
@@ -26,6 +28,15 @@ enum MenuBarIcon {
             mic.isTemplate = true
             mic.accessibilityDescription = description
             return mic
+        case .meetingDetected:
+            // Template, like idle, so it sits naturally in the menu bar — the badge
+            // shape (not color) says "there's a meeting here you can record".
+            let badged = symbol("mic.badge.plus", fallback: "mic.fill", description: description)
+                .withSymbolConfiguration(config)
+                ?? symbol("mic.badge.plus", fallback: "mic.fill", description: description)
+            badged.isTemplate = true
+            badged.accessibilityDescription = description
+            return badged
         case .recording:
             let base = symbol(recordingSymbolName, fallback: "mic.fill", description: description)
             let red = base.withSymbolConfiguration(config.applying(.init(paletteColors: [.systemRed]))) ?? base
