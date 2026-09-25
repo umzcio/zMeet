@@ -36,8 +36,12 @@ AppKit/AVFoundation into ZMeetCore. Sources/CSpeexDSP is vendored C
 ## Sharp edges
 - SCKAudioRecorder: all mutable state is confined to its capture queue;
   stop() cancels/awaits startTask first. Don't add cross-thread access.
-- AppState.Phase has NO .processing case — processing is
-  processingSessionID/isProcessing; recording and processing can overlap.
+- AppState.Phase has NO .processing case — processing lives in
+  ProcessingRegistry (Core); recording and processing can overlap.
+- Meeting detection: the banner is a one-shot nudge; DetectedMeetingTracker
+  (Core) is the live-meeting truth behind the menu's Record row and badge.
+  Polling cadence rules live in DetectorCadence — keep the latency-budget
+  test (callIsConfirmedWithinLatencyBudgetFromIdleCadence) passing.
 - The notes.md format is written by MarkdownRenderer and parsed in several
   places (Library reader, search indexing, Obsidian backfill) — template
   changes break all three differently.
