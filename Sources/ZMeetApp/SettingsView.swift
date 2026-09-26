@@ -348,7 +348,7 @@ struct SettingsView: View {
     private var summariesSection: some View {
         VStack(spacing: 14) {
             card {
-                toggleRow("Use Claude for summaries (cloud)",
+                toggleRow("Use \(AnthropicSummary.modelDisplayName) for summaries (cloud)",
                           "Higher-quality notes via the Claude API. Falls back to on-device automatically if it can't run.",
                           boolBinding(\.useCloudSummaries))
             }

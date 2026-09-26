@@ -17,6 +17,19 @@ public enum AnthropicSummary {
     public static let modelsEndpoint = URL(string: "https://api.anthropic.com/v1/models")!
     public static let model = "claude-sonnet-5"
 
+    /// Human-readable name of `model`, for Settings — derived rather than stored
+    /// separately, so it always names the model the requests actually use.
+    public static var modelDisplayName: String { displayName(forModel: model) }
+
+    /// "claude-sonnet-4-6" → "Claude Sonnet 4.6": words capitalized, trailing
+    /// version numbers joined with a dot.
+    public static func displayName(forModel id: String) -> String {
+        let parts = id.split(separator: "-").map(String.init)
+        let words = parts.prefix { Int($0) == nil }.map { $0.prefix(1).uppercased() + $0.dropFirst() }
+        let version = parts.drop { Int($0) == nil }.joined(separator: ".")
+        return (words + (version.isEmpty ? [] : [version])).joined(separator: " ")
+    }
+
     /// A zero-cost key-validation request: `GET /v1/models` authenticates the key
     /// (200 = valid, 401 = rejected) without generating any tokens. Used by the
     /// Settings "Test key" button instead of running a real summary.

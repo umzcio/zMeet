@@ -51,3 +51,15 @@ import Testing
         try AnthropicSummary.parseSummary(data: garbage, status: 200)
     }
 }
+
+/// Settings shows which model cloud summaries use — derived from the same
+/// constant the request sends, so the label can't drift from reality.
+@Test func modelDisplayNameMatchesTheModelInUse() {
+    #expect(AnthropicSummary.modelDisplayName == "Claude Sonnet 5")
+}
+
+@Test func displayNameJoinsTrailingVersionNumbersWithADot() {
+    #expect(AnthropicSummary.displayName(forModel: "claude-sonnet-4-6") == "Claude Sonnet 4.6")
+    #expect(AnthropicSummary.displayName(forModel: "claude-fable-5-1") == "Claude Fable 5.1")
+    #expect(AnthropicSummary.displayName(forModel: "claude-opus-5") == "Claude Opus 5")
+}
