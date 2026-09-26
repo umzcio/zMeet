@@ -42,6 +42,11 @@ AppKit/AVFoundation into ZMeetCore. Sources/CSpeexDSP is vendored C
   (Core) is the live-meeting truth behind the menu's Record row and badge.
   Polling cadence rules live in DetectorCadence — keep the latency-budget
   test (callIsConfirmedWithinLatencyBudgetFromIdleCadence) passing.
+- Menu bar: an AppKit NSStatusItem (StatusItemController), not SwiftUI
+  MenuBarExtra — MenuBarExtra can't tell right-click. The popover content
+  (MenuContentView) closes itself via the closeMenuBarPopover environment
+  action. The App's empty Settings scene exists only to keep the default main
+  menu (Edit ⌘C/⌘V); keep its .appSettings replacement.
 - The notes.md format is written by MarkdownRenderer and parsed in several
   places (Library reader, search indexing, Obsidian backfill) — template
   changes break all three differently.

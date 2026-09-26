@@ -213,7 +213,7 @@ Internal state (session metadata, logs) lives under `~/.zmeet`.
 
 ```
   zMeet.app (menu-bar, signed)
-  ├─ MenuBarExtra UI ........ start/stop, recent, permissions, "Take notes" popup
+  ├─ Menu-bar status item ... popover (start/stop, detected meeting), right-click utilities
   ├─ AppState ................ drives the capture + processing lifecycle
   ├─ SCKAudioRecorder ....... system audio + mic -> mixed .m4a
   ├─ SpeechTranscription .... on-device SpeechAnalyzer -> transcript
@@ -241,7 +241,7 @@ keeps the engine portable and testable without hardware.
 
 | Layer | Technology |
 |-------|-----------|
-| **App** | SwiftUI `MenuBarExtra`, Swift 6, AppKit (floating panel) |
+| **App** | SwiftUI + AppKit (`NSStatusItem` + popover, floating panels), Swift 6 |
 | **Engine** | `ZMeetCore` — Swift package (no UI/AV dependencies), Swift Testing |
 | **Audio capture** | ScreenCaptureKit (system + mic) + AVAudioEngine (mix) → AAC `.m4a` |
 | **Transcription** | Apple `SpeechAnalyzer` / `SpeechTranscriber` (on-device) |

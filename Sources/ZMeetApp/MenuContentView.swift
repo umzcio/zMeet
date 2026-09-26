@@ -4,13 +4,12 @@ import ZMeetCore
 
 struct MenuContentView: View {
     @ObservedObject var state: AppState
+    @Environment(\.closeMenuBarPopover) private var closeMenuBarPopover
 
-    /// Closes the MenuBarExtra popover. The window-style popover doesn't dismiss
-    /// itself when we bring another window forward, so close it explicitly.
+    /// Closes the menu-bar popover before another window comes forward — a
+    /// transient popover doesn't dismiss itself when we open one programmatically.
     private func dismissMenuBar() {
-        for window in NSApp.windows where "\(type(of: window))".contains("MenuBarExtra") {
-            window.close()
-        }
+        closeMenuBarPopover()
     }
 
     private func openLibrary(select id: String? = nil) {
