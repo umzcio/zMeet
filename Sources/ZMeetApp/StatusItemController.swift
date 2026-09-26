@@ -30,6 +30,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     /// When the popover last began closing — feeds StatusPopoverToggle so the
     /// click that closed a transient popover doesn't immediately reopen it.
     private var lastPopoverClose: Date?
+    /// The app that was frontmost when the popover opened — focus goes back to it on
+    /// close (see PopoverFocusReturn).
+    private var appBeforePopover: NSRunningApplication?
     private var iconSubscription: AnyCancellable?
 
     init(state: AppState) {
@@ -112,6 +115,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private func showPopover() {
         guard let button = statusItem.button else { return }
         state.refreshPermissions()
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        appBeforePopover = frontmost == NSRunningApplication.current ? nil : frontmost
         // An accessory app must activate, and the popover must become key, or
         // typing in the title field goes to the previously frontmost app.
         NSApp.activate()
@@ -158,6 +163,27 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
     func popoverWillClose(_ notification: Notification) {
         lastPopoverClose = Date()
+    }
+
+    /// Hand focus back to the app the user came from, unless a zMeet window still
+    /// needs it. Without this, closing by Esc or an icon click leaves zMeet active
+    /// with no key window, and the next keystrokes in Teams/Zoom are lost.
+    func popoverDidClose(_ notification: Notification) {
+        defer { appBeforePopover = nil }
+        let popoverWindow = popover.contentViewController?.view.window
+        let windows = NSApp.windows.map { window in
+            PopoverFocusReturn.WindowTraits(
+                isVisible: window.isVisible,
+                isOwnChrome: window === statusItem.button?.window || window === popoverWindow,
+                isNonactivatingPanel: window.styleMask.contains(.nonactivatingPanel),
+                isTitled: window.styleMask.contains(.titled))
+        }
+        guard let previous = appBeforePopover,
+              PopoverFocusReturn.shouldReturnFocus(appIsActive: NSApp.isActive, hasPreviousApp: true,
+                                                   windows: windows)
+        else { return }
+        NSApp.yieldActivation(to: previous)
+        previous.activate()
     }
 }
 
