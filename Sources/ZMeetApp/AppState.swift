@@ -440,13 +440,11 @@ final class AppState: ObservableObject {
     /// hold that continues through the background Obsidian publish.
     var isProcessing: Bool { processing.isAnyVisiblyProcessing }
 
-    var iconState: MenuBarIcon.State {
-        if case .recording = phase { return .recording }
-        // A live meeting you're not recording is actionable and time-sensitive, so
-        // it outranks background processing.
-        if detectedMeeting != nil { return .meetingDetected }
-        if isProcessing { return .processing }
-        return .idle
+    var iconState: StatusIconState {
+        StatusIconState.resolve(
+            isRecording: isRecording,
+            meetingDetected: detectedMeeting != nil,
+            isProcessing: isProcessing)
     }
 
     /// Manual start: ask remote vs in-person first, then record.

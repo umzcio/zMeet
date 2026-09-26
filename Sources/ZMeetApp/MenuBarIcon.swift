@@ -1,15 +1,14 @@
 import AppKit
+import ZMeetCore
 
 /// Renders the menu-bar status icon. Idle = plain template mic; meeting detected =
 /// template mic with a "+" badge (a live meeting you can record from the menu);
 /// recording = red mic-in-waveform; processing = mint wand (notes being generated).
 enum MenuBarIcon {
-    enum State { case idle, meetingDetected, recording, processing }
-
     /// Per-state VoiceOver description — the menu-bar icon is the app's one
     /// persistent status surface, so this must actually distinguish state
     /// rather than repeat a generic "zMeet" for idle/recording/processing.
-    static func accessibilityDescription(for state: State) -> String {
+    static func accessibilityDescription(for state: StatusIconState) -> String {
         switch state {
         case .idle: "zMeet — idle"
         case .meetingDetected: "zMeet — meeting detected, not recording"
@@ -18,7 +17,7 @@ enum MenuBarIcon {
         }
     }
 
-    static func image(for state: State) -> NSImage {
+    static func image(for state: StatusIconState) -> NSImage {
         let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         let description = accessibilityDescription(for: state)
         switch state {
