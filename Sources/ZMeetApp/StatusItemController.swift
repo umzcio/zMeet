@@ -88,8 +88,17 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         button.setAccessibilityLabel(description)
     }
 
+    /// Right-click — or ⌃-click, which is how many trackpad users right-click —
+    /// opens the utilities menu; a plain click toggles the popover.
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
-        togglePopover()
+        let event = NSApp.currentEvent
+        let isSecondaryClick = event?.type == .rightMouseUp
+            || event?.modifierFlags.contains(.control) == true
+        if isSecondaryClick {
+            showUtilitiesMenu()
+        } else {
+            togglePopover()
+        }
     }
 
     private func togglePopover() {
@@ -110,9 +119,53 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover.contentViewController?.view.window?.makeKey()
     }
 
+    // MARK: Utilities menu
+
+    private lazy var utilitiesMenu: NSMenu = {
+        let menu = NSMenu()
+        menu.addItem(menuItem("Settings…", #selector(openSettings), key: ","))
+        menu.addItem(menuItem("Open Notes Folder", #selector(openNotesFolder)))
+        menu.addItem(menuItem("Check for Updates…", #selector(checkForUpdates)))
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Quit zMeet", #selector(quit), key: "q"))
+        return menu
+    }()
+
+    private func menuItem(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = self
+        return item
+    }
+
+    /// Standard status-item technique: attach the menu, click the button so AppKit
+    /// shows it with native positioning and highlight, then detach it so the next
+    /// plain click reaches `statusItemClicked` again. Key equivalents are shown for
+    /// familiarity and work while the menu is open (an accessory app has no main
+    /// menu otherwise).
+    private func showUtilitiesMenu() {
+        if popover.isShown { popover.performClose(nil) }
+        statusItem.menu = utilitiesMenu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    @objc private func openSettings() { state.openSettings() }
+    @objc private func openNotesFolder() { state.openOutputFolder() }
+    @objc private func checkForUpdates() { state.updater.checkForUpdates() }
+    @objc private func quit() { NSApp.terminate(nil) }
+
     // MARK: NSPopoverDelegate
 
     func popoverWillClose(_ notification: Notification) {
         lastPopoverClose = Date()
+    }
+}
+
+extension StatusItemController: NSMenuItemValidation {
+    /// Grays out "Check for Updates…" while Sparkle can't start a check (e.g. one is
+    /// already running); every other item is always enabled.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(checkForUpdates) { return state.updater.canCheck }
+        return true
     }
 }
