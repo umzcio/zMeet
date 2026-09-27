@@ -26,6 +26,9 @@ AppKit/AVFoundation into ZMeetCore. Sources/CSpeexDSP is vendored C
   env-overridable defaults). release.sh asserts its argument matches and
   refuses otherwise; it runs the tests before building and auto-tags on a
   clean tree. Full procedure: docs/RELEASING.md.
+- The installer DMG is always built by scripts/make-dmg.sh with create-dmg
+  (brew install create-dmg) and a background from render-dmg-background.swift;
+  release.sh calls it — no extra step per release.
 
 ## Repo conventions
 - Layout: assets/ holds all art (app-icon/, brand/, menubar/, fonts/; each
