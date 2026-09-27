@@ -18,7 +18,7 @@ struct ZMeetWordmark: View {
     }
 }
 
-/// The brand "z" mark (scripts/assets/ZMark*.png, copied into the bundle by
+/// The brand "z" mark (assets/brand/ZMark*.png, copied into the bundle by
 /// build-app.sh). Falls back to a script "z" when the asset is missing, e.g. a
 /// bare `swift run` with no app bundle.
 struct ZMark: View {

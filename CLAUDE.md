@@ -7,7 +7,7 @@ summarizes on-device, one folder per meeting under ~/Documents/zMeet.
 - `swift test` — ZMeetCore unit tests (Swift Testing). The app layer (ZMeetApp)
   is an executable target with NO tests — verify app changes by build.
 - `swift build -c release --product ZMeetApp` — the app binary.
-- `scripts/build-app.sh` compiles the app icon from scripts/assets/zMeet.icon
+- `scripts/build-app.sh` compiles the app icon from assets/app-icon/zMeet.icon
   (Icon Composer) with Xcode's actool — edit the .icon, never a flat .icns.
 - Sparkle "XCFramework Info.plist not found" error on any build:
   `rm -rf .build && swift build` (stale artifact cache after a repo move).
@@ -28,6 +28,9 @@ AppKit/AVFoundation into ZMeetCore. Sources/CSpeexDSP is vendored C
   clean tree. Full procedure: docs/RELEASING.md.
 
 ## Repo conventions
+- Layout: assets/ holds all art (app-icon/, brand/, menubar/, fonts/; each
+  generated image has its source/ beside it and a scripts/make-*.py generator);
+  scripts/ holds scripts only.
 - Commits: single short imperative summary line.
 - docs/ is gitignored EXCEPT docs/RELEASING.md (local planning notes stay
   local). plans/ (untracked) holds advisor audit plans + statuses — read

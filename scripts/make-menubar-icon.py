@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Regenerate the menu-bar icon layers from the source artwork.
 
-Inputs (scripts/assets/menubar/source/):
+Inputs (assets/menubar/source/):
   zMeetIcon.png        white mic + badge, z cut out of the badge (the plain icon)
   zMeetIcon_color.png  same drawing with the z filled green (the recording look)
 
-Outputs (scripts/assets/menubar/), each at 18pt tall in 1x and @2x:
+Outputs (assets/menubar/), each at 18pt tall in 1x and @2x:
   MenuBarIcon[@2x].png   the icon shape as a black alpha mask
   MenuBarIconZ[@2x].png  just the z, same canvas, as a black alpha mask
 The app tints these at draw time (see Sources/ZMeetApp/MenuBarIcon.swift).
@@ -14,7 +14,7 @@ Requires Pillow: pip3 install pillow
 from pathlib import Path
 from PIL import Image
 
-HERE = Path(__file__).resolve().parent / "assets" / "menubar"
+HERE = Path(__file__).resolve().parent.parent / "assets" / "menubar"
 POINT_HEIGHT = 18
 
 def z_mask(colored: Image.Image) -> Image.Image:

@@ -50,7 +50,7 @@ cp -R "$SPARKLE_FW" "$FW_DIR/"
 
 # Bundle the wordmark font (auto-registered at launch via ATSApplicationFontsPath).
 mkdir -p "$RES_DIR/Fonts"
-cp "$ROOT/scripts/assets/DancingScript.ttf" "$RES_DIR/Fonts/DancingScript.ttf"
+cp "$ROOT/assets/fonts/DancingScript.ttf" "$RES_DIR/Fonts/DancingScript.ttf"
 
 # App icon: compile the Icon Composer document into Assets.car (light, dark,
 # and tinted appearances for macOS 26) plus a zMeet.icns fallback. Needs Xcode's
@@ -61,7 +61,7 @@ if ! xcrun --find actool >/dev/null 2>&1; then
   exit 1
 fi
 ICON_PLIST="$(mktemp -t zmeet-icon).plist"
-xcrun actool "$ROOT/scripts/assets/zMeet.icon" \
+xcrun actool "$ROOT/assets/app-icon/zMeet.icon" \
     --compile "$RES_DIR" \
     --platform macosx \
     --minimum-deployment-target 26.0 \
@@ -70,16 +70,16 @@ xcrun actool "$ROOT/scripts/assets/zMeet.icon" \
     --output-partial-info-plist "$ICON_PLIST" \
     --output-format human-readable-text >/dev/null
 if [[ ! -f "$RES_DIR/Assets.car" || ! -f "$RES_DIR/zMeet.icns" ]]; then
-  echo "error: actool did not produce Assets.car + zMeet.icns from scripts/assets/zMeet.icon" >&2
+  echo "error: actool did not produce Assets.car + zMeet.icns from assets/app-icon/zMeet.icon" >&2
   exit 1
 fi
 rm -f "$ICON_PLIST"
 
 # Menu-bar icon layers (generated from the artwork by scripts/make-menubar-icon.py).
-cp "$ROOT"/scripts/assets/menubar/MenuBarIcon*.png "$RES_DIR/"
+cp "$ROOT"/assets/menubar/MenuBarIcon*.png "$RES_DIR/"
 
-# In-app "z" brand mark (Settings wordmark), 1x + 2x.
-cp "$ROOT"/scripts/assets/ZMark*.png "$RES_DIR/"
+# In-app "z" brand mark (ZMeetWordmark), 1x + 2x — regenerate with scripts/make-zmark.py.
+cp "$ROOT"/assets/brand/ZMark*.png "$RES_DIR/"
 
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
