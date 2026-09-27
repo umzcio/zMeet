@@ -1,8 +1,9 @@
 import Foundation
 
-/// Errors from the cloud summary path. The policy catches all of these and falls
-/// back to on-device; "Test key" in Settings surfaces them directly.
-public enum CloudSummaryError: Error, Equatable {
+/// Errors from any non-Apple AI provider. The summarization policy catches all
+/// of these and falls back to on-device; Settings' Test connection shows them
+/// via `AICopy.failureMessage`.
+public enum AIProviderError: Error, Equatable {
     case missingKey
     case http(status: Int)
     case network
@@ -11,7 +12,7 @@ public enum CloudSummaryError: Error, Equatable {
 
 /// Pure request-building and response-parsing for the Anthropic Messages API.
 /// Lives in Core so it is unit-testable without a live network call; the actual
-/// URLSession call is done by `CloudSummarizer` in the app target.
+/// URLSession call is done by `AIConnection.complete` in the app target.
 public enum AnthropicSummary {
     public static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
     public static let modelsEndpoint = URL(string: "https://api.anthropic.com/v1/models")!
@@ -22,9 +23,11 @@ public enum AnthropicSummary {
     public static var modelDisplayName: String { displayName(forModel: model) }
 
     /// "claude-sonnet-4-6" → "Claude Sonnet 4.6": words capitalized, trailing
-    /// version numbers joined with a dot.
+    /// version numbers joined with a dot. A trailing 8-digit date snapshot
+    /// ("-20250929") is dropped.
     public static func displayName(forModel id: String) -> String {
-        let parts = id.split(separator: "-").map(String.init)
+        var parts = id.split(separator: "-").map(String.init)
+        if let last = parts.last, last.count == 8, Int(last) != nil { parts.removeLast() }
         let words = parts.prefix { Int($0) == nil }.map { $0.prefix(1).uppercased() + $0.dropFirst() }
         let version = parts.drop { Int($0) == nil }.joined(separator: ".")
         return (words + (version.isEmpty ? [] : [version])).joined(separator: " ")
@@ -41,7 +44,7 @@ public enum AnthropicSummary {
         return req
     }
 
-    public static func makeRequest(key: String, prompt: String, maxTokens: Int = 1500) throws -> URLRequest {
+    public static func makeRequest(key: String, model: String = AnthropicSummary.model, prompt: String, maxTokens: Int = 1500) throws -> URLRequest {
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
         req.setValue(key, forHTTPHeaderField: "x-api-key")
@@ -57,13 +60,13 @@ public enum AnthropicSummary {
     }
 
     public static func parseSummary(data: Data, status: Int) throws -> String {
-        guard status == 200 else { throw CloudSummaryError.http(status: status) }
+        guard status == 200 else { throw AIProviderError.http(status: status) }
         guard
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let content = obj["content"] as? [[String: Any]]
-        else { throw CloudSummaryError.decode }
+        else { throw AIProviderError.decode }
         let text = content.compactMap { $0["text"] as? String }.joined()
-        guard !text.isEmpty else { throw CloudSummaryError.decode }
+        guard !text.isEmpty else { throw AIProviderError.decode }
         return text
     }
 }

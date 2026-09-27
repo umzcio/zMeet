@@ -341,9 +341,9 @@ final class AppState: ObservableObject {
         do {
             try await CloudSummarizer(apiKey: key).validateKey()
             return nil
-        } catch let CloudSummaryError.http(status) {
+        } catch let AIProviderError.http(status) {
             return status == 401 ? "Key rejected (401)." : "Request failed (HTTP \(status))."
-        } catch CloudSummaryError.network {
+        } catch AIProviderError.network {
             return "Network error — check your connection."
         } catch {
             return "Test failed: \(error.localizedDescription)"

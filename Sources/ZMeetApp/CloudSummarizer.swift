@@ -10,7 +10,7 @@ struct CloudSummarizer: Summarizer {
     private let maxTranscriptCharacters = 150_000
 
     func summarize(transcript: String, title: String) async throws -> String {
-        guard !apiKey.isEmpty else { throw CloudSummaryError.missingKey }
+        guard !apiKey.isEmpty else { throw AIProviderError.missingKey }
         let clipped = String(transcript.prefix(maxTranscriptCharacters))
         let prompt = MeetingSummaryPrompt.build(transcript: clipped, title: title)
         let request = try AnthropicSummary.makeRequest(key: apiKey, prompt: prompt)
@@ -20,24 +20,24 @@ struct CloudSummarizer: Summarizer {
         do {
             (data, response) = try await AnthropicHTTP.session.data(for: request)
         } catch {
-            throw CloudSummaryError.network
+            throw AIProviderError.network
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         return try AnthropicSummary.parseSummary(data: data, status: status)
     }
 
     /// Validates the key against `GET /v1/models` — zero token cost, just an auth
-    /// check. Throws `CloudSummaryError` on a non-200 / network failure.
+    /// check. Throws `AIProviderError` on a non-200 / network failure.
     func validateKey() async throws {
-        guard !apiKey.isEmpty else { throw CloudSummaryError.missingKey }
+        guard !apiKey.isEmpty else { throw AIProviderError.missingKey }
         let request = AnthropicSummary.makeValidationRequest(key: apiKey)
         let response: URLResponse
         do {
             (_, response) = try await AnthropicHTTP.session.data(for: request)
         } catch {
-            throw CloudSummaryError.network
+            throw AIProviderError.network
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw CloudSummaryError.http(status: status) }
+        guard status == 200 else { throw AIProviderError.http(status: status) }
     }
 }

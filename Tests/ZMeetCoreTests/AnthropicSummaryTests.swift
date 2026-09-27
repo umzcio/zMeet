@@ -34,20 +34,20 @@ import Testing
 
 @Test func parseSummaryMapsHTTPErrors() {
     let empty = Data()
-    #expect(throws: CloudSummaryError.http(status: 401)) {
+    #expect(throws: AIProviderError.http(status: 401)) {
         try AnthropicSummary.parseSummary(data: empty, status: 401)
     }
-    #expect(throws: CloudSummaryError.http(status: 429)) {
+    #expect(throws: AIProviderError.http(status: 429)) {
         try AnthropicSummary.parseSummary(data: empty, status: 429)
     }
-    #expect(throws: CloudSummaryError.http(status: 500)) {
+    #expect(throws: AIProviderError.http(status: 500)) {
         try AnthropicSummary.parseSummary(data: empty, status: 500)
     }
 }
 
 @Test func parseSummaryMapsMalformedBodyToDecode() {
     let garbage = "not json".data(using: .utf8)!
-    #expect(throws: CloudSummaryError.decode) {
+    #expect(throws: AIProviderError.decode) {
         try AnthropicSummary.parseSummary(data: garbage, status: 200)
     }
 }
@@ -62,4 +62,21 @@ import Testing
     #expect(AnthropicSummary.displayName(forModel: "claude-sonnet-4-6") == "Claude Sonnet 4.6")
     #expect(AnthropicSummary.displayName(forModel: "claude-fable-5-1") == "Claude Fable 5.1")
     #expect(AnthropicSummary.displayName(forModel: "claude-opus-5") == "Claude Opus 5")
+}
+
+@Test func makeRequestUsesTheGivenModel() throws {
+    let req = try AnthropicSummary.makeRequest(key: "sk-test", model: "claude-opus-5-5", prompt: "p")
+    let body = try #require(req.httpBody)
+    let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+    #expect(json["model"] as? String == "claude-opus-5-5")
+}
+
+@Test func providerErrorNamesTheSharedCases() {
+    let errors: [AIProviderError] = [.missingKey, .http(status: 401), .network, .decode]
+    #expect(errors.count == 4)
+}
+
+@Test func displayNameDropsDateSuffix() {
+    #expect(AnthropicSummary.displayName(forModel: "claude-sonnet-4-5-20250929") == "Claude Sonnet 4.5")
+    #expect(AnthropicSummary.displayName(forModel: "claude-sonnet-5") == "Claude Sonnet 5")
 }
