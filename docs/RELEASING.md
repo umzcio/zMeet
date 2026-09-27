@@ -50,7 +50,7 @@ self-install.
 | Script | Does |
 |--------|------|
 | `build-app.sh` | Compile, bundle, embed+sign Sparkle, sign the app |
-| `make-dmg.sh [version]` | Package `build/zMeet.app` into a drag-to-Applications `.dmg` |
+| `make-dmg.sh [version]` | Package `build/zMeet.app` into a branded drag-to-Applications `.dmg` with [create-dmg](https://github.com/create-dmg/create-dmg) (`brew install create-dmg`); the background is drawn by `render-dmg-background.swift` |
 | `notarize.sh <dmg>` | Submit to Apple notary, staple the ticket |
 | `release.sh <version>` | All of the above + generate the signed appcast |
 | `update-cask.sh <version>` | Bump the `zmeet` cask in [umzcio/homebrew-tap](https://github.com/umzcio/homebrew-tap) |
