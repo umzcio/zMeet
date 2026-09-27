@@ -7,64 +7,19 @@ import ZMeetCore
 /// covered, not just their opening). Falls back to a simple extractive summary
 /// when Apple Intelligence is unavailable. Stateless / Sendable.
 struct MeetingSummarizer: Summarizer {
-    /// Per-chunk budget, kept under the on-device model's context limit with room
-    /// for the surrounding prompt.
-    private let maxChunkCharacters = 10_000
-
     func summarize(transcript: String, title: String) async throws -> String {
         let model = SystemLanguageModel.default
         guard case .available = model.availability else {
             return Self.extractiveFallback(transcript: transcript)
         }
-
-        let chunks = TranscriptChunker().chunk(transcript, maxCharacters: maxChunkCharacters)
         do {
-            // Short meeting (or empty): single pass, current behavior.
-            guard chunks.count > 1 else {
-                let prompt = MeetingSummaryPrompt.build(transcript: chunks.first ?? transcript, title: title)
-                return try await respond(to: prompt)
-            }
-            // Map: summarize each chunk.
-            var parts: [String] = []
-            for chunk in chunks {
-                parts.append(try await respond(to: MeetingSummaryPrompt.build(transcript: chunk, title: title)))
-            }
-            // Reduce (hierarchically if the joined parts exceed one chunk budget).
-            return try await reduce(parts: parts, title: title)
+            return try await MapReduceSummarizer(
+                maxChunkCharacters: AIProvider.onDevice.chunkBudget ?? 10_000,
+                complete: { prompt in try await LanguageModelSession().respond(to: prompt).content }
+            ).summarize(transcript: transcript, title: title)
         } catch {
             return Self.extractiveFallback(transcript: transcript)
         }
-    }
-
-    private func respond(to prompt: String) async throws -> String {
-        try await LanguageModelSession().respond(to: prompt).content
-    }
-
-    /// Collapse per-portion notes into one set, reducing in rounds when the joined
-    /// notes are themselves too large for a single pass.
-    private func reduce(parts: [String], title: String) async throws -> String {
-        var parts = parts
-        let chunker = TranscriptChunker()
-        // Each round should shrink the part count; a model that returns
-        // non-shrinking output would otherwise loop forever. 6 rounds covers
-        // any real meeting (10k-char budget → 6 halvings ≳ 640k chars).
-        for _ in 0..<6 {
-            if parts.count == 1 { return parts[0] }
-            let groups = chunker.group(parts, maxCharacters: maxChunkCharacters)
-            if groups.count == 1 {
-                return try await respond(to: MeetingSummaryPrompt.reduce(parts: parts, title: title))
-            }
-            var reduced: [String] = []
-            for group in groups {
-                reduced.append(try await respond(to: MeetingSummaryPrompt.reduce(parts: group, title: title)))
-            }
-            // A round that didn't shrink will never converge — bail to the guard below.
-            if reduced.count >= parts.count { parts = reduced; break }
-            parts = reduced
-        }
-        // Exhausted: reduce whatever we have in one clipped pass rather than spin.
-        let joined = parts.joined(separator: "\n\n")
-        return try await respond(to: MeetingSummaryPrompt.reduce(parts: [String(joined.prefix(maxChunkCharacters))], title: title))
     }
 
     static func extractiveFallback(transcript: String) -> String {
