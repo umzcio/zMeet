@@ -52,8 +52,28 @@ cp -R "$SPARKLE_FW" "$FW_DIR/"
 mkdir -p "$RES_DIR/Fonts"
 cp "$ROOT/scripts/assets/DancingScript.ttf" "$RES_DIR/Fonts/DancingScript.ttf"
 
-# App icon.
-cp "$ROOT/scripts/assets/AppIcon.icns" "$RES_DIR/AppIcon.icns"
+# App icon: compile the Icon Composer document into Assets.car (light, dark,
+# and tinted appearances for macOS 26) plus a zMeet.icns fallback. Needs Xcode's
+# actool; fail loudly rather than ship a flat icon. actool mis-resolves relative
+# paths, so pass absolute ones.
+if ! xcrun --find actool >/dev/null 2>&1; then
+  echo "error: actool not found — install Xcode (xcode-select -s /Applications/Xcode.app)" >&2
+  exit 1
+fi
+ICON_PLIST="$(mktemp -t zmeet-icon).plist"
+xcrun actool "$ROOT/scripts/assets/zMeet.icon" \
+    --compile "$RES_DIR" \
+    --platform macosx \
+    --minimum-deployment-target 26.0 \
+    --app-icon zMeet \
+    --include-all-app-icons \
+    --output-partial-info-plist "$ICON_PLIST" \
+    --output-format human-readable-text >/dev/null
+if [[ ! -f "$RES_DIR/Assets.car" || ! -f "$RES_DIR/zMeet.icns" ]]; then
+  echo "error: actool did not produce Assets.car + zMeet.icns from scripts/assets/zMeet.icon" >&2
+  exit 1
+fi
+rm -f "$ICON_PLIST"
 
 # Menu-bar icon layers (generated from the artwork by scripts/make-menubar-icon.py).
 cp "$ROOT"/scripts/assets/menubar/MenuBarIcon*.png "$RES_DIR/"
@@ -70,7 +90,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key><string>$APP_NAME</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleExecutable</key><string>$APP_NAME</string>
-    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>CFBundleIconFile</key><string>zMeet</string>
+    <key>CFBundleIconName</key><string>zMeet</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD</string>

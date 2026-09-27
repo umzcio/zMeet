@@ -7,6 +7,8 @@ summarizes on-device, one folder per meeting under ~/Documents/zMeet.
 - `swift test` — ZMeetCore unit tests (Swift Testing). The app layer (ZMeetApp)
   is an executable target with NO tests — verify app changes by build.
 - `swift build -c release --product ZMeetApp` — the app binary.
+- `scripts/build-app.sh` compiles the app icon from scripts/assets/zMeet.icon
+  (Icon Composer) with Xcode's actool — edit the .icon, never a flat .icns.
 - Sparkle "XCFramework Info.plist not found" error on any build:
   `rm -rf .build && swift build` (stale artifact cache after a repo move).
 - CI (.github/workflows/ci.yml) runs tests + a release build on every PR
