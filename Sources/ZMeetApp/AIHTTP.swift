@@ -1,11 +1,12 @@
 import Foundation
 
-/// The one URLSession zMeet uses for Anthropic API calls. Ephemeral (no shared
-/// cookie/credential/cache storage) and redirect-refusing: the API key rides in
-/// the custom `x-api-key` header, which URLSession does NOT strip on redirect
-/// the way it strips Authorization — so any 3xx would replay the credential to
-/// the redirect target. The API never legitimately redirects; refuse them all.
-enum AnthropicHTTP {
+/// The one URLSession zMeet uses for every AI provider call (Anthropic, OpenAI,
+/// Ollama). Ephemeral (no shared cookie/credential/cache storage) and
+/// redirect-refusing: Anthropic's key rides in the custom `x-api-key` header,
+/// which URLSession does NOT strip on redirect — so any 3xx would replay the
+/// credential to the redirect target. No provider API legitimately redirects;
+/// refuse them all. Every provider request must go through this session.
+enum AIHTTP {
     static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 300   // map-reduce summary calls can be slow

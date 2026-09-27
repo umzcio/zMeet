@@ -40,9 +40,9 @@ final class AppState: ObservableObject {
     /// Outcome of the most recent backfill (e.g. "All 5 meetings are already in the
     /// vault."), shown in Settings until the next run. nil = no run this session.
     @Published private(set) var obsidianBackfillMessage: String?
-    /// Whether an Anthropic API key is stored in the Keychain. Kept in sync on
-    /// save/clear so the Settings UI observes it without a per-render Keychain read.
-    @Published private(set) var hasAPIKey: Bool = false
+    /// Providers with a key stored in the Keychain. Kept in sync on save/clear so
+    /// the Settings UI observes it without a per-render Keychain read.
+    @Published private(set) var savedKeys: Set<AIProvider> = []
     @Published private(set) var recent: [MeetingSession] = []
     /// Every meeting, newest first — backs the Library window.
     @Published private(set) var allSessions: [MeetingSession] = []
@@ -143,7 +143,7 @@ final class AppState: ObservableObject {
         Task { @MainActor [weak self] in
             self?.manager.purgeExpiredAudio()
         }
-        refreshHasAPIKey()
+        refreshSavedKeys()
         refreshPermissions()
         if let configRecoveryNote { notice = UserNotice(kind: .info, message: configRecoveryNote) }
         if config.detectMeetings { startMeetingDetection() }
@@ -307,46 +307,60 @@ final class AppState: ObservableObject {
         }
     }
 
-    // MARK: Cloud-summary API key (Keychain-backed)
+    // MARK: AI provider keys + connection (Keychain-backed)
 
-    /// Mirrors whether a key is in the Keychain, kept in sync on save/clear so the
-    /// Settings UI observes it (and doesn't hit the Keychain on every render).
-    private func refreshHasAPIKey() {
-        hasAPIKey = (secretStore.read(account: SecretAccount.anthropicAPIKey)?.isEmpty == false)
+    /// Mirrors which providers have a key in the Keychain, kept in sync on
+    /// save/clear so the Settings UI observes it (and doesn't hit the Keychain on
+    /// every render).
+    private func refreshSavedKeys() {
+        savedKeys = Set(AIProvider.allCases.filter { provider in
+            guard let account = provider.secretAccount else { return false }
+            return secretStore.read(account: account)?.isEmpty == false
+        })
     }
 
-    func saveAPIKey(_ key: String) {
+    func saveKey(_ key: String, for provider: AIProvider) {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty, let account = provider.secretAccount else { return }
         do {
-            try secretStore.write(trimmed, account: SecretAccount.anthropicAPIKey)
+            try secretStore.write(trimmed, account: account)
         } catch {
             notice = UserNotice(kind: .error, message: "Couldn't save the API key to your Keychain (error \((error as NSError).code)). Your previous key was not changed.")
         }
-        refreshHasAPIKey()
+        refreshSavedKeys()
     }
 
-    func clearAPIKey() {
-        try? secretStore.delete(account: SecretAccount.anthropicAPIKey)
-        refreshHasAPIKey()
+    func clearKey(for provider: AIProvider) {
+        guard let account = provider.secretAccount else { return }
+        try? secretStore.delete(account: account)
+        refreshSavedKeys()
     }
 
-    /// Verifies the stored key against the zero-cost `GET /v1/models` endpoint.
-    /// Returns nil on success or a short error message on failure. Used by the
-    /// Settings "Test key" button.
-    func testAPIKey() async -> String? {
-        guard let key = secretStore.read(account: SecretAccount.anthropicAPIKey), !key.isEmpty else {
-            return "No API key saved."
-        }
+    /// The selected provider's connection (nil when on-device), read fresh so it
+    /// always reflects the current config and Keychain.
+    private var aiConnection: AIConnection? {
+        AIConnection.current(config: config, secrets: secretStore)
+    }
+
+    /// Settings' Test connection: checks the address or key with a zero-token
+    /// model-list request, then that the chosen model exists.
+    func testAIConnection() async -> (ok: Bool, message: String) {
+        guard let connection = aiConnection else { return (true, "On-device needs no connection.") }
         do {
-            try await CloudSummarizer(apiKey: key).validateKey()
-            return nil
-        } catch let AIProviderError.http(status) {
-            return status == 401 ? "Key rejected (401)." : "Request failed (HTTP \(status))."
-        } catch AIProviderError.network {
-            return "Network error — check your connection."
+            let models = try await connection.listModels()
+            return AICopy.connectionCheck(models: models, model: connection.model, provider: connection.provider)
         } catch {
-            return "Test failed: \(error.localizedDescription)"
+            return (false, AICopy.failureMessage(error, provider: connection.provider))
+        }
+    }
+
+    /// The selected provider's model list for the Settings picker.
+    func fetchAIModels() async -> (models: [String], error: String?) {
+        guard let connection = aiConnection else { return ([], nil) }
+        do {
+            return (try await connection.listModels(), nil)
+        } catch {
+            return ([], AICopy.failureMessage(error, provider: connection.provider))
         }
     }
 
@@ -627,17 +641,14 @@ final class AppState: ObservableObject {
                 let session = try manager.session(id: id)
                 let (transcript, summary, engine) = try await produceNotes(session: session)
                 if case .onDeviceAfterFailure(let failed) = engine {
-                    notice = UserNotice(kind: .warning, message: "\(failed.displayName) summary failed — this meeting's notes were generated on-device. Check Settings → AI.")
+                    notice = UserNotice(kind: .warning, message: AICopy.fallbackNotice(provider: failed))
                 }
                 // Give untitled meetings (in-person / manual) a descriptive title from
                 // their notes, before the note is written + published so it carries
                 // through. Best-effort; never overwrites a real/user-set title. You can
                 // still rename afterward (Library → Rename), which republishes cleanly.
                 if Self.needsAutoTitle(session.title) {
-                    let generated = await TitleGenerator(
-                        useCloud: (config.aiProvider == .anthropic),
-                        apiKey: secretStore.read(account: SecretAccount.anthropicAPIKey)
-                    ).title(summary: summary)
+                    let generated = await TitleGenerator(connection: aiConnection).title(summary: summary)
                     if let generated, !generated.isEmpty {
                         _ = try? manager.setTitle(id: id, to: generated)
                     }
@@ -727,11 +738,9 @@ final class AppState: ObservableObject {
         let transcript = try await transcript(for: session)
         setStage(session.id, "Summarizing…")
         let provider = config.aiProvider
-        var remote: (any Summarizer)?
-        if provider == .anthropic,
-           let key = secretStore.read(account: SecretAccount.anthropicAPIKey),
-           !key.isEmpty {
-            remote = CloudSummarizer(apiKey: key)
+        let connection = aiConnection
+        let remote: (any Summarizer)? = connection.flatMap { c in
+            c.isUsable ? c.summarizer(complete: { prompt in try await c.complete(prompt: prompt) }) : nil
         }
         let (summary, engine) = try await SummarizationPolicy().summarize(
             transcript: transcript,
@@ -741,6 +750,9 @@ final class AppState: ObservableObject {
             remote: remote,
             onDevice: MeetingSummarizer()
         )
+        if provider != .onDevice, remote == nil {
+            notice = UserNotice(kind: .warning, message: AICopy.notConfiguredNotice(provider: provider))
+        }
         return (transcript, summary, engine)
     }
 
@@ -806,10 +818,7 @@ final class AppState: ObservableObject {
     /// `publishToObsidianIfEnabled` so every return here (including the deleted-
     /// meeting guard) still lets the caller release the publish slot exactly once.
     private func publishOnce(session: MeetingSession, transcript: String, summary: String, vault: URL) async {
-        let entities = await EntityExtractor(
-            useCloud: (config.aiProvider == .anthropic),
-            apiKey: secretStore.read(account: SecretAccount.anthropicAPIKey)
-        ).extract(summary: summary, transcript: transcript)
+        let entities = await EntityExtractor(connection: aiConnection).extract(summary: summary, transcript: transcript)
         // Re-load: the meeting may have been renamed — or DELETED — while
         // extraction ran. A deleted meeting must never be re-published.
         guard let session = try? manager.session(id: session.id) else { return }

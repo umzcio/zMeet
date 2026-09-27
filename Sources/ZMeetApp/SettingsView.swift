@@ -356,25 +356,25 @@ struct SettingsView: View {
             if (state.config.aiProvider == .anthropic) {
                 card {
                     row("Anthropic API key",
-                        state.hasAPIKey ? "A key is saved in your Keychain." : "Paste your Anthropic API key (stored in the Keychain).") {
+                        state.savedKeys.contains(.anthropic) ? "A key is saved in your Keychain." : "Paste your Anthropic API key (stored in the Keychain).") {
                         EmptyView()
                     }
                     divider
                     HStack(spacing: 8) {
-                        SecureField(state.hasAPIKey ? "•••• saved — paste to replace" : "sk-ant-…", text: $apiKeyInput)
+                        SecureField(state.savedKeys.contains(.anthropic) ? "•••• saved — paste to replace" : "sk-ant-…", text: $apiKeyInput)
                             .textFieldStyle(.roundedBorder)
                         Button("Save") {
-                            state.saveAPIKey(apiKeyInput)
+                            state.saveKey(apiKeyInput, for: .anthropic)
                             apiKeyInput = ""
                             keyTestResult = nil
                         }
                         .disabled(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
                         Button("Clear") {
-                            state.clearAPIKey()
+                            state.clearKey(for: .anthropic)
                             apiKeyInput = ""
                             keyTestResult = nil
                         }
-                        .disabled(!state.hasAPIKey)
+                        .disabled(!state.savedKeys.contains(.anthropic))
                     }
                     .padding(.horizontal, 16).padding(.bottom, 12)
                     divider
@@ -389,12 +389,12 @@ struct SettingsView: View {
                                 testingKey = true
                                 keyTestResult = nil
                                 Task {
-                                    let err = await state.testAPIKey()
-                                    keyTestResult = err.map(KeyTestResult.failure) ?? .ok
+                                    let result = await state.testAIConnection()
+                                    keyTestResult = result.ok ? .ok : .failure(result.message)
                                     testingKey = false
                                 }
                             }
-                            .disabled(testingKey || !state.hasAPIKey)
+                            .disabled(testingKey || !state.savedKeys.contains(.anthropic))
                         }
                     }
                 }
