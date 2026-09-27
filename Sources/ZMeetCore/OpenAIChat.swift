@@ -24,7 +24,7 @@ public enum OpenAIChat {
 
     /// `GET <base>/models`: zero-token, used for the model list and Test connection.
     public static func makeModelsRequest(baseURL: URL, key: String?) -> URLRequest {
-        var req = URLRequest(url: baseURL.appending(path: "models"))
+        var req = URLRequest(url: baseURL.appending(path: "models"), timeoutInterval: ModelCatalog.listTimeout)
         req.httpMethod = "GET"
         applyAuth(&req, key: key)
         return req

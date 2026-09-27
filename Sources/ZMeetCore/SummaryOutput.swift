@@ -11,7 +11,10 @@ public enum SummaryOutput {
     /// often wrap the whole answer), then trims whitespace.
     public static func clean(_ raw: String) -> String {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.hasPrefix("<think>"), let end = text.range(of: "</think>") {
+        if text.hasPrefix("<think>") {
+            // An unclosed block means the reply was cut off mid-reasoning: there
+            // is no answer, and the reasoning must never become a title.
+            guard let end = text.range(of: "</think>") else { return "" }
             text = String(text[end.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         var lines = text.components(separatedBy: "\n")

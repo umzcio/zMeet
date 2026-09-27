@@ -69,3 +69,25 @@ import Testing
     #expect(keyed.value(forHTTPHeaderField: "Authorization") == "Bearer secret")
     #expect(ModelCatalog.makeOllamaTagsRequest(address: "", key: nil) == nil)
 }
+
+@Test func listRequestsUseShortTimeout() throws {
+    let tags = try #require(ModelCatalog.makeOllamaTagsRequest(address: "localhost:11434", key: nil))
+    #expect(tags.timeoutInterval == ModelCatalog.listTimeout)
+    #expect(OpenAIChat.makeModelsRequest(baseURL: OpenAIChat.openAIBaseURL, key: "k").timeoutInterval == ModelCatalog.listTimeout)
+    #expect(AnthropicSummary.makeValidationRequest(key: "k").timeoutInterval == ModelCatalog.listTimeout)
+    #expect(ModelCatalog.listTimeout == 15)
+}
+
+@Test func containsMatchesDatedSnapshotOfAlias() {
+    #expect(ModelCatalog.contains(["claude-sonnet-5-20260101"], model: "claude-sonnet-5"))
+    #expect(!ModelCatalog.contains(["claude-sonnet-5-1-20260101"], model: "claude-sonnet-5"))
+    #expect(!ModelCatalog.contains(["claude-sonnet-5-preview"], model: "claude-sonnet-5"))
+}
+
+@Test func requestGenerationOnlyLatestIsCurrent() {
+    var gen = RequestGeneration()
+    let first = gen.begin()
+    let second = gen.begin()
+    #expect(!gen.isCurrent(first))
+    #expect(gen.isCurrent(second))
+}

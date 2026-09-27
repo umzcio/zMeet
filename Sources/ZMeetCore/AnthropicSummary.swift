@@ -8,6 +8,9 @@ public enum AIProviderError: Error, Equatable {
     case http(status: Int)
     case network
     case decode
+    /// macOS App Transport Security refused a plain-http load (a qualified
+    /// hostname rather than an IP, `.local` name, or this Mac).
+    case insecureConnectionBlocked
 }
 
 /// Pure request-building and response-parsing for the Anthropic Messages API.
@@ -37,7 +40,7 @@ public enum AnthropicSummary {
     /// (200 = valid, 401 = rejected) without generating any tokens. Used by the
     /// Settings "Test key" button instead of running a real summary.
     public static func makeValidationRequest(key: String) -> URLRequest {
-        var req = URLRequest(url: modelsEndpoint)
+        var req = URLRequest(url: modelsEndpoint, timeoutInterval: ModelCatalog.listTimeout)
         req.httpMethod = "GET"
         req.setValue(key, forHTTPHeaderField: "x-api-key")
         req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")

@@ -60,3 +60,8 @@ import Testing
     #expect(AICopy.notConfiguredNotice(provider: .openAI)
             == "OpenAI isn't set up yet, so this meeting's notes were generated on-device. Finish setup in Settings → AI.")
 }
+
+@Test func insecureConnectionMessageExplainsPlainHTTPBlock() {
+    #expect(AICopy.failureMessage(AIProviderError.insecureConnectionBlocked, provider: .ollama)
+            == "macOS only allows plain http to IP addresses, .local names, and this Mac. Use the server's IP address, or https.")
+}

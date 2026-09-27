@@ -59,3 +59,8 @@ We met.
 @Test func cleanTrimsWhitespace() {
     #expect(SummaryOutput.clean("\n\n  " + valid + "  \n") == valid)
 }
+
+@Test func cleanDropsUnclosedThinkBlock() {
+    #expect(SummaryOutput.clean("<think>\nStill reasoning about the title") == "")
+    #expect(!SummaryOutput.hasRequiredSections(SummaryOutput.clean("<think>cut off")))
+}

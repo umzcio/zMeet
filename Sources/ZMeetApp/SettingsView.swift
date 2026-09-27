@@ -20,6 +20,8 @@ struct SettingsView: View {
     @State private var modelLists: [AIProvider: [String]] = [:]
     @State private var loadingModels = false
     @State private var modelListError: String?
+    /// Only the latest model-list fetch may update the UI.
+    @State private var modelFetches = RequestGeneration()
     @State private var obsidianVaults: [ObsidianVaults.Vault] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -551,12 +553,15 @@ struct SettingsView: View {
     private func refreshModels() {
         commitAIFields()
         let provider = state.config.aiProvider
+        let token = modelFetches.begin()
         loadingModels = true
         modelListError = nil
         Task {
             let (models, error) = await state.fetchAIModels()
+            // A newer fetch (corrected address, new key) or a provider switch
+            // supersedes this one; drop its result and leave the spinner to it.
+            guard modelFetches.isCurrent(token) else { return }
             loadingModels = false
-            // The user may have switched providers while this ran; drop a stale result.
             guard state.config.aiProvider == provider else { return }
             if let error {
                 modelListError = error

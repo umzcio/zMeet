@@ -3,6 +3,11 @@ import Foundation
 /// Parses each provider's model list for the Settings picker and Test
 /// connection. Pure; the requests are sent by `AIConnection.listModels`.
 public enum ModelCatalog {
+    /// Timeout for list requests (model picker, Test connection). Short, so a
+    /// typo'd address fails in seconds instead of inheriting the 300 s
+    /// summary-request timeout.
+    public static let listTimeout: TimeInterval = 15
+
     /// Ollama `GET /api/tags` → `models[].name`, in server order.
     public static func parseOllamaTags(_ data: Data) throws -> [String] {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -42,17 +47,25 @@ public enum ModelCatalog {
     }
 
     /// Whether `model` is in the list. Ollama treats a name without a tag as
-    /// ":latest", so "llama3.1" matches "llama3.1:latest".
+    /// ":latest", so "llama3.1" matches "llama3.1:latest"; an alias like
+    /// "claude-sonnet-5" matches its dated snapshot "claude-sonnet-5-20260101".
     public static func contains(_ models: [String], model: String) -> Bool {
         if models.contains(model) { return true }
-        return !model.contains(":") && models.contains(model + ":latest")
+        if !model.contains(":"), models.contains(model + ":latest") { return true }
+        return models.contains { id in
+            guard id.hasPrefix(model + "-") else { return false }
+            let suffix = id.dropFirst(model.count + 1)
+            return suffix.count == 8 && suffix.allSatisfy(\.isNumber)
+        }
     }
+
+
 
     /// `GET <address>/api/tags`, with a bearer token only when a key is set.
     /// nil when the address is unusable.
     public static func makeOllamaTagsRequest(address: String, key: String?) -> URLRequest? {
         guard let url = OllamaAddress.tagsURL(address) else { return nil }
-        var req = URLRequest(url: url)
+        var req = URLRequest(url: url, timeoutInterval: listTimeout)
         req.httpMethod = "GET"
         OpenAIChat.applyAuth(&req, key: key)
         return req

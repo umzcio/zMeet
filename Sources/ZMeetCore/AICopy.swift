@@ -53,6 +53,8 @@ public enum AICopy {
             return "Network error — check your connection."
         case .decode:
             return "Unexpected response from \(provider.displayName)."
+        case .insecureConnectionBlocked:
+            return "macOS only allows plain http to IP addresses, .local names, and this Mac. Use the server's IP address, or https."
         }
     }
 

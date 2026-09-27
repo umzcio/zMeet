@@ -57,6 +57,8 @@ extension AIConnection {
         do {
             let (data, response) = try await AIHTTP.session.data(for: request)
             return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
+        } catch let error as URLError where error.code == .appTransportSecurityRequiresSecureConnection {
+            throw AIProviderError.insecureConnectionBlocked
         } catch {
             throw AIProviderError.network
         }
