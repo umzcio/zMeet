@@ -4,18 +4,38 @@ import Foundation
 /// not persisted on the session.
 public enum SummaryEngine: Sendable, Equatable {
     case onDevice
-    case cloud
-    /// Cloud was attempted (the transcript was transmitted) but the response
-    /// failed; the saved summary came from the on-device fallback.
-    case onDeviceAfterCloudFailure
+    /// A non-Apple provider wrote the summary with this model.
+    case provider(AIProvider, model: String)
+    /// `provider` was attempted (the transcript was transmitted) but failed or
+    /// returned malformed notes; the saved summary came from on-device.
+    case onDeviceAfterFailure(AIProvider)
 
-    /// Footer line appended to the rendered note (not indexed for search).
+    /// Footer line appended to the rendered note inside `_…_` (not indexed for
+    /// search; parsers cut before it).
     public var attribution: String {
         switch self {
-        case .onDevice: "Summary generated on-device"
-        case .cloud: "Summary by Claude Sonnet (cloud)"
-        case .onDeviceAfterCloudFailure: "Summary generated on-device (cloud attempt failed)"
+        case .onDevice:
+            "Summary generated on-device"
+        case .provider(let provider, let model):
+            "Summary by \(Self.escaped(Self.modelLabel(provider, model))) (\(provider.displayName))"
+        case .onDeviceAfterFailure(let provider):
+            "Summary generated on-device (\(provider.displayName) attempt failed)"
         }
+    }
+
+    /// Anthropic ids get their friendly name; other providers' names are shown raw.
+    static func modelLabel(_ provider: AIProvider, _ model: String) -> String {
+        provider == .anthropic ? AnthropicSummary.displayName(forModel: model) : model
+    }
+
+    /// Backslash-escapes characters that would break the italic footer.
+    static func escaped(_ text: String) -> String {
+        var out = ""
+        for ch in text {
+            if "\\_*`[]".contains(ch) { out.append("\\") }
+            out.append(ch)
+        }
+        return out
     }
 }
 
@@ -156,29 +176,40 @@ public enum MeetingSummaryPrompt {
     }
 }
 
-/// Chooses cloud vs on-device summarization and falls back to on-device on any
-/// cloud failure, so notes are never lost. Pure orchestration — it knows nothing
-/// about the Keychain, URLSession, or FoundationModels.
+/// Runs the selected provider and falls back to on-device on any failure, so
+/// notes are never lost. Pure orchestration — it knows nothing about the
+/// Keychain, URLSession, or FoundationModels.
 public struct SummarizationPolicy: Sendable {
     public init() {}
 
+    /// `remote` is the selected non-Apple provider's summarizer, or nil when the
+    /// provider is on-device or isn't set up (no key or model) — then nothing is
+    /// transmitted and on-device runs plainly. Remote output is cleaned and must
+    /// contain the four sections: a malformed reply gets one retry; a thrown
+    /// error goes straight to the fallback.
     public func summarize(
         transcript: String,
         title: String,
-        useCloud: Bool,
-        onDevice: any Summarizer,
-        cloud: (any Summarizer)?
+        provider: AIProvider,
+        model: String,
+        remote: (any Summarizer)?,
+        onDevice: any Summarizer
     ) async throws -> (markdown: String, engine: SummaryEngine) {
-        if useCloud, let cloud {
-            do {
-                let md = try await cloud.summarize(transcript: transcript, title: title)
-                return (md, .cloud)
-            } catch {
-                // Cloud was attempted — the transcript was already transmitted —
-                // so the fallback must be attributed honestly.
-                let md = try await onDevice.summarize(transcript: transcript, title: title)
-                return (md, .onDeviceAfterCloudFailure)
+        if provider != .onDevice, let remote {
+            for _ in 0..<2 {
+                do {
+                    let md = SummaryOutput.clean(try await remote.summarize(transcript: transcript, title: title))
+                    if SummaryOutput.hasRequiredSections(md) {
+                        return (md, .provider(provider, model: model))
+                    }
+                } catch {
+                    break
+                }
             }
+            // The provider was attempted — the transcript was already transmitted —
+            // so the fallback must be attributed honestly.
+            let md = try await onDevice.summarize(transcript: transcript, title: title)
+            return (md, .onDeviceAfterFailure(provider))
         }
         let md = try await onDevice.summarize(transcript: transcript, title: title)
         return (md, .onDevice)

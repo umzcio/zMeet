@@ -626,8 +626,8 @@ final class AppState: ObservableObject {
                 // only touches session state back on the caller's actor.
                 let session = try manager.session(id: id)
                 let (transcript, summary, engine) = try await produceNotes(session: session)
-                if engine == .onDeviceAfterCloudFailure {
-                    notice = UserNotice(kind: .warning, message: "Cloud summary failed — this meeting's notes were generated on-device. Check your API key in Settings.")
+                if case .onDeviceAfterFailure(let failed) = engine {
+                    notice = UserNotice(kind: .warning, message: "\(failed.displayName) summary failed — this meeting's notes were generated on-device. Check Settings → AI.")
                 }
                 // Give untitled meetings (in-person / manual) a descriptive title from
                 // their notes, before the note is written + published so it carries
@@ -726,19 +726,20 @@ final class AppState: ObservableObject {
     private func produceNotes(session: MeetingSession) async throws -> (transcript: String, summary: String, engine: SummaryEngine) {
         let transcript = try await transcript(for: session)
         setStage(session.id, "Summarizing…")
-        let onDevice = MeetingSummarizer()
-        var cloud: (any Summarizer)?
-        if (config.aiProvider == .anthropic),
+        let provider = config.aiProvider
+        var remote: (any Summarizer)?
+        if provider == .anthropic,
            let key = secretStore.read(account: SecretAccount.anthropicAPIKey),
            !key.isEmpty {
-            cloud = CloudSummarizer(apiKey: key)
+            remote = CloudSummarizer(apiKey: key)
         }
         let (summary, engine) = try await SummarizationPolicy().summarize(
             transcript: transcript,
             title: session.title,
-            useCloud: (config.aiProvider == .anthropic),
-            onDevice: onDevice,
-            cloud: cloud
+            provider: provider,
+            model: config.model(for: provider),
+            remote: remote,
+            onDevice: MeetingSummarizer()
         )
         return (transcript, summary, engine)
     }

@@ -661,10 +661,10 @@ private final class CapturedMessageBox: @unchecked Sendable {
     _ = try await manager.stop()
 
     let processed = try await manager.applyProcessedText(
-        id: started.id, transcript: "hello world", summary: "## Summary\n- ok", engine: .cloud)
+        id: started.id, transcript: "hello world", summary: "## Summary\n- ok", engine: .provider(.anthropic, model: "claude-sonnet-5"))
 
     let note = try String(contentsOfFile: processed.notePath!, encoding: .utf8)
-    #expect(note.contains("Summary by Claude Sonnet (cloud)"))
+    #expect(note.contains("Summary by Claude Sonnet 5 (Anthropic)"))
 }
 
 /// Helper: make a processed meeting with a real audio file, dated `daysAgo`.

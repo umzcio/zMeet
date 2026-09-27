@@ -59,3 +59,21 @@ private func processedNote(summary: String) -> String {
     let body = MarkdownRenderer().summaryBody(fromProcessedNote: processedNote(summary: hostile))
     #expect(body == sanitized)
 }
+
+@Test func summaryBodyExcludesProviderFooter() {
+    let session = MeetingSession(
+        id: "2026-06-01-090000-sync", title: "Weekly Sync", sourceApp: nil,
+        startedAt: Date(timeIntervalSince1970: 1_780_000_000), endedAt: Date(timeIntervalSince1970: 1_780_003_480),
+        status: .processed, audioPath: "/x/recording.m4a", transcriptPath: "/x/transcript.md",
+        notePath: "/x/notes.md", recorderLogPath: nil, errorMessage: nil)
+    let note = MarkdownRenderer().renderProcessedNote(
+        session: session,
+        transcriptURL: URL(fileURLWithPath: "/x/transcript.md"),
+        noteURL: URL(fileURLWithPath: "/x/notes.md"),
+        summaryMarkdown: "## Summary\n\n- Discussed flights.",
+        summaryEngine: .provider(.ollama, model: "qwen2.5_coder"))
+    #expect(note.contains(#"_Summary by qwen2.5\_coder (Ollama)_"#))
+    let body = MarkdownRenderer().summaryBody(fromProcessedNote: note)
+    #expect(body.contains("Discussed flights."))
+    #expect(!body.contains("Ollama"))
+}

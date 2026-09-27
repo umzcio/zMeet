@@ -1,14 +1,6 @@
+import Foundation
 import Testing
 @testable import ZMeetCore
-
-@Test func summaryEngineAttributionStrings() {
-    #expect(SummaryEngine.onDevice.attribution == "Summary generated on-device")
-    #expect(SummaryEngine.cloud.attribution == "Summary by Claude Sonnet (cloud)")
-}
-
-@Test func failureAttributionMentionsCloudAttempt() {
-    #expect(SummaryEngine.onDeviceAfterCloudFailure.attribution.contains("cloud attempt failed"))
-}
 
 @Test func meetingSummaryPromptHasRequiredSections() {
     let prompt = MeetingSummaryPrompt.build(transcript: "We shipped X.", title: "Sync")
@@ -21,53 +13,102 @@ import Testing
     #expect(prompt.contains("Do not invent"))
 }
 
-private struct CannedSummarizer: Summarizer {
-    let text: String
-    final class Calls: @unchecked Sendable { var count = 0 }
-    let calls = Calls()
+private let validNote = "## Summary\nok\n\n## Key Points\n- a\n\n## Action Items\n- None\n\n## Decisions\n- None"
+
+/// Returns its answers in order (repeating the last), counting calls.
+private final class ScriptedSummarizer: Summarizer, @unchecked Sendable {
+    private let lock = NSLock()
+    private var answers: [Result<String, Error>]
+    private(set) var calls = 0
+    init(_ answers: [Result<String, Error>]) { self.answers = answers }
     func summarize(transcript: String, title: String) async throws -> String {
-        calls.count += 1
-        return text
+        let answer: Result<String, Error> = lock.withLock {
+            calls += 1
+            return answers.count > 1 ? answers.removeFirst() : answers[0]
+        }
+        return try answer.get()
     }
 }
 
-private struct ThrowingSummarizer: Summarizer {
-    struct Boom: Error {}
-    func summarize(transcript: String, title: String) async throws -> String { throw Boom() }
+private struct Boom: Error {}
+
+@Test func attributionForEveryOutcome() {
+    #expect(SummaryEngine.onDevice.attribution == "Summary generated on-device")
+    #expect(SummaryEngine.provider(.anthropic, model: "claude-sonnet-5").attribution
+            == "Summary by Claude Sonnet 5 (Anthropic)")
+    #expect(SummaryEngine.provider(.openAI, model: "gpt-5-mini").attribution == "Summary by gpt-5-mini (OpenAI)")
+    #expect(SummaryEngine.provider(.ollama, model: "llama3.1:8b").attribution == "Summary by llama3.1:8b (Ollama)")
+    #expect(SummaryEngine.onDeviceAfterFailure(.ollama).attribution
+            == "Summary generated on-device (Ollama attempt failed)")
 }
 
-@Test func policyUsesCloudWhenEnabledAndSucceeds() async throws {
-    let onDevice = CannedSummarizer(text: "local")
-    let cloud = CannedSummarizer(text: "cloud")
-    let (md, engine) = try await SummarizationPolicy().summarize(
-        transcript: "t", title: "x", useCloud: true, onDevice: onDevice, cloud: cloud)
-    #expect(md == "cloud")
-    #expect(engine == .cloud)
-    #expect(onDevice.calls.count == 0)
+@Test func attributionEscapesMarkdownInModelNames() {
+    #expect(SummaryEngine.provider(.ollama, model: "qwen2.5_coder*[x]`").attribution
+            == #"Summary by qwen2.5\_coder\*\[x\]\` (Ollama)"#)
 }
 
-@Test func policyFallsBackToOnDeviceWhenCloudThrows() async throws {
-    let onDevice = CannedSummarizer(text: "local")
+@Test func policyUsesRemoteWhenValid() async throws {
+    let remote = ScriptedSummarizer([.success(validNote)])
+    let onDevice = ScriptedSummarizer([.success("local")])
     let (md, engine) = try await SummarizationPolicy().summarize(
-        transcript: "t", title: "x", useCloud: true, onDevice: onDevice, cloud: ThrowingSummarizer())
+        transcript: "t", title: "x", provider: .openAI, model: "gpt-5-mini", remote: remote, onDevice: onDevice)
+    #expect(md == validNote)
+    #expect(engine == .provider(.openAI, model: "gpt-5-mini"))
+    #expect(onDevice.calls == 0)
+}
+
+@Test func policyCleansRemoteOutput() async throws {
+    let remote = ScriptedSummarizer([.success("<think>hmm</think>\n```markdown\n" + validNote + "\n```")])
+    let (md, _) = try await SummarizationPolicy().summarize(
+        transcript: "t", title: "x", provider: .ollama, model: "qwen3", remote: remote,
+        onDevice: ScriptedSummarizer([.success("local")]))
+    #expect(md == validNote)
+}
+
+@Test func policyFallsBackImmediatelyWhenRemoteThrows() async throws {
+    let remote = ScriptedSummarizer([.failure(Boom())])
+    let (md, engine) = try await SummarizationPolicy().summarize(
+        transcript: "t", title: "x", provider: .ollama, model: "m", remote: remote,
+        onDevice: ScriptedSummarizer([.success("local")]))
     #expect(md == "local")
-    #expect(engine == .onDeviceAfterCloudFailure)
+    #expect(engine == .onDeviceAfterFailure(.ollama))
+    #expect(remote.calls == 1)
 }
 
-@Test func policyUsesOnDeviceWhenDisabled() async throws {
-    let onDevice = CannedSummarizer(text: "local")
-    let cloud = CannedSummarizer(text: "cloud")
+@Test func policyRetriesOnceOnMalformedOutput() async throws {
+    let remote = ScriptedSummarizer([.success("just prose"), .success(validNote)])
     let (md, engine) = try await SummarizationPolicy().summarize(
-        transcript: "t", title: "x", useCloud: false, onDevice: onDevice, cloud: cloud)
+        transcript: "t", title: "x", provider: .anthropic, model: "claude-sonnet-5", remote: remote,
+        onDevice: ScriptedSummarizer([.success("local")]))
+    #expect(md == validNote)
+    #expect(engine == .provider(.anthropic, model: "claude-sonnet-5"))
+    #expect(remote.calls == 2)
+}
+
+@Test func policyFallsBackAfterTwoMalformedOutputs() async throws {
+    let remote = ScriptedSummarizer([.success("just prose")])
+    let (md, engine) = try await SummarizationPolicy().summarize(
+        transcript: "t", title: "x", provider: .openAI, model: "gpt-5", remote: remote,
+        onDevice: ScriptedSummarizer([.success("local")]))
+    #expect(md == "local")
+    #expect(engine == .onDeviceAfterFailure(.openAI))
+    #expect(remote.calls == 2)
+}
+
+@Test func policyIgnoresRemoteWhenProviderIsOnDevice() async throws {
+    let remote = ScriptedSummarizer([.success(validNote)])
+    let (md, engine) = try await SummarizationPolicy().summarize(
+        transcript: "t", title: "x", provider: .onDevice, model: "", remote: remote,
+        onDevice: ScriptedSummarizer([.success("local")]))
     #expect(md == "local")
     #expect(engine == .onDevice)
-    #expect(cloud.calls.count == 0)
+    #expect(remote.calls == 0)
 }
 
-@Test func policyUsesOnDeviceWhenNoCloudProvided() async throws {
-    let onDevice = CannedSummarizer(text: "local")
+@Test func policyRunsOnDeviceWhenRemoteIsNotConfigured() async throws {
     let (md, engine) = try await SummarizationPolicy().summarize(
-        transcript: "t", title: "x", useCloud: true, onDevice: onDevice, cloud: nil)
+        transcript: "t", title: "x", provider: .ollama, model: "", remote: nil,
+        onDevice: ScriptedSummarizer([.success("local")]))
     #expect(md == "local")
     #expect(engine == .onDevice)
 }
