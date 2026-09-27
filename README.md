@@ -65,8 +65,8 @@ Transcription uses on-device Speech; summaries use on-device Foundation Models (
 If Apple Intelligence is off, you still get a full transcript and a basic extractive summary.
 
 Two **opt-in** features step outside the default local-only path, and only when you turn them on:
-**cloud summaries** send transcript and notes text + the meeting title (never audio) to the Claude
-API — for the summary itself, for the entity links used by Obsidian export, and for auto-titles —
+**a non-Apple AI provider** (Ollama, OpenAI, or Anthropic) receives transcript and notes text +
+the meeting title (never audio) — for the summary itself, for the entity links used by Obsidian export, and for auto-titles —
 and **Obsidian export** writes Markdown copies into a vault folder on your Mac (local files, no
 network).
 
@@ -87,7 +87,7 @@ network).
 - **On-device summaries** via Apple Foundation Models — Summary, Key Points, Action Items, Decisions.
 - **Full-meeting summarization** — long meetings are summarized via map-reduce, so the notes cover the whole conversation, not just its opening.
 - **Speaker labeling** (opt-in) — tags **You** vs **Others** in remote/hybrid transcripts by recording the mic and system audio as separate tracks.
-- **Optional cloud summaries** — point summaries at the Claude API for higher-quality notes (off by default; key stored in the Keychain; falls back to on-device automatically). Audio always stays local; only transcript text + the title are sent.
+- **Choose your AI** — On-device (default), Ollama on this Mac or your network, OpenAI, or Anthropic, with the model picked from the provider's list. Keys stay in the Keychain; if the provider fails, notes are written on-device and the note says so. Audio always stays local; only transcript text + the title are sent.
 - **Markdown output** — a readable `notes.md` with YAML frontmatter, plus the full `transcript.md`.
 - **Auto-process on stop** (configurable) — stop recording and the notes generate automatically.
 
@@ -112,7 +112,7 @@ network).
 - **Right-click** any meeting for its actions (rename, re-process, reveal, delete audio, delete).
 
 ### Settings
-- A dark, app-styled preferences window: recording modes & mic, audio quality, noise reduction, speaker labeling, meeting detection, cloud summaries, Obsidian export, output folder, permissions, and audio retention.
+- A dark, app-styled preferences window: recording modes & mic, audio quality, noise reduction, speaker labeling, meeting detection, AI provider and model, Obsidian export, output folder, permissions, and audio retention.
 
 ### Storage management
 - **Audio retention** — optionally auto-delete recordings older than a chosen window (7 / 30 / 90 days), or free up space on demand. Transcripts and notes are always kept.
@@ -280,7 +280,7 @@ Current release **v1.15.5**. Shipped on top of the v1.0 capture → transcript �
 an in-app Library/Reader window, a Settings UI, full-text search, audio retention/storage
 management, right-click actions, recording modes (remote/hybrid/in-person) with per-mode capture
 profiles, mic gain, background-noise reduction, You-vs-Others speaker labeling, full-meeting
-map-reduce summarization, optional Claude cloud summaries, and Obsidian linked-vault export.
+map-reduce summarization, a choice of AI provider (on-device, Ollama, OpenAI, Anthropic), and Obsidian linked-vault export.
 
 Next: an **Obsidian MCP chat** layer (ask plain-language questions across the vault), a **Notion**
 export, and cross-machine **vault sync** options.

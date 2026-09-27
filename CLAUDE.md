@@ -47,6 +47,11 @@ AppKit/AVFoundation into ZMeetCore. Sources/CSpeexDSP is vendored C
   (MenuContentView) closes itself via the closeMenuBarPopover environment
   action. The App's empty Settings scene exists only to keep the default main
   menu (Edit ⌘C/⌘V); keep its .appSettings replacement.
+- AI providers: one selected AIProvider (Core) drives summaries, auto-titles,
+  and entity links. Non-Apple output goes through SummarizationPolicy (clean →
+  four-section check → one retry → on-device fallback with an honest footer).
+  Every provider request goes through AIHTTP.session (redirect-refusing) — never
+  a new URLSession. Request-building/parsing stays in Core; ZMeetApp only sends.
 - The notes.md format is written by MarkdownRenderer and parsed in several
   places (Library reader, search indexing, Obsidian backfill) — template
   changes break all three differently.

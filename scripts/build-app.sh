@@ -76,6 +76,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>ATSApplicationFontsPath</key><string>Fonts</string>
     <key>NSMicrophoneUsageDescription</key><string>zMeet records your microphone during meetings to create notes.</string>
     <key>NSSpeechRecognitionUsageDescription</key><string>zMeet transcribes your meeting recordings on-device to create notes.</string>
+    <key>NSLocalNetworkUsageDescription</key><string>zMeet connects to your Ollama server on your local network to write meeting notes.</string>
+    <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
     <key>SUFeedURL</key><string>$SU_FEED_URL</string>
     <key>SUPublicEDKey</key><string>$SU_PUBLIC_ED_KEY</string>
     <key>SUEnableAutomaticChecks</key><true/>
