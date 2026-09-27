@@ -196,4 +196,6 @@ public protocol SecretStore: Sendable {
 /// Stable Keychain account names for zMeet secrets.
 public enum SecretAccount {
     public static let anthropicAPIKey = "anthropic-api-key"
+    public static let openAIAPIKey = "openai-api-key"
+    public static let ollamaAPIKey = "ollama-api-key"
 }

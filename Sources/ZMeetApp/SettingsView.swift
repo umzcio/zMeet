@@ -350,9 +350,10 @@ struct SettingsView: View {
             card {
                 toggleRow("Use \(AnthropicSummary.modelDisplayName) for summaries (cloud)",
                           "Higher-quality notes via the Claude API. Falls back to on-device automatically if it can't run.",
-                          boolBinding(\.useCloudSummaries))
+                          Binding(get: { state.config.aiProvider == .anthropic },
+                                  set: { on in state.updateConfig { $0.aiProvider = on ? .anthropic : .onDevice } }))
             }
-            if state.config.useCloudSummaries {
+            if (state.config.aiProvider == .anthropic) {
                 card {
                     row("Anthropic API key",
                         state.hasAPIKey ? "A key is saved in your Keychain." : "Paste your Anthropic API key (stored in the Keychain).") {
@@ -419,7 +420,7 @@ struct SettingsView: View {
                         dropdownTrigger(.obsidianVault)
                     }
                     divider
-                    row("Backfill", "Publish all existing meetings into the vault. Reuses each meeting's saved transcript and notes." + (state.config.useCloudSummaries ? " Cloud summaries is on, so entity extraction sends each published meeting's text to Anthropic." : "")) {
+                    row("Backfill", "Publish all existing meetings into the vault. Reuses each meeting's saved transcript and notes." + ((state.config.aiProvider == .anthropic) ? " Cloud summaries is on, so entity extraction sends each published meeting's text to Anthropic." : "")) {
                         if let progress = state.obsidianBackfill {
                             Text("Publishing \(progress.done) of \(progress.total)…")
                                 .font(.system(size: 13)).foregroundStyle(.secondary)

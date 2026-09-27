@@ -596,17 +596,6 @@ private final class CapturedMessageBox: @unchecked Sendable {
     #expect(fromLegacy.audioRetentionDays == 0)
 }
 
-@Test func useCloudSummariesDefaultsToFalseAndRoundTrips() throws {
-    let config = ZMeetConfig.default(outputPath: "/tmp/zmeet-output")
-    #expect(config.useCloudSummaries == false)
-
-    var enabled = config
-    enabled.useCloudSummaries = true
-    let data = try JSONEncoder.zmeet.encode(enabled)
-    let decoded = try JSONDecoder.zmeet.decode(ZMeetConfig.self, from: data)
-    #expect(decoded.useCloudSummaries == true)
-}
-
 @Test func noiseSuppressionDefaultsToFalseAndRoundTrips() throws {
     let config = ZMeetConfig.default(outputPath: "/tmp/zmeet-output")
     #expect(config.noiseSuppression == false)

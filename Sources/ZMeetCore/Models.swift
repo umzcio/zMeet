@@ -229,9 +229,14 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
     /// Days after which a processed meeting's audio is purged (transcript + notes
     /// are always kept). 0 means never (default).
     public var audioRetentionDays: Int
-    /// When true, summaries are produced via the Claude API instead of the
-    /// on-device model. The API key lives in the Keychain, never here. Default off.
-    public var useCloudSummaries: Bool
+    /// Which AI service writes notes, auto-titles, and entity links. Keys live in
+    /// the Keychain, never here. Default on-device.
+    public var aiProvider: AIProvider
+    /// The chosen model per provider, keyed by `AIProvider.rawValue`, so switching
+    /// providers and back keeps each one's choice. Read via `model(for:)`.
+    public var aiModels: [String: String]
+    /// Ollama server address: this Mac or another machine on the network.
+    public var ollamaAddress: String
     /// When true, recordings get an offline background-noise cleanup pass after
     /// the meeting stops (high-pass + downward expander). Default off.
     public var noiseSuppression: Bool
@@ -254,7 +259,9 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         detectMeetings: Bool = true,
         recordingMode: RecordingMode = .remote,
         audioRetentionDays: Int = 0,
-        useCloudSummaries: Bool = false,
+        aiProvider: AIProvider = .onDevice,
+        aiModels: [String: String] = [:],
+        ollamaAddress: String = AIProvider.defaultOllamaAddress,
         noiseSuppression: Bool = false,
         profiles: CaptureProfiles = .defaults(),
         labelSpeakers: Bool = false,
@@ -268,7 +275,9 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         self.detectMeetings = detectMeetings
         self.recordingMode = recordingMode
         self.audioRetentionDays = audioRetentionDays
-        self.useCloudSummaries = useCloudSummaries
+        self.aiProvider = aiProvider
+        self.aiModels = aiModels
+        self.ollamaAddress = ollamaAddress
         self.noiseSuppression = noiseSuppression
         self.profiles = profiles
         self.labelSpeakers = labelSpeakers
@@ -278,6 +287,21 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
 
     /// Per-mode capture preset for the given recording mode.
     public func profile(for mode: RecordingMode) -> CaptureProfile { profiles[mode] }
+
+    /// The model to use for `provider`: the saved choice, or the provider's
+    /// default when none (or only whitespace) is saved.
+    public func model(for provider: AIProvider) -> String {
+        let chosen = aiModels[provider.rawValue]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return chosen.isEmpty ? provider.defaultModel : chosen
+    }
+
+    /// Saves `model` as `provider`'s choice. Stored as typed; `model(for:)` trims.
+    public mutating func setModel(_ model: String, for provider: AIProvider) {
+        aiModels[provider.rawValue] = model
+    }
+
+    /// Keys that older configs wrote and this version only reads, for migration.
+    private enum LegacyCodingKeys: String, CodingKey { case useCloudSummaries }
 
     /// Lenient decoding so older/partial `config.json` files still load — any
     /// missing key falls back to its default instead of failing the whole load.
@@ -293,7 +317,20 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
         detectMeetings = try c.decodeIfPresent(Bool.self, forKey: .detectMeetings) ?? true
         recordingMode = try c.decodeIfPresent(RecordingMode.self, forKey: .recordingMode) ?? .remote
         audioRetentionDays = try c.decodeIfPresent(Int.self, forKey: .audioRetentionDays) ?? 0
-        useCloudSummaries = try c.decodeIfPresent(Bool.self, forKey: .useCloudSummaries) ?? false
+        var models = (try? c.decodeIfPresent([String: String].self, forKey: .aiModels)) ?? [:]
+        if c.contains(.aiProvider) {
+            // Lenient: an unknown value (from a newer build) or a wrong type means on-device.
+            let raw = (try? c.decode(String.self, forKey: .aiProvider)) ?? ""
+            aiProvider = AIProvider(rawValue: raw) ?? .onDevice
+        } else {
+            // Pre-1.16 configs had a single "use Claude for summaries" toggle.
+            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            let usedCloud = (try? legacy.decodeIfPresent(Bool.self, forKey: .useCloudSummaries)) ?? false
+            aiProvider = usedCloud ? .anthropic : .onDevice
+            if usedCloud { models[AIProvider.anthropic.rawValue] = AnthropicSummary.model }
+        }
+        aiModels = models
+        ollamaAddress = (try? c.decodeIfPresent(String.self, forKey: .ollamaAddress)) ?? AIProvider.defaultOllamaAddress
         noiseSuppression = try c.decodeIfPresent(Bool.self, forKey: .noiseSuppression) ?? false
         // `audio` and `noiseSuppression` are decoded above so they're available to
         // migrate legacy global capture settings into per-mode profiles below.
@@ -327,7 +364,6 @@ public struct ZMeetConfig: Codable, Equatable, Sendable {
             detectMeetings: true,
             recordingMode: .remote,
             audioRetentionDays: 0,
-            useCloudSummaries: false,
             noiseSuppression: false,
             profiles: .defaults(),
             labelSpeakers: false,

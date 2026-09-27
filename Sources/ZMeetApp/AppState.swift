@@ -635,7 +635,7 @@ final class AppState: ObservableObject {
                 // still rename afterward (Library → Rename), which republishes cleanly.
                 if Self.needsAutoTitle(session.title) {
                     let generated = await TitleGenerator(
-                        useCloud: config.useCloudSummaries,
+                        useCloud: (config.aiProvider == .anthropic),
                         apiKey: secretStore.read(account: SecretAccount.anthropicAPIKey)
                     ).title(summary: summary)
                     if let generated, !generated.isEmpty {
@@ -728,7 +728,7 @@ final class AppState: ObservableObject {
         setStage(session.id, "Summarizing…")
         let onDevice = MeetingSummarizer()
         var cloud: (any Summarizer)?
-        if config.useCloudSummaries,
+        if (config.aiProvider == .anthropic),
            let key = secretStore.read(account: SecretAccount.anthropicAPIKey),
            !key.isEmpty {
             cloud = CloudSummarizer(apiKey: key)
@@ -736,7 +736,7 @@ final class AppState: ObservableObject {
         let (summary, engine) = try await SummarizationPolicy().summarize(
             transcript: transcript,
             title: session.title,
-            useCloud: config.useCloudSummaries,
+            useCloud: (config.aiProvider == .anthropic),
             onDevice: onDevice,
             cloud: cloud
         )
@@ -806,7 +806,7 @@ final class AppState: ObservableObject {
     /// meeting guard) still lets the caller release the publish slot exactly once.
     private func publishOnce(session: MeetingSession, transcript: String, summary: String, vault: URL) async {
         let entities = await EntityExtractor(
-            useCloud: config.useCloudSummaries,
+            useCloud: (config.aiProvider == .anthropic),
             apiKey: secretStore.read(account: SecretAccount.anthropicAPIKey)
         ).extract(summary: summary, transcript: transcript)
         // Re-load: the meeting may have been renamed — or DELETED — while
