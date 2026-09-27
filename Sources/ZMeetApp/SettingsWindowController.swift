@@ -17,7 +17,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         let view = SettingsView(state: state)
         let window = EscClosableWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 500),
+            contentRect: NSRect(origin: .zero, size: SettingsView.windowSize),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false

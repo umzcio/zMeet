@@ -12,30 +12,40 @@ struct SettingsView: View {
     @State private var apiKeyInput = ""
     @State private var keyTestResult: KeyTestResult?
     @State private var testingKey = false
+    /// Typed values, committed to config on Return, on picking from the list, before
+    /// Test/Reload, on provider switch, and when the section disappears.
+    @State private var modelInput = ""
+    @State private var ollamaAddressInput = ""
+    /// Model lists fetched this session, per provider.
+    @State private var modelLists: [AIProvider: [String]] = [:]
+    @State private var loadingModels = false
+    @State private var modelListError: String?
     @State private var obsidianVaults: [ObsidianVaults.Vault] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Outcome of the "Test key" check. A typed result so the success styling
-    /// isn't driven by comparing display strings.
+    /// Outcome of Test connection. A typed result so the success styling isn't
+    /// driven by comparing display strings.
     enum KeyTestResult: Equatable {
-        case ok
+        case ok(String)
         case failure(String)
         var label: String {
             switch self {
-            case .ok: "Key works."
-            case .failure(let message): message
+            case .ok(let message), .failure(let message): message
             }
         }
-        var isOK: Bool { self == .ok }
+        var isOK: Bool { if case .ok = self { true } else { false } }
     }
     // Mint-terminal palette. mint/bg/card now come from ZMeetPalette (Library's
     // canonical shades); Settings previously used slightly darker values here.
+    /// The Settings window's content size; SettingsWindowController uses it too.
+    /// Taller than the original 500pt so the AI section fits without crowding.
+    static let windowSize = CGSize(width: 720, height: 580)
     static let sidebarBG = Color(red: 0.078, green: 0.094, blue: 0.086)
     static let hairline = Color.white.opacity(0.07)
 
     enum Section: String, CaseIterable, Identifiable {
         case general = "General"
-        case summaries = "Summaries"
+        case ai = "AI"
         case obsidian = "Obsidian"
         case recording = "Recording"
         case meetings = "Meetings"
@@ -46,7 +56,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general: return "gearshape.fill"
-            case .summaries: return "sparkles"
+            case .ai: return "sparkles"
             case .obsidian: return "point.3.connected.trianglepath.dotted"
             case .recording: return "waveform"
             case .meetings: return "person.2.fill"
@@ -70,14 +80,14 @@ struct SettingsView: View {
                 GeometryReader { proxy in
                     if let id = state.settingsMenu, let anchor = anchors[id] {
                         let rect = proxy[anchor]
-                        let menuWidth: CGFloat = id == .obsidianVault ? 260 : (id == .microphone ? 230 : 160)
+                        let menuWidth: CGFloat = (id == .obsidianVault || id == .aiModel) ? 260 : (id == .microphone ? 230 : 160)
                         ZStack(alignment: .topLeading) {
                             Color.black.opacity(0.001)
                                 .contentShape(Rectangle())
                                 .onTapGesture { state.settingsMenu = nil }
                             dropdownMenu(for: id)
                                 .frame(width: menuWidth)
-                                .offset(x: min(max(8, rect.maxX - menuWidth), 720 - menuWidth - 8),
+                                .offset(x: min(max(8, rect.maxX - menuWidth), Self.windowSize.width - menuWidth - 8),
                                         y: rect.maxY + 4)
                                 .transition(reduceMotion
                                     ? AnyTransition.opacity
@@ -116,7 +126,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .frame(width: 720, height: 500)
+        .frame(width: Self.windowSize.width, height: Self.windowSize.height)
         .background(ZMeetPalette.bg)
         .preferredColorScheme(.dark)
         .tint(ZMeetPalette.mint)
@@ -188,10 +198,36 @@ struct SettingsView: View {
                 state.chooseObsidianVault()
             })
             return items
+        case .aiProvider:
+            return AIProvider.allCases.map { provider in
+                MenuItem(label: provider.displayName, selected: provider == state.config.aiProvider) {
+                    commitAIFields()
+                    state.updateConfig { $0.aiProvider = provider }
+                    apiKeyInput = ""
+                    keyTestResult = nil
+                    modelListError = nil
+                    state.settingsMenu = nil
+                }
+            }
+        case .aiModel:
+            let list = modelLists[state.config.aiProvider] ?? []
+            guard !list.isEmpty else {
+                return [MenuItem(label: "No models loaded", selected: false) { state.settingsMenu = nil }]
+            }
+            let current = modelInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            return list.map { model in
+                MenuItem(label: model, selected: model == current) {
+                    modelInput = model
+                    commitAIFields()
+                    keyTestResult = nil
+                    state.settingsMenu = nil
+                }
+            }
         }
     }
 
     private func currentLabel(for id: AppState.SettingsMenuKind) -> String {
+        if id == .aiModel { return "" }   // icon-only trigger beside the model field
         if id == .obsidianVault {
             guard let p = state.config.obsidianVaultPath, !p.isEmpty else { return "Choose…" }
             return (p as NSString).lastPathComponent
@@ -210,24 +246,33 @@ struct SettingsView: View {
                     .font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
-            .frame(width: (id == .microphone || id == .obsidianVault) ? 190 : 140)
+            .frame(width: id == .aiModel ? 44 : ((id == .microphone || id == .obsidianVault) ? 190 : 140))
             .background(ZMeetPalette.card, in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Self.hairline, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressableStyle())
+        .accessibilityLabel(id == .aiModel ? "Choose from the model list" : currentLabel(for: id))
         .anchorPreference(key: DropdownAnchorKey.self, value: .bounds) { [id: $0] }
     }
 
     /// The floating dark menu list for a dropdown.
     private func dropdownMenu(for id: AppState.SettingsMenuKind) -> some View {
         let items = menuItems(for: id)
-        return VStack(spacing: 0) {
+        let list = VStack(spacing: 0) {
             ForEach(items.indices, id: \.self) { i in
                 DropdownMenuRow(label: items[i].label, selected: items[i].selected, action: items[i].select)
             }
         }
         .padding(.vertical, 5)
+        // Long lists (OpenAI's models) scroll instead of running off the window.
+        return Group {
+            if items.count > 8 {
+                ScrollView { list }.frame(height: 280)
+            } else {
+                list
+            }
+        }
         .background(ZMeetPalette.field, in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Self.hairline, lineWidth: 1))
         .shadow(color: .black.opacity(0.4), radius: 20, y: 10)
@@ -313,7 +358,7 @@ struct SettingsView: View {
 
                 switch selection {
                 case .general: generalSection
-                case .summaries: summariesSection
+                case .ai: aiSection
                 case .obsidian: obsidianSection
                 case .recording: recordingSection
                 case .meetings: meetingsSection
@@ -345,64 +390,182 @@ struct SettingsView: View {
         }
     }
 
-    private var summariesSection: some View {
+    // MARK: AI provider
+
+    private var aiProvider: AIProvider { state.config.aiProvider }
+
+    private var aiSection: some View {
         VStack(spacing: 14) {
             card {
-                toggleRow("Use \(AnthropicSummary.modelDisplayName) for summaries (cloud)",
-                          "Higher-quality notes via the Claude API. Falls back to on-device automatically if it can't run.",
-                          Binding(get: { state.config.aiProvider == .anthropic },
-                                  set: { on in state.updateConfig { $0.aiProvider = on ? .anthropic : .onDevice } }))
+                row("Provider", "Which AI writes your notes, auto-titles, and Obsidian links.") {
+                    dropdownTrigger(.aiProvider)
+                }
             }
-            if (state.config.aiProvider == .anthropic) {
+            if aiProvider != .onDevice {
                 card {
-                    row("Anthropic API key",
-                        state.savedKeys.contains(.anthropic) ? "A key is saved in your Keychain." : "Paste your Anthropic API key (stored in the Keychain).") {
+                    if aiProvider == .ollama {
+                        row("Server address", "This Mac, or another machine on your network.") {
+                            TextField(AIProvider.defaultOllamaAddress, text: $ollamaAddressInput)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 230)
+                                .onSubmit { commitAIFields(); refreshModels() }
+                        }
+                        divider
+                    }
+                    row(aiProvider == .ollama ? "API key (optional)" : "\(aiProvider.displayName) API key", keySubtitle) {
                         EmptyView()
                     }
-                    divider
                     HStack(spacing: 8) {
-                        SecureField(state.savedKeys.contains(.anthropic) ? "•••• saved — paste to replace" : "sk-ant-…", text: $apiKeyInput)
+                        SecureField(keyPlaceholder, text: $apiKeyInput)
                             .textFieldStyle(.roundedBorder)
                         Button("Save") {
-                            state.saveKey(apiKeyInput, for: .anthropic)
+                            state.saveKey(apiKeyInput, for: aiProvider)
                             apiKeyInput = ""
                             keyTestResult = nil
+                            refreshModels()
                         }
                         .disabled(apiKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
                         Button("Clear") {
-                            state.clearKey(for: .anthropic)
+                            state.clearKey(for: aiProvider)
                             apiKeyInput = ""
                             keyTestResult = nil
                         }
-                        .disabled(!state.savedKeys.contains(.anthropic))
+                        .disabled(!state.savedKeys.contains(aiProvider))
                     }
                     .padding(.horizontal, 16).padding(.bottom, 12)
                     divider
-                    row("Test key", "Send one request to verify the key works.") {
+                    row("Model", modelSubtitle) {
+                        HStack(spacing: 6) {
+                            TextField(aiProvider == .ollama ? "llama3.1:8b" : "model name", text: $modelInput)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 180)
+                                .onSubmit { commitAIFields() }
+                            dropdownTrigger(.aiModel)
+                            Button { refreshModels() } label: {
+                                Group {
+                                    if loadingModels {
+                                        ProgressView().controlSize(.small)
+                                    } else {
+                                        Image(systemName: "arrow.clockwise").foregroundStyle(.secondary)
+                                    }
+                                }
+                                .frame(width: 24, height: 24)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(PressableStyle())
+                            .disabled(loadingModels)
+                            .help("Reload the model list")
+                            .accessibilityLabel("Reload the model list")
+                        }
+                    }
+                    divider
+                    row("Test connection", "Checks the address or key, and that the model exists. Generates nothing.") {
                         HStack(spacing: 8) {
                             if let keyTestResult {
                                 Text(keyTestResult.label)
                                     .font(.caption)
                                     .foregroundStyle(keyTestResult.isOK ? ZMeetPalette.mint : .orange)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(maxWidth: 220, alignment: .trailing)
                             }
                             Button(testingKey ? "Testing…" : "Test") {
+                                commitAIFields()
                                 testingKey = true
                                 keyTestResult = nil
                                 Task {
                                     let result = await state.testAIConnection()
-                                    keyTestResult = result.ok ? .ok : .failure(result.message)
+                                    keyTestResult = result.ok ? .ok(result.message) : .failure(result.message)
                                     testingKey = false
                                 }
                             }
-                            .disabled(testingKey || !state.savedKeys.contains(.anthropic))
+                            .disabled(testingKey)
                         }
                     }
                 }
-                card {
-                    row("Privacy", "When on, text from your meetings is sent to Anthropic for: summaries (transcript + title), the linked-note entities used by Obsidian publishing (notes + part of the transcript), and auto-titles (notes). This includes the Obsidian backfill, which processes every meeting you publish. Your audio always stays on your Mac.") {
-                        EmptyView()
-                    }
+            }
+            card {
+                row("Privacy", AICopy.privacyNote(provider: aiProvider, ollamaAddress: state.config.ollamaAddress)) {
+                    EmptyView()
                 }
+            }
+        }
+        // Runs on appear and on every provider switch: load that provider's saved
+        // values, then its model list if one can be fetched and none is loaded yet.
+        .task(id: aiProvider) {
+            syncAIInputs()
+            if modelLists[aiProvider] == nil, canListModels { refreshModels() }
+        }
+        .onDisappear { commitAIFields() }
+    }
+
+    private var keySubtitle: String {
+        if state.savedKeys.contains(aiProvider) { return "A key is saved in your Keychain." }
+        return aiProvider == .ollama
+            ? "Only needed if your server requires one."
+            : "Paste your \(aiProvider.displayName) API key (stored in the Keychain)."
+    }
+
+    private var keyPlaceholder: String {
+        if state.savedKeys.contains(aiProvider) { return "•••• saved — paste to replace" }
+        switch aiProvider {
+        case .anthropic: return "sk-ant-…"
+        case .openAI: return "sk-…"
+        case .ollama, .onDevice: return "Optional"
+        }
+    }
+
+    private var modelSubtitle: String {
+        if let modelListError { return modelListError }
+        if let list = modelLists[aiProvider], !list.isEmpty {
+            return "\(list.count) available. You can also type any model name."
+        }
+        return "Type a model name, or reload the list."
+    }
+
+    /// Whether a model-list request can be made without more input.
+    private var canListModels: Bool {
+        switch aiProvider {
+        case .onDevice: false
+        case .ollama: OllamaAddress.normalized(state.config.ollamaAddress) != nil
+        case .openAI, .anthropic: state.savedKeys.contains(aiProvider)
+        }
+    }
+
+    /// Loads the selected provider's saved model and address into the fields.
+    private func syncAIInputs() {
+        modelInput = aiProvider == .onDevice ? "" : state.config.model(for: aiProvider)
+        ollamaAddressInput = state.config.ollamaAddress
+    }
+
+    /// Saves the typed model (for the selected provider) and Ollama address.
+    private func commitAIFields() {
+        let provider = state.config.aiProvider
+        let model = modelInput
+        let address = ollamaAddressInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        state.updateConfig {
+            if provider != .onDevice { $0.setModel(model, for: provider) }
+            if !address.isEmpty { $0.ollamaAddress = address }
+        }
+    }
+
+    private func refreshModels() {
+        commitAIFields()
+        let provider = state.config.aiProvider
+        loadingModels = true
+        modelListError = nil
+        Task {
+            let (models, error) = await state.fetchAIModels()
+            loadingModels = false
+            // The user may have switched providers while this ran; drop a stale result.
+            guard state.config.aiProvider == provider else { return }
+            if let error {
+                modelListError = error
+                return
+            }
+            modelLists[provider] = models
+            if modelInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let first = models.first {
+                modelInput = first
+                commitAIFields()
             }
         }
     }
@@ -420,7 +583,7 @@ struct SettingsView: View {
                         dropdownTrigger(.obsidianVault)
                     }
                     divider
-                    row("Backfill", "Publish all existing meetings into the vault. Reuses each meeting's saved transcript and notes." + ((state.config.aiProvider == .anthropic) ? " Cloud summaries is on, so entity extraction sends each published meeting's text to Anthropic." : "")) {
+                    row("Backfill", "Publish all existing meetings into the vault. Reuses each meeting's saved transcript and notes." + (AICopy.backfillWarning(provider: state.config.aiProvider, ollamaAddress: state.config.ollamaAddress) ?? "")) {
                         if let progress = state.obsidianBackfill {
                             Text("Publishing \(progress.done) of \(progress.total)…")
                                 .font(.system(size: 13)).foregroundStyle(.secondary)

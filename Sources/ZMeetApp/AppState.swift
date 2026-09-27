@@ -65,7 +65,7 @@ final class AppState: ObservableObject {
     /// dismiss it before falling through to closing the window.
     @Published var settingsConfirmFreeUp = false
 
-    enum SettingsMenuKind: Hashable { case retention, quality, microphone, micGain, captureMode, obsidianVault }
+    enum SettingsMenuKind: Hashable { case retention, quality, microphone, micGain, captureMode, obsidianVault, aiProvider, aiModel }
     @Published var draftTitle: String = ""
     /// A user-facing notice for the menu: feedback kind drives icon + color.
     struct UserNotice: Equatable {
