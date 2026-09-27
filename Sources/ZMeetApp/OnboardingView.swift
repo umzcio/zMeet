@@ -57,10 +57,7 @@ struct OnboardingView: View {
                 .font(.system(size: 46))
                 .foregroundStyle(ZMeetPalette.mint)
                 .padding(.top, 8)
-            HStack(spacing: 0) {
-                Text(" z").font(.custom("Dancing Script", size: 34)).foregroundStyle(ZMeetPalette.mint)
-                Text("Meet").font(.system(size: 30, weight: .bold))
-            }
+            ZMeetWordmark(markHeight: 34, meetFont: .system(size: 30, weight: .bold))
             Text("Private, on-device meeting notes.")
                 .font(.callout)
                 .foregroundStyle(.secondary)

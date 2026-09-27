@@ -58,6 +58,9 @@ cp "$ROOT/scripts/assets/AppIcon.icns" "$RES_DIR/AppIcon.icns"
 # Menu-bar icon layers (generated from the artwork by scripts/make-menubar-icon.py).
 cp "$ROOT"/scripts/assets/menubar/MenuBarIcon*.png "$RES_DIR/"
 
+# In-app "z" brand mark (Settings wordmark), 1x + 2x.
+cp "$ROOT"/scripts/assets/ZMark*.png "$RES_DIR/"
+
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

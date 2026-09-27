@@ -237,10 +237,7 @@ struct LibraryView: View {
     private var railColumn: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text(" z").font(.custom("Dancing Script", size: 30)).foregroundStyle(ZMeetPalette.mint)
-                    Text("Meet").font(.system(size: 22, weight: .bold))
-                }
+                ZMeetWordmark(markHeight: 26, meetFont: .system(size: 22, weight: .bold))
                 .padding(.leading, 4)
                 .padding(.top, 30)
                 .padding(.bottom, 14)

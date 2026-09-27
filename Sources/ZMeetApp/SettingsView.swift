@@ -284,10 +284,7 @@ struct SettingsView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 1) {
-                Text(" z").font(.custom("Dancing Script", size: 26)).foregroundStyle(ZMeetPalette.mint)
-                Text("Meet").font(.system(size: 20, weight: .bold))
-            }
+            ZMeetWordmark(markHeight: 24, meetFont: .system(size: 20, weight: .bold))
             .padding(.leading, 12)
             .padding(.top, 38)
             .padding(.bottom, 14)

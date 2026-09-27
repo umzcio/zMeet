@@ -111,18 +111,7 @@ struct MenuContentView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            // Wordmark: cursive z (Dancing Script) + mono "Meet".
-            // Baseline-aligned, with extra bottom room for the z's descender tail.
-            HStack(alignment: .firstTextBaseline, spacing: 1) {
-                // Leading space insets the glyph inside its own text box so the
-                // cursive z's entry swash isn't clipped at the frame's left edge.
-                Text(" z")
-                    .font(.custom("Dancing Script", size: 23))
-                    .foregroundStyle(ZMeetPalette.mint)
-                Text("Meet")
-                    .font(.headline)
-            }
-            .padding(.bottom, 5)
+            ZMeetWordmark(markHeight: 18, meetFont: .headline)
             Spacer()
             Text(statusText)
                 .font(.caption)
