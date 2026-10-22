@@ -15,7 +15,12 @@ import ZMeetCore
 /// what it plays, the mic player less how much later the cleaned mic is
 /// (`micTargetFrames`). It measures each player's queue from the player's own position
 /// (`PlaybackQueueController`), so both streams play the priming after they arrived, through
-/// gaps, stalls and clock drift too.
+/// gaps, stalls and a mic clock slower than the output's. The recorder also calls `poll()`
+/// every 10 ms, so when neither stream delivers, held mic still goes out once its hold runs
+/// out, as an input would release it. Two cases are out of reach: a faster mic clock drifts
+/// later, exactly as without the pipeline, and mic held while the capture queue is blocked
+/// can only come out once it unblocks, late if the oldest of it is older by then than the
+/// priming allows.
 ///
 /// Logs `echo: on …` at creation, a stats line every 30 s while handling input, one line
 /// if the canceller fails (the raw mic passes through from then on), and `echo: final …`
@@ -58,7 +63,7 @@ final class EchoCapture {
         let seconds = Self.seconds(pts)
         debug?.system(buffer, pts: seconds)
         if let mono = Self.mono(buffer) { aligner.appendRender(mono, pts: seconds) }
-        return release(aligner.drainReady())
+        return release(aligner.drainReady(), afterInput: true)
     }
 
     /// The mic, canonical: feeds the capture side. Returns the cleaned mic ready now, if any.
@@ -66,7 +71,14 @@ final class EchoCapture {
         let seconds = Self.seconds(pts)
         debug?.microphone(buffer, pts: seconds)
         if let mono = Self.mono(buffer) { aligner.appendCapture(mono, pts: seconds) }
-        return release(aligner.drainReady())
+        return release(aligner.drainReady(), afterInput: true)
+    }
+
+    /// No input: returns the cleaned mic whose hold has run out by now, if any, as an input
+    /// would have released it. The recorder calls this every 10 ms while the pipeline runs, so
+    /// the hold runs out on time even when neither stream delivers. No stats line.
+    func poll() -> AVAudioPCMBuffer? {
+        release(aligner.drainReady(), afterInput: false)
     }
 
     /// What the mic player should have queued when the cleaned mic just returned goes in, so
@@ -78,8 +90,8 @@ final class EchoCapture {
     ///   mic from `EchoCanceller.captureLatencySamples` earlier. The raw mic that passes
     ///   through after a failure has none.
     ///
-    /// Never below 0. Read it right after `system(_:pts:)`, `microphone(_:pts:)` or `finish()`
-    /// returns cleaned mic.
+    /// Never below 0. Read it right after `system(_:pts:)`, `microphone(_:pts:)`, `poll()` or
+    /// `finish()` returns cleaned mic.
     var micTargetFrames: Int {
         let latency = aligner.stats.failed ? 0 : EchoCanceller.captureLatencySamples
         let later = aligner.lastReleaseAgeSeconds * Double(EchoCanceller.sampleRate) + Double(latency)
@@ -101,11 +113,12 @@ final class EchoCapture {
 
     // MARK: - Pipeline
 
-    /// Hands back cleaned mic, after the failure check and the 30 s stats line.
-    private func release(_ cleaned: [Float]) -> AVAudioPCMBuffer? {
+    /// Hands back cleaned mic, after the failure check and, when an input released it, the
+    /// 30 s stats line.
+    private func release(_ cleaned: [Float], afterInput: Bool) -> AVAudioPCMBuffer? {
         noteFailure()
         let now = clock()
-        if now - lastStatsLog >= Self.statsInterval {
+        if afterInput, now - lastStatsLog >= Self.statsInterval {
             lastStatsLog = now
             log("echo: " + statsLine())
         }

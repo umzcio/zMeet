@@ -45,13 +45,30 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     /// `EchoCapture.primingFrames` (300 ms) on the system player, that less how much later
     /// the cleaned mic is on the mic player (`EchoCapture.micTargetFrames`). Both streams then
     /// play 300 ms after they arrived, so they stay as aligned in the mix as without echo
-    /// cancellation, through gaps in either stream, stalls, a player that ran dry and a clock
-    /// slower than the output's. That holds to about 10 ms: a queue is topped up only once
-    /// it's more than 10 ms short, and positions come from each player's last render. The
-    /// silence goes to the players only, never to `mic.m4a` or `system.m4a`. Confined to
+    /// cancellation: through gaps in either stream, a stall of either or both (`echoPoll`
+    /// releases held mic on time while neither delivers), a player that ran dry and a mic
+    /// clock slower than the output's. That holds to about 10 ms: a queue is topped up only
+    /// once it's more than 10 ms short, and positions come from each player's last render.
+    /// Two cases are out of reach:
+    /// - A mic clock faster than the output's: nothing trims the mic player's growing queue,
+    ///   so the mic drifts later, exactly as it does without the pipeline.
+    /// - A blocked `queue`: nothing runs on it, the poll included, so mic held then comes out
+    ///   only once it unblocks, oldest first and back to back. If the oldest has waited more
+    ///   than about 290 ms by then (the priming less AEC3's latency), all of it plays late by
+    ///   the excess. The mic after it is placed as usual.
+    ///
+    /// The silence goes to the players only, never to `mic.m4a` or `system.m4a`. Confined to
     /// `queue`.
     private var systemPlayerFill: PlaybackQueueController?
     private var micPlayerFill: PlaybackQueueController?
+    /// While the echo pipeline runs, a timer on `queue` that every `echoPollInterval` hands
+    /// the mic whose hold has run out to the mic player (`EchoCapture.poll()`), as an input
+    /// would. The aligner releases held mic only when asked, so without it mic held when both
+    /// streams stall would wait for the next input and play late. nil otherwise. Created with
+    /// the pipeline; cancelled first in `stop()`, before the flush, and in
+    /// `rollbackFailedStart`. Confined to `queue`.
+    private var echoPoll: DispatchSourceTimer?
+    private static let echoPollInterval: DispatchTimeInterval = .milliseconds(10)
     var onCaptureFailure: (@Sendable (String) -> Void)?
 
     private let canonical = AVAudioFormat(
@@ -163,6 +180,8 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     /// so the next start() begins from a clean engine. Safe to call when the
     /// engine never started (removeTap/stop/detach are no-ops or harmless then).
     private func rollbackFailedStart() {
+        // The echo poll goes first, so nothing reaches a player while the engine comes down.
+        queue.sync { stopEchoPoll() }
         captureMixer.removeTap(onBus: 0)
         engine.stop()
         engine.detach(systemPlayer)
@@ -182,15 +201,16 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         }
     }
 
-    /// Sets up this recording's echo pipeline and its players' fill controllers, on `queue`.
-    /// It runs only when echo cancellation is on and both the mic and the system audio are
-    /// captured; otherwise the mic path is today's. With the `ZMeetEchoDebugTracks`
+    /// Sets up this recording's echo pipeline, its players' fill controllers and its poll, on
+    /// `queue`. It runs only when echo cancellation is on and both the mic and the system
+    /// audio are captured; otherwise the mic path is today's. With the `ZMeetEchoDebugTracks`
     /// default set, it also writes `<meeting folder>/echo-debug/` tracks for tuning.
     private func startEcho(audio: AudioConfig, meetingFolder: URL) {
         let active = audio.echoCancellation && audio.captureMicrophone && audio.captureSystemAudio
         let debugFolder = UserDefaults.standard.bool(forKey: "ZMeetEchoDebugTracks")
             ? meetingFolder.appendingPathComponent("echo-debug") : nil
         queue.sync {
+            stopEchoPoll()
             echo = nil
             systemPlayerFill = nil
             micPlayerFill = nil
@@ -205,7 +225,28 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
             }
             systemPlayerFill = PlaybackQueueController()
             micPlayerFill = PlaybackQueueController()
+            startEchoPoll()
         }
+    }
+
+    /// Starts `echoPoll`. On `queue`.
+    private func startEchoPoll() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + Self.echoPollInterval, repeating: Self.echoPollInterval,
+                       leeway: .milliseconds(1))
+        timer.setEventHandler { [weak self] in
+            // On `queue`, like every other use of the pipeline.
+            guard let self, let cleaned = self.echo?.poll() else { return }
+            self.emitMic(cleaned)
+        }
+        echoPoll = timer
+        timer.resume()
+    }
+
+    /// Cancels `echoPoll`, if any; its handler doesn't run again. On `queue`.
+    private func stopEchoPoll() {
+        echoPoll?.cancel()
+        echoPoll = nil
     }
 
     private func startStream(audio: AudioConfig) async throws {
@@ -356,9 +397,11 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             queue.async { cont.resume() }
         }
-        // The mic the echo pipeline still holds goes to the mic player and mic.m4a.
+        // The mic the echo pipeline still holds goes to the mic player and mic.m4a. The poll
+        // stops first, so the flush is the last mic the pipeline hands out.
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             queue.async {
+                self.stopEchoPoll()
                 if let tail = self.echo?.finish() { self.emitMic(tail) }
                 self.echo = nil
                 self.logPlayerFill()

@@ -281,6 +281,7 @@ private func runWithLateSystemAudio(far: [Float], mic: [Float]) throws -> [Float
     a.appendRender(ramp(5_280, 960), pts: 0.11)
     #expect(a.drainReady().count == 960)
     #expect(abs(a.lastReleaseHoldSeconds - 0.06) < 1e-9)
+    #expect(abs(a.lastReleaseAgeSeconds - 0.06) < 1e-9)
     // A frame whose reference is already there goes straight out: it waited for nothing.
     a.appendRender(ramp(6_240, 480), pts: 0.13)
     #expect(a.drainReady().isEmpty)
@@ -308,13 +309,25 @@ private func runWithLateSystemAudio(far: [Float], mic: [Float]) throws -> [Float
     clock.t = 2.05
     #expect(a.flush().count == 300)
     #expect(abs(a.lastReleaseHoldSeconds - 0.05) < 1e-9)
+    // A frame still waiting, then a later buffer that brings only part of the next frame: the hold
+    // is the waiting frame's, from the earlier buffer, not from the latest one.
+    clock.t = 3.0
+    a.appendCapture(zeros(480), pts: nil)
+    #expect(a.drainReady().isEmpty)
+    clock.t = 3.1
+    a.appendCapture(zeros(200), pts: nil)
+    #expect(a.drainReady().isEmpty)
+    clock.t = 3.15
+    #expect(a.flush().count == 680)
+    #expect(abs(a.lastReleaseHoldSeconds - 0.15) < 1e-9)
 }
 
 @Test func timesTheReleasedMicFromItsFirstSample() {
-    // 441-sample mic buffers, then a 1 024-sample one. A frame's first sample arrives with the
-    // buffer that brings it, plus its place in that buffer. So the release can be older than
-    // its hold (the frame also waited for its later samples), or younger (it starts partway
-    // into a buffer that has only just arrived).
+    // 441-sample mic buffers, a 1 024-sample one, then 441-sample ones again. A frame's first
+    // sample arrives with the buffer that brings it, plus its place in that buffer. So the
+    // release can be older than its hold (the frame also waited for its later samples), or
+    // younger (it starts partway into a buffer that has only just arrived). A release of
+    // several frames is timed from the first.
     let p = FakeProcessor()
     let clock = ManualClock()
     let a = makeAligner(p, clock: clock)
@@ -353,6 +366,18 @@ private func runWithLateSystemAudio(far: [Float], mic: [Float]) throws -> [Float
     #expect(render(480, from: 6_240, at: 1.301).count == 480)
     #expect(abs(a.lastReleaseHoldSeconds - 0.001) < 1e-9)
     #expect(abs(a.lastReleaseAgeSeconds - (0.001 - 117 / rate)) < 1e-9)
+    // Frame 4, begun in the 1 024-sample buffer, completes with a 441-sample one and goes out alone.
+    #expect(capture(441, from: 2_347, at: 1.32).isEmpty)
+    #expect(render(480, from: 6_720, at: 1.33).count == 480)
+    // Frames 5, 6 and 7 each start partway into a 441-sample buffer (53, 92 and 131 samples in) and
+    // complete with the next, and one render arrival releases all three. The release is timed from
+    // frame 5's first sample, not a later frame's.
+    #expect(capture(441, from: 2_788, at: 1.34).isEmpty)
+    #expect(capture(441, from: 3_229, at: 1.35).isEmpty)
+    #expect(capture(441, from: 3_670, at: 1.36).isEmpty)
+    #expect(render(1_440, from: 7_200, at: 1.4).count == 1_440)
+    #expect(abs(a.lastReleaseHoldSeconds - (1.4 - 1.34)) < 1e-9)
+    #expect(abs(a.lastReleaseAgeSeconds - (1.4 - (1.32 + 53 / rate))) < 1e-9)
 }
 
 @Test func flushTimesItsFirstSampleToo() {
