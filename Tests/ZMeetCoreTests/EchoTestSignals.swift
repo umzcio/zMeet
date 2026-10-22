@@ -81,12 +81,14 @@ enum EchoTestSignals {
         return (0..<count).map { Float(peak * sin(step * Double($0))) }
     }
 
-    /// 20·log10(RMS); −200 when the RMS is 0 (including an empty slice).
+    /// 20·log10(RMS); −200 when the RMS is 0 (including an empty slice). NaN when a sample is
+    /// NaN, so that no comparison with it holds: a canceller whose output went NaN must not read
+    /// as one that removed everything.
     static func rmsDB(_ x: ArraySlice<Float>) -> Double {
         var power = 0.0
         for v in x { power += Double(v) * Double(v) }
         let rms = x.isEmpty ? 0 : (power / Double(x.count)).squareRoot()
-        return rms > 0 ? 20 * log10(rms) : -200
+        return rms == 0 ? -200 : 20 * log10(rms)
     }
 
     /// Element-wise a + b; the result has the longer length, the shorter input reading as zeros.

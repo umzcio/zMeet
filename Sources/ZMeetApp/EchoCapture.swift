@@ -134,9 +134,11 @@ final class EchoCapture {
         log("echo: canceller failed — raw mic for the rest of this recording")
     }
 
-    /// `erle=… dB delay=… ms lag=… ms lead=… ms owed=… gaps=… trims=… moves=… leadChanges=… failed=…`,
-    /// with `-` where AEC3 or the lag tracker has no value. The AEC3 numbers are current as of
-    /// the latest capture frame.
+    /// `erle=… dB delay=… ms lag=… ms lead=… ms owed=… gaps=… trims=… moves=… nonFiniteMic=…
+    /// nonFiniteSystem=… leadChanges=… failed=…`, with `-` where AEC3 or the lag tracker has no
+    /// value. The AEC3 numbers are current as of the latest capture frame. `nonFiniteMic` and
+    /// `nonFiniteSystem` count the 10 ms frames of mic, and of the system audio paired with it,
+    /// that had a NaN or infinite sample, which the canceller read as silence.
     private func statsLine() -> String {
         let echo = canceller.statistics
         let stats = aligner.stats
@@ -144,7 +146,9 @@ final class EchoCapture {
             + " delay=\(echo.delayMs.map(String.init) ?? "-") ms"
             + " lag=\(Self.format(stats.lockedLagMs)) ms lead=\(Self.format(stats.leadMs)) ms"
             + " owed=\(stats.owedFrames) gaps=\(stats.renderGapFills) trims=\(stats.renderTrims)"
-            + " moves=\(stats.referenceMoves) leadChanges=\(stats.leadChanges) failed=\(stats.failed)"
+            + " moves=\(stats.referenceMoves) nonFiniteMic=\(stats.nonFiniteMicFrames)"
+            + " nonFiniteSystem=\(stats.nonFiniteReferenceFrames)"
+            + " leadChanges=\(stats.leadChanges) failed=\(stats.failed)"
     }
 
     // MARK: - Conversion

@@ -438,6 +438,50 @@ private func runWithLateSystemAudio(far: [Float], mic: [Float]) throws -> [Float
     #expect(p.captures == 3)
 }
 
+/// Records what the aligner gives it; never locks.
+final class RecordingLagTracker: EchoLagTracking {
+    var references: [[Float]] = []
+    var observed: [[Float]] = []
+    let lockedLagMs: Double? = nil
+    func append(reference: [Float], observed: [Float]) {
+        references.append(reference)
+        self.observed.append(observed)
+    }
+    func reset() {}
+}
+
+@Test func readsNonFiniteSamplesAsSilence() throws {
+    // NaN or ±infinity, in the mic or in its reference, reaches neither the processor nor the
+    // tracker: the sample reads as silence, and each frame that had one is counted.
+    let p = FakeProcessor()
+    let tracker = RecordingLagTracker()
+    let a = EchoAligner(processor: p, tracker: tracker, now: { 0 })
+    var render = [Float](repeating: 0.25, count: 6_240)  // the reference for 3 frames at the 100 ms lead
+    render[4_800 + 1] = .nan        // frame 0's
+    render[5_760 + 2] = -.infinity  // frame 2's
+    a.appendRender(render, pts: 0)
+    var mic = [Float](repeating: 1, count: 3 * 480)
+    mic[3] = .nan                   // frame 0
+    mic[480 + 9] = .infinity        // frame 1
+    a.appendCapture(mic, pts: 0)
+    let out = a.drainReady()
+    func frame(_ value: Float, zeroAt index: Int? = nil) -> [Float] {
+        var samples = [Float](repeating: value, count: 480)
+        if let index { samples[index] = 0 }
+        return samples
+    }
+    // FakeProcessor halves what it's given.
+    #expect(out == frame(0.5, zeroAt: 3) + frame(0.5, zeroAt: 9) + frame(0.5))
+    let references = [frame(0.25, zeroAt: 1), frame(0.25), frame(0.25, zeroAt: 2)]
+    #expect(p.renders == references)
+    #expect(tracker.references == references)
+    #expect(tracker.observed == [frame(1, zeroAt: 3), frame(1, zeroAt: 9), frame(1)])
+    #expect(a.stats.nonFiniteMicFrames == 2)
+    #expect(a.stats.nonFiniteReferenceFrames == 2)
+    #expect(a.stats.framesProcessed == 3)
+    #expect(!a.stats.failed)
+}
+
 @Test func retargetsLeadWhenLockedDelayLeavesWindow() {
     let early = statsAfterOneProcessedFrame(lock: 10)
     #expect(early.leadMs == 200)
@@ -494,4 +538,35 @@ final class CountingLagTracker: EchoLagTracking {
     try #require(out.count == mic.count)
     let window = (2 * 48_000)..<(8 * 48_000)
     #expect(abs(EchoTestSignals.rmsDB(out[window]) - EchoTestSignals.rmsDB(mic[window])) <= 1)
+}
+
+/// Test 14's signals and feed, with one all-NaN 10 ms frame at 3 s in the mic or in the system
+/// audio, as a flaky device or app can hand over. Unless it reads as silence, that one frame
+/// leaves AEC3 putting out NaN for the rest of the recording: in mic.m4a and, mixed in, in
+/// recording.m4a. Returns the mic without it, for the reduction, and the output.
+private func runWithANaNFrame(inSystemAudio: Bool) throws -> (mic: [Float], out: [Float]) {
+    let far = EchoTestSignals.speechLike(seconds: 12, seed: 11)
+    let mic = EchoTestSignals.echo(of: far, delayMs: 60, gainDB: -10)
+    var badFar = far
+    var badMic = mic
+    for i in (3 * 48_000)..<(3 * 48_000 + 480) {
+        if inSystemAudio { badFar[i] = .nan } else { badMic[i] = .nan }
+    }
+    return (mic, try runWithLateSystemAudio(far: badFar, mic: badMic))
+}
+
+@Test func keepsCancellingAfterANaNMicFrame() throws {
+    let (mic, out) = try runWithANaNFrame(inSystemAudio: false)
+    try #require(out.count == mic.count)
+    #expect(out.count(where: { !$0.isFinite }) == 0)
+    let tail = (6 * 48_000)..<(12 * 48_000)
+    #expect(EchoTestSignals.rmsDB(mic[tail]) - EchoTestSignals.rmsDB(out[tail]) >= 20)
+}
+
+@Test func keepsCancellingAfterANaNSystemAudioFrame() throws {
+    let (mic, out) = try runWithANaNFrame(inSystemAudio: true)
+    try #require(out.count == mic.count)
+    #expect(out.count(where: { !$0.isFinite }) == 0)
+    let tail = (6 * 48_000)..<(12 * 48_000)
+    #expect(EchoTestSignals.rmsDB(mic[tail]) - EchoTestSignals.rmsDB(out[tail]) >= 20)
 }

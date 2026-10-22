@@ -42,6 +42,12 @@ public struct EchoAlignerStats: Sendable, Equatable {
     /// Times a mic PTS jump (a stall or lost mic buffers) moved the reference
     /// already placed, so that it kept its time position against the mic.
     public var referenceMoves = 0
+    /// Mic frames that had a NaN or infinite sample, which the processor and the tracker
+    /// read as silence.
+    public var nonFiniteMicFrames = 0
+    /// Mic frames whose reference had a NaN or infinite sample, which the processor and the
+    /// tracker read as silence too.
+    public var nonFiniteReferenceFrames = 0
     /// Times the lead moved because the locked delay left the working window.
     public var leadChanges = 0
     /// The current lead.
@@ -94,6 +100,11 @@ public enum EchoAudio {
 /// The tracker measures the delay at which the echo appears behind the reference
 /// fed. The lead changes only when the locked delay leaves the working window, in
 /// one step that brings the delay to `retargetDelayMs`.
+///
+/// A NaN or infinite sample, in a mic frame or in its reference, reads as silence: the
+/// processor and the tracker get 0 in its place, and the frame is counted. No processor has
+/// to survive one; AEC3 itself would put out NaN for good after a single NaN from either
+/// stream.
 ///
 /// If the processor ever fails, the frame it failed on and every later one pass
 /// through raw.
@@ -301,17 +312,20 @@ public final class EchoAligner {
     }
 
     /// One AEC3 step for the mic frame starting at index `start`: its reference,
-    /// then the frame, then the tracker.
+    /// then the frame, then the tracker, each with any NaN or infinite sample read as silence.
     private func process(_ raw: [Float], at start: Int) -> [Float] {
         guard !stats.failed else { return raw }
-        let reference = renderFrame(at: start + lead)
-        var cleaned = raw
+        var input = raw
+        var reference = renderFrame(at: start + lead)
+        if Self.zeroNonFinite(&input) { stats.nonFiniteMicFrames += 1 }
+        if Self.zeroNonFinite(&reference) { stats.nonFiniteReferenceFrames += 1 }
+        var cleaned = input
         guard processor.processRender(reference), processor.processCapture(&cleaned) else {
             stats.failed = true
             return raw
         }
         stats.framesProcessed += 1
-        tracker.append(reference: reference, observed: raw)
+        tracker.append(reference: reference, observed: input)
         stats.lockedLagMs = tracker.lockedLagMs
         retargetIfOutsideWindow()
         return cleaned
@@ -411,6 +425,16 @@ public final class EchoAligner {
     /// A PTS that can be placed: finite.
     private static func usable(_ pts: TimeInterval?) -> TimeInterval? {
         pts.flatMap { $0.isFinite ? $0 : nil }
+    }
+
+    /// Replaces each NaN or infinite sample with 0; true if there was one.
+    private static func zeroNonFinite(_ samples: inout [Float]) -> Bool {
+        var found = false
+        for i in samples.indices where !samples[i].isFinite {
+            samples[i] = 0
+            found = true
+        }
+        return found
     }
 
     /// round(seconds · 48 000); nil when that isn't a usable sample offset, so a
