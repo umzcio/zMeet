@@ -10,8 +10,10 @@ import ZMeetCore
 /// (`EchoAudio.monoMix`) through `EchoAligner` and `EchoCanceller`. The cleaned mic comes
 /// back canonical, with the mono in both channels. A mic frame waits for its reference
 /// (up to the aligner's hold), so the cleaned mic comes out later than the raw mic went
-/// in; the recorder primes each player with `primingFrames` of silence so that the wait
-/// never moves the mic in the mix.
+/// in, and contiguous: a jump in the mic's PTS doesn't show in it. The recorder plays
+/// both streams through primed players (`playbackSchedule()`): the priming keeps the wait
+/// from moving the mic in the mix, and each gap in either stream goes back in as silence
+/// on its player, so a gap doesn't move it either.
 ///
 /// Logs `echo: on …` at creation, a stats line every 30 s while handling input, one line
 /// if the canceller fails (the raw mic passes through from then on), and `echo: final …`
@@ -22,6 +24,16 @@ final class EchoCapture {
     /// (250 ms), so a held mic frame never leaves the mic player empty.
     static let primingMs = 300
     static let primingFrames = AVAudioFrameCount(primingMs * EchoCanceller.sampleRate / 1_000)
+    /// `EchoAlignerConfig.placementToleranceMs` (2 ms) in frames: a PTS difference this small is left alone.
+    static let toleranceFrames = Int((EchoAlignerConfig().placementToleranceMs * Double(EchoCanceller.sampleRate) / 1_000).rounded())
+
+    /// The schedule for one of the recorder's players while this pipeline runs: the priming
+    /// ahead of its first audio, then each gap in its stream back as silence, so both players
+    /// keep the priming's delay for the whole recording (`PrimedPlaybackSchedule`).
+    static func playbackSchedule() -> PrimedPlaybackSchedule {
+        PrimedPlaybackSchedule(primingFrames: Int(primingFrames), toleranceFrames: toleranceFrames,
+                               sampleRate: Double(EchoCanceller.sampleRate))
+    }
 
     private static let statsInterval: TimeInterval = 30
 
@@ -140,7 +152,7 @@ final class EchoCapture {
 
     /// The PTS in seconds; nil when it's invalid or not finite, and placement then falls
     /// back to sample counts.
-    private static func seconds(_ pts: CMTime) -> TimeInterval? {
+    static func seconds(_ pts: CMTime) -> TimeInterval? {
         guard pts.isValid else { return nil }
         let seconds = pts.seconds
         return seconds.isFinite ? seconds : nil
@@ -165,8 +177,7 @@ final class EchoCapture {
 ///
 /// Best-effort: a track that can't be created or written is logged and dropped.
 private final class EchoDebugTracks {
-    /// `EchoAlignerConfig.placementToleranceMs` (2 ms) at 48 kHz.
-    private static let tolerance = 96
+    private static let tolerance = EchoCapture.toleranceFrames
 
     private var micRawTrack: DebugTrack?
     private var systemTrack: DebugTrack?
@@ -305,7 +316,7 @@ private final class DebugTrack {
         let frames = Int(buffer.frameLength)
         let skip = end - start
         guard skip < frames else { return }
-        guard let kept = skip == 0 ? buffer : buffer.dropping(skip) else { return }
+        guard let kept = skip == 0 ? buffer : buffer.copy(frames: skip..<frames) else { return }
         waiting.append(.audio(kept))
         end += frames - skip
         writeWaiting(silenceBudget: Self.silencePerCall)
@@ -361,16 +372,15 @@ extension AVAudioPCMBuffer {
         return buffer
     }
 
-    /// A copy without the first `count` frames (a non-interleaved float buffer); nil if
-    /// the copy can't be made.
-    fileprivate func dropping(_ count: Int) -> AVAudioPCMBuffer? {
-        let frames = Int(frameLength) - count
-        guard count >= 0, frames > 0,
-              let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
+    /// A copy of the frames in `range` (a non-interleaved float buffer); nil if the range is
+    /// empty or out of bounds, or the copy can't be made.
+    func copy(frames range: Range<Int>) -> AVAudioPCMBuffer? {
+        guard range.lowerBound >= 0, range.upperBound <= Int(frameLength), !range.isEmpty,
+              let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(range.count)),
               let source = floatChannelData, let destination = copy.floatChannelData else { return nil }
-        copy.frameLength = AVAudioFrameCount(frames)
+        copy.frameLength = AVAudioFrameCount(range.count)
         for channel in 0..<Int(format.channelCount) {
-            destination[channel].update(from: source[channel] + count, count: frames)
+            destination[channel].update(from: source[channel] + range.lowerBound, count: range.count)
         }
         return copy
     }

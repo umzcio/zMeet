@@ -36,10 +36,19 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     /// needed (mic or system audio not captured) or couldn't start. Confined to
     /// `queue`, like the other mutable state.
     private var echo: EchoCapture?
-    /// Whether each player has had its priming silence this recording (see
-    /// `prime`). Confined to `queue`.
-    private var systemPrimed = false
-    private var micPrimed = false
+    /// Each player's schedule while the echo pipeline runs; nil otherwise, when each player
+    /// plays its audio as it comes. The mic then waits up to 250 ms for its reference before
+    /// it reaches the mic player, so both players are primed with `EchoCapture.primingFrames`
+    /// (300 ms) of silence ahead of their first audio: the mic player never runs dry during
+    /// the wait, and both carry the same delay, so the mic and the system audio stay as
+    /// aligned in the mix as without echo cancellation. A primed player plays what it's
+    /// given back to back, so the schedules also put each gap in a stream (a stall, lost
+    /// buffers, silence nothing was sent for) back as silence on its player; closed up, a
+    /// gap would move that stream up to 300 ms against the other for the rest of the
+    /// recording. The silence goes to the players only: `mic.m4a` and `system.m4a` get
+    /// their audio as without echo cancellation. Confined to `queue`.
+    private var systemSchedule: PrimedPlaybackSchedule?
+    private var micSchedule: PrimedPlaybackSchedule?
     var onCaptureFailure: (@Sendable (String) -> Void)?
 
     private let canonical = AVAudioFormat(
@@ -158,6 +167,8 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         engine.detach(captureMixer)
         queue.sync {
             echo = nil
+            systemSchedule = nil
+            micSchedule = nil
             systemConverter = nil
             micConverter = nil
             audioFile = nil
@@ -168,24 +179,29 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         }
     }
 
-    /// Sets up this recording's echo pipeline, on `queue`. It runs only when echo
-    /// cancellation is on and both the mic and the system audio are captured;
-    /// otherwise the mic path is today's. With the `ZMeetEchoDebugTracks` default
-    /// set, it also writes `<meeting folder>/echo-debug/` tracks for tuning.
+    /// Sets up this recording's echo pipeline and its players' schedules, on `queue`. It
+    /// runs only when echo cancellation is on and both the mic and the system audio are
+    /// captured; otherwise the mic path is today's. With the `ZMeetEchoDebugTracks`
+    /// default set, it also writes `<meeting folder>/echo-debug/` tracks for tuning.
     private func startEcho(audio: AudioConfig, meetingFolder: URL) {
         let active = audio.echoCancellation && audio.captureMicrophone && audio.captureSystemAudio
         let debugFolder = UserDefaults.standard.bool(forKey: "ZMeetEchoDebugTracks")
             ? meetingFolder.appendingPathComponent("echo-debug") : nil
         queue.sync {
-            systemPrimed = false
-            micPrimed = false
+            echo = nil
+            systemSchedule = nil
+            micSchedule = nil
             guard active else {
-                echo = nil
                 log(audio.echoCancellation ? "echo: off (needs both the mic and system audio)" : "echo: off (turned off in Settings)")
                 return
             }
             echo = EchoCapture(canonical: canonical, debugFolder: debugFolder, log: { [weak self] in self?.log($0) })
-            if echo == nil { log("echo: unavailable — raw mic") }
+            guard echo != nil else {
+                log("echo: unavailable — raw mic")
+                return
+            }
+            systemSchedule = EchoCapture.playbackSchedule()
+            micSchedule = EchoCapture.playbackSchedule()
         }
     }
 
@@ -234,17 +250,24 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         case .audio:
             if let out = convert(pcm, using: &systemConverter, label: "system") {
                 if let systemFile { try? systemFile.write(from: out) }
-                if echo != nil, !systemPrimed { systemPrimed = true; prime(systemPlayer) }
-                systemPlayer.scheduleBuffer(out, completionHandler: nil)
+                let pts = sampleBuffer.presentationTimeStamp
+                let now = ProcessInfo.processInfo.systemUptime
+                systemSchedule?.arrive(frames: Int(out.frameLength), pts: EchoCapture.seconds(pts), at: now)
+                let silences = systemSchedule?.schedule(frames: Int(out.frameLength), at: now) ?? []
+                schedule(out, on: systemPlayer, after: silences)
                 // The system audio is also the canceller's reference; it can release held mic.
-                if let cleaned = echo?.system(out, pts: sampleBuffer.presentationTimeStamp) { emitMic(cleaned) }
+                if let cleaned = echo?.system(out, pts: pts) { emitMic(cleaned) }
             }
         case .microphone:
             if let out = convert(pcm, using: &micConverter, label: "mic") {
                 if let echo {
                     // Held until its reference arrives, then cleaned; the raw mic isn't played.
-                    if !micPrimed { micPrimed = true; prime(micPlayer) }
-                    if let cleaned = echo.microphone(out, pts: sampleBuffer.presentationTimeStamp) { emitMic(cleaned) }
+                    // The schedule sees each buffer as the aligner does, so it knows where in
+                    // the cleaned mic each one starts.
+                    let pts = sampleBuffer.presentationTimeStamp
+                    micSchedule?.arrive(frames: Int(out.frameLength), pts: EchoCapture.seconds(pts),
+                                        at: ProcessInfo.processInfo.systemUptime)
+                    if let cleaned = echo.microphone(out, pts: pts) { emitMic(cleaned) }
                 } else {
                     emitMic(out)
                 }
@@ -254,22 +277,32 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         }
     }
 
-    /// The mic's way into the recording: `mic.m4a` when separate tracks are on, then the mix.
+    /// The mic's way into the recording: `mic.m4a` when separate tracks are on, then the mix,
+    /// with the mic player's priming and gap silence while the echo pipeline runs.
     private func emitMic(_ buffer: AVAudioPCMBuffer) {
         if let micFile { try? micFile.write(from: buffer) }
-        micPlayer.scheduleBuffer(buffer, completionHandler: nil)
+        let silences = micSchedule?.schedule(frames: Int(buffer.frameLength), at: ProcessInfo.processInfo.systemUptime) ?? []
+        schedule(buffer, on: micPlayer, after: silences)
     }
 
-    /// Queues `EchoCapture.primingFrames` (300 ms) of silence on `player` ahead of its
-    /// stream's first audio. With echo cancellation on, the mic waits up to 250 ms for its
-    /// reference before it reaches the mic player; primed, that player never runs dry
-    /// during the wait, and both players carry the same delay, so the mic and the system
-    /// audio stay as aligned in the mix as they are without it. Priming at each stream's
-    /// first buffer, not at play(), keeps the full 300 ms however long the capture takes
-    /// to start.
-    private func prime(_ player: AVAudioPlayerNode) {
-        guard let silence = AVAudioPCMBuffer.silence(canonical, frames: EchoCapture.primingFrames) else { return }
-        player.scheduleBuffer(silence, completionHandler: nil)
+    /// Queues `buffer` on `player`, each of `silences` going in ahead of the frame at its offset.
+    private func schedule(_ buffer: AVAudioPCMBuffer, on player: AVAudioPlayerNode,
+                          after silences: [PrimedPlaybackSchedule.Silence]) {
+        var from = 0
+        for silence in silences {
+            if silence.offset > from, let part = buffer.copy(frames: from..<silence.offset) {
+                player.scheduleBuffer(part, completionHandler: nil)
+            }
+            if let gap = AVAudioPCMBuffer.silence(canonical, frames: AVAudioFrameCount(silence.frames)) {
+                player.scheduleBuffer(gap, completionHandler: nil)
+            }
+            from = silence.offset
+        }
+        if from == 0 {
+            player.scheduleBuffer(buffer, completionHandler: nil)
+        } else if let rest = buffer.copy(frames: from..<Int(buffer.frameLength)) {
+            player.scheduleBuffer(rest, completionHandler: nil)
+        }
     }
 
     private func convert(_ input: AVAudioPCMBuffer, using converter: inout AVAudioConverter?, label: String) -> AVAudioPCMBuffer? {
@@ -333,11 +366,14 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
             queue.async {
                 if let tail = self.echo?.finish() { self.emitMic(tail) }
                 self.echo = nil
+                self.logPlayerGaps()
+                self.systemSchedule = nil
+                self.micSchedule = nil
                 cont.resume()
             }
         }
-        // What the players still hold (the priming, held mic, that tail) plays
-        // through the capture mixer before the tap that writes the mix comes off.
+        // What the players still hold (the priming, gap silence, held mic, that tail)
+        // plays through the capture mixer before the tap that writes the mix comes off.
         await drainPlayers()
         captureMixer.removeTap(onBus: 0)
         systemPlayer.stop()
@@ -362,6 +398,16 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
             logHandle = nil
         }
         return RecorderStopDiagnostics(droppedMixBuffers: dropped)
+    }
+
+    /// At stop, after `echo: final`: how many gaps each stream's PTS showed and how much
+    /// silence went back in on its player. On queue.
+    private func logPlayerGaps() {
+        guard let systemSchedule, let micSchedule else { return }
+        func gaps(_ schedule: PrimedPlaybackSchedule) -> String {
+            "\(schedule.gaps) (\(schedule.gapSilenceFrames * 1_000 / EchoCanceller.sampleRate) ms)"
+        }
+        log("echo: player gaps system=\(gaps(systemSchedule)) mic=\(gaps(micSchedule))")
     }
 
     /// Waits until both players have played everything scheduled on them: a 10 ms
