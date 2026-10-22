@@ -18,8 +18,10 @@ summarizes on-device, one folder per meeting under ~/Documents/zMeet.
 ZMeetCore = engine: no UI/AV imports, unit-tested, defines protocols
 (MeetingRecorder etc.). ZMeetApp implements them with macOS frameworks
 (ScreenCaptureKit, SpeechAnalyzer, FoundationModels). Never import
-AppKit/AVFoundation into ZMeetCore. Sources/CSpeexDSP is vendored C
-(BSD-3; see THIRD-PARTY-NOTICES.md) — don't edit it.
+AppKit/AVFoundation into ZMeetCore. Sources/CWebRTCAPM is vendored WebRTC
+APM 2.1 + Abseil (see THIRD-PARTY-NOTICES.md): regenerate with
+scripts/vendor-webrtc-apm.sh, never hand-edit; only Sources/CWebRTCAPM/zmeet/
+and include/zm_apm.h are ours.
 
 ## Versioning & release
 - The version lives ONLY in scripts/build-app.sh (VERSION/BUILD,

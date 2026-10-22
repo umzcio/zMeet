@@ -24,7 +24,7 @@ jobs:
           key: spm-${{ runner.os }}-26-${{ hashFiles('Package.resolved') }}
       - name: Enforce ZMeetCore import allowlist
         run: |
-          bad=$(grep -rhE '^import ' Sources/ZMeetCore --include='*.swift' | sort -u | grep -vE '^import (Foundation|SQLite3|CSpeexDSP)$' || true)
+          bad=$(grep -rhE '^import ' Sources/ZMeetCore --include='*.swift' | sort -u | grep -vE '^import (Foundation|SQLite3|CWebRTCAPM)$' || true)
           if [ -n "$bad" ]; then echo "Disallowed imports in ZMeetCore:"; echo "$bad"; exit 1; fi
       - name: Run ZMeetCore tests
         run: swift test --scratch-path .build-ci

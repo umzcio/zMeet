@@ -260,7 +260,7 @@ zMeet/
 ├── Sources/
 │   ├── ZMeetCore/          # engine: sessions, models, rendering, config (unit-tested)
 │   ├── ZMeetApp/           # menu-bar app: recorder, transcription, summary, detection, UI
-│   ├── CSpeexDSP/          # vendored speexdsp (BSD-3, see THIRD-PARTY-NOTICES.md)
+│   ├── CWebRTCAPM/         # vendored WebRTC audio processing (AEC3), see THIRD-PARTY-NOTICES.md
 │   └── aec-probe/          # offline AEC validation tool (spike)
 ├── Tests/
 │   └── ZMeetCoreTests/     # Swift Testing suite for the engine
@@ -291,5 +291,6 @@ export, and cross-machine **vault sync** options.
 
 [MIT](LICENSE) — do what you like; no warranty.
 
-Vendored third-party code (SpeexDSP, KISS FFT) is BSD-3-Clause — see
+Vendored third-party code (WebRTC audio processing and the code it bundles,
+plus Abseil) is under BSD-style and Apache-2.0 licenses — see
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

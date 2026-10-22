@@ -20,17 +20,6 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.2")
     ],
     targets: [
-        .target(
-            name: "CSpeexDSP",
-            path: "Sources/CSpeexDSP",
-            cSettings: [
-                .headerSearchPath("include"),
-                .define("HAVE_CONFIG_H"),
-                .define("OUTSIDE_SPEEX"),
-                .define("FLOATING_POINT"),
-                .define("USE_KISS_FFT")
-            ]
-        ),
         // WebRTC AudioProcessing (AEC3), webrtc-audio-processing 2.1 (M131),
         // vendored source + 9 Abseil .cc. arm64 only (NEON defines are
         // unconditional; SwiftPM has no per-arch settings). webrtc/ and abseil/
@@ -63,7 +52,7 @@ let package = Package(
         ),
         .target(
             name: "ZMeetCore",
-            dependencies: ["CSpeexDSP", "CWebRTCAPM"],
+            dependencies: ["CWebRTCAPM"],
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         .executableTarget(

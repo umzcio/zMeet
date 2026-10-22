@@ -1,45 +1,67 @@
-import CSpeexDSP
+import CWebRTCAPM
 import Foundation
 
-/// Reference-based acoustic echo canceller (speexdsp MDF + residual-echo preprocessor).
-/// Fed fixed-size frames of 16-bit mono PCM: `near` (mic + speaker bleed) and `far`
-/// (the system/remote audio that bled in). Returns the mic with the echo removed.
-/// NOT thread-safe — own one per recording and call from a single queue.
-public final class EchoCanceller {
-    private let frameSize: Int
-    private let echo: OpaquePointer
-    private let preprocess: OpaquePointer
+/// AEC3's own view of the echo path. Each value is nil until AEC3 has one.
+public struct EchoStatistics: Sendable, Equatable {
+    /// ERL, 10·log10(P_far / P_echo): how much quieter the echo is than the reference.
+    public var echoReturnLossDB: Double?
+    /// ERLE, 10·log10(P_echo / P_out): how much echo AEC3 believes it removed.
+    public var echoReturnLossEnhancementDB: Double?
+    /// AEC3's instantaneous estimate of the render-to-capture delay.
+    public var delayMs: Int?
+}
 
-    /// - frameSize: samples per frame (160 = 10 ms @ 16 kHz).
-    /// - filterLength: adaptive-filter tail in samples (1600 = 100 ms, a typical room).
-    public init(frameSize: Int = 160, filterLength: Int = 1600, sampleRate: Int32 = 16_000) {
-        self.frameSize = frameSize
-        echo = speex_echo_state_init(Int32(frameSize), Int32(filterLength))
-        preprocess = speex_preprocess_state_init(Int32(frameSize), sampleRate)
-        var rate = sampleRate
-        _ = speex_echo_ctl(echo, SPEEX_ECHO_SET_SAMPLING_RATE, &rate)
-        // Link the preprocessor to the echo state so it suppresses residual echo the
-        // linear filter leaves behind.
-        _ = speex_preprocess_ctl(preprocess, SPEEX_PREPROCESS_SET_ECHO_STATE, UnsafeMutableRawPointer(echo))
-    }
+/// One echo canceller step per 10 ms: exactly one render frame, then exactly one
+/// capture frame. AEC3 needs these calls strictly paired.
+public protocol EchoProcessing: AnyObject {
+    /// Feeds the far end (the system audio the speakers played). False on an APM error.
+    func processRender(_ frame: [Float]) -> Bool
+    /// Cleans the mic frame in place. False on an APM error.
+    func processCapture(_ frame: inout [Float]) -> Bool
+}
 
-    deinit {
-        speex_echo_state_destroy(echo)
-        speex_preprocess_state_destroy(preprocess)
-    }
+/// Speaker-echo canceller: WebRTC AEC3 (vendored in CWebRTCAPM) at 48 kHz mono,
+/// float samples in [-1, 1], 10 ms frames of `frameSize` samples. Noise
+/// suppression and gain control are off; only the echo canceller and its
+/// high-pass filter run.
+///
+/// NOT thread-safe: one instance per recording, used from one queue.
+public final class EchoCanceller: EchoProcessing {
+    public static let sampleRate = 48_000
+    public static let frameSize = 480
 
-    /// Cancel the echo of `far` from `near`. Both arrays MUST be exactly `frameSize`.
-    public func cancel(near: [Int16], far: [Int16]) -> [Int16] {
-        precondition(near.count == frameSize && far.count == frameSize, "frame size mismatch")
-        var out = [Int16](repeating: 0, count: frameSize)
-        near.withUnsafeBufferPointer { n in
-            far.withUnsafeBufferPointer { f in
-                out.withUnsafeMutableBufferPointer { o in
-                    speex_echo_cancellation(echo, n.baseAddress, f.baseAddress, o.baseAddress)
-                    _ = speex_preprocess_run(preprocess, o.baseAddress)
-                }
-            }
+    private let apm: OpaquePointer
+
+    /// nil if APM can't be created.
+    public init?() {
+        guard let apm = zm_apm_create(Int32(Self.sampleRate), 1, 0) else { return nil }
+        guard Int(zm_apm_frame_samples(apm)) == Self.frameSize else {
+            zm_apm_destroy(apm)
+            return nil
         }
-        return out
+        self.apm = apm
+    }
+
+    deinit { zm_apm_destroy(apm) }
+
+    public func processRender(_ frame: [Float]) -> Bool {
+        precondition(frame.count == Self.frameSize, "render frame must be \(Self.frameSize) samples")
+        return zm_apm_process_reverse(apm, frame) == 0
+    }
+
+    public func processCapture(_ frame: inout [Float]) -> Bool {
+        precondition(frame.count == Self.frameSize, "capture frame must be \(Self.frameSize) samples")
+        return zm_apm_process_capture(apm, &frame) == 0
+    }
+
+    public var statistics: EchoStatistics {
+        var stats = ZMApmStats()
+        guard zm_apm_get_stats(apm, &stats) == 0 else { return EchoStatistics() }
+        return EchoStatistics(
+            echoReturnLossDB: stats.has_echo_return_loss != 0 ? stats.echo_return_loss : nil,
+            echoReturnLossEnhancementDB: stats.has_echo_return_loss_enhancement != 0
+                ? stats.echo_return_loss_enhancement : nil,
+            delayMs: stats.has_delay_ms != 0 ? Int(stats.delay_ms) : nil
+        )
     }
 }
