@@ -58,6 +58,26 @@ import Testing
     #expect(lag == EchoCanceller.captureLatencySamples)
 }
 
+@Test func keepsCancellingAfterANaNFrame() throws {
+    // APM has no guard against NaN: one NaN frame in either stream would leave every later cleaned
+    // frame NaN. The facade reads a NaN or infinite sample as 0, so the canceller keeps cancelling.
+    let far = EchoTestSignals.speechLike(seconds: 12, seed: 1)
+    let mic = EchoTestSignals.echo(of: far, delayMs: 60, gainDB: -10)
+    let tail = (6 * 48_000)..<(12 * 48_000)
+    for inFarEnd in [false, true] {
+        let canceller = try #require(EchoCanceller())
+        var badFar = far
+        var badMic = mic
+        for i in (3 * 48_000)..<(3 * 48_000 + 480) {
+            if inFarEnd { badFar[i] = .nan } else { badMic[i] = .nan }
+        }
+        let out = EchoTestSignals.runCanceller(canceller, mic: badMic, far: badFar)
+        let scenario: Comment = inFarEnd ? "a NaN far-end frame" : "a NaN mic frame"
+        #expect(out.count(where: { !$0.isFinite }) == 0, scenario)
+        #expect(EchoTestSignals.rmsDB(mic[tail]) - EchoTestSignals.rmsDB(out[tail]) >= 25, scenario)
+    }
+}
+
 @Test func statisticsAreEmptyOnlyBeforeTheFirstCaptureFrame() throws {
     let canceller = try #require(EchoCanceller())
     #expect(canceller.statistics == EchoStatistics())

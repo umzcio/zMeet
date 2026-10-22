@@ -5,6 +5,7 @@
 // works for both.
 #include "zm_apm.h"
 
+#include <cmath>
 #include <new>
 #include <vector>
 
@@ -21,9 +22,16 @@ struct Planar {
         ptr(static_cast<size_t>(ch)) {
     for (int c = 0; c < ch; ++c) ptr[c] = data.data() + c * f;
   }
+  // Every sample APM is given comes through here. A NaN or infinite one reads
+  // as 0: APM clamps out-of-range samples (infinities included) when it scales
+  // them to int16 range, but a NaN passes that clamp and leaves every later
+  // capture frame NaN, whichever stream it came in on.
   void From(const float* in) {
     for (int i = 0; i < frames; ++i)
-      for (int c = 0; c < channels; ++c) ptr[c][i] = in[i * channels + c];
+      for (int c = 0; c < channels; ++c) {
+        const float v = in[i * channels + c];
+        ptr[c][i] = std::isfinite(v) ? v : 0.f;
+      }
   }
   void To(float* out) const {
     for (int i = 0; i < frames; ++i)

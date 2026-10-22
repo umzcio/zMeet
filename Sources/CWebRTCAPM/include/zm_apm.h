@@ -5,7 +5,9 @@
 // Swift imports this header only; no C++ crosses the module boundary.
 //
 // Frames are exactly 10 ms: sample_rate_hz / 100 samples per channel,
-// float in [-1, 1], interleaved when num_channels > 1.
+// float in [-1, 1], interleaved when num_channels > 1. A NaN or infinite
+// sample reads as 0: APM has no guard of its own, and one NaN in either
+// stream would leave every later capture frame NaN.
 // One instance per recording. Render and capture keep separate buffers, so
 // one render thread + one capture thread is allowed by APM's contract, but
 // only single-queue use has been tested. Call zm_apm_get_stats on the capture

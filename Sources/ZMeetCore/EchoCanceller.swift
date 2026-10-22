@@ -26,7 +26,8 @@ public protocol EchoProcessing: AnyObject {
 /// Speaker-echo canceller: WebRTC AEC3 (vendored in CWebRTCAPM) at 48 kHz mono,
 /// float samples in [-1, 1], 10 ms frames of `frameSize` samples. Noise
 /// suppression and gain control are off; only the echo canceller and its
-/// high-pass filter run.
+/// high-pass filter run. A NaN or infinite sample reads as 0: APM has no guard of
+/// its own, and one NaN in either stream would leave every later cleaned frame NaN.
 ///
 /// NOT thread-safe: one instance per recording, used from one queue.
 public final class EchoCanceller: EchoProcessing {
