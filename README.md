@@ -80,6 +80,7 @@ network).
 - **Recording modes** — **Remote**, **Hybrid**, and **In-person**, each with its own capture profile (whether to record system audio, mic device, gain) applied automatically when you start.
 - **Mic gain** — boost a quiet microphone (e.g. for in-person meetings recorded across a room).
 - **Background-noise reduction** (opt-in) — an offline cleanup pass (high-pass + downward expander) for steady noise like fans and hum.
+- **Speaker-echo removal** (on by default) — record without headphones: the other participants' voices that your mic picks up from the speakers are cancelled on-device (WebRTC AEC3), so they aren't in the recording twice.
 - **Crash-safe** — a recording interrupted by a quit/crash is recovered and finalized on next launch.
 
 ### Transcription & notes
@@ -261,7 +262,7 @@ zMeet/
 │   ├── ZMeetCore/          # engine: sessions, models, rendering, config (unit-tested)
 │   ├── ZMeetApp/           # menu-bar app: recorder, transcription, summary, detection, UI
 │   ├── CWebRTCAPM/         # vendored WebRTC audio processing (AEC3), see THIRD-PARTY-NOTICES.md
-│   └── aec-probe/          # offline AEC validation tool (spike)
+│   └── aec-probe/          # offline echo-pipeline tool: replays mic/system tracks, --selftest
 ├── Tests/
 │   └── ZMeetCoreTests/     # Swift Testing suite for the engine
 └── scripts/

@@ -46,6 +46,16 @@ and include/zm_apm.h are ours.
 ## Sharp edges
 - SCKAudioRecorder: all mutable state is confined to its capture queue;
   stop() cancels/awaits startTask first. Don't add cross-thread access.
+- Echo cancellation: AEC3 needs strictly paired 10 ms render/capture calls —
+  all EchoCapture/EchoAligner calls (including the 10 ms poll timer) happen on
+  SCKAudioRecorder's capture queue. Mix alignment comes from each player's
+  observed queue depth (PlaybackQueueController): system target 300 ms, mic
+  target 300 ms − the released frame's age − AEC3's 430-sample latency;
+  silence only ever goes to the players, never into mic.m4a/system.m4a.
+  stop() cancels the poll, flushes the aligner and drains both players
+  (100 ms marker) before removing the tap. Tune on real audio with
+  `defaults write edu.umontana.zmeet ZMeetEchoDebugTracks -bool YES` (writes
+  echo-debug/ tracks) and `aec-probe`.
 - AppState.Phase has NO .processing case — processing lives in
   ProcessingRegistry (Core); recording and processing can overlap.
 - Meeting detection: the banner is a one-shot nudge; DetectedMeetingTracker
