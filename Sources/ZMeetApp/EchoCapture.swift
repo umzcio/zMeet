@@ -10,30 +10,22 @@ import ZMeetCore
 /// (`EchoAudio.monoMix`) through `EchoAligner` and `EchoCanceller`. The cleaned mic comes
 /// back canonical, with the mono in both channels. A mic frame waits for its reference
 /// (up to the aligner's hold), so the cleaned mic comes out later than the raw mic went
-/// in, and contiguous: a jump in the mic's PTS doesn't show in it. The recorder plays
-/// both streams through primed players (`playbackSchedule()`): the priming keeps the wait
-/// from moving the mic in the mix, and each gap in either stream goes back in as silence
-/// on its player, so a gap doesn't move it either.
+/// in. To keep that wait out of the mix, the recorder keeps each of its players
+/// `primingFrames` ahead of what it plays, the mic player less the mic's wait
+/// (`micTargetFrames`). It measures each player's queue from the player's own position
+/// (`PlaybackQueueController`), so both streams play the priming after they arrived
+/// through gaps, stalls and clock drift too.
 ///
 /// Logs `echo: on …` at creation, a stats line every 30 s while handling input, one line
 /// if the canceller fails (the raw mic passes through from then on), and `echo: final …`
 /// at `finish()`. Given a debug folder, it also writes the raw mic, the system audio and
 /// the cleaned mic there (`EchoDebugTracks`).
 final class EchoCapture {
-    /// The silence each player is primed with: more than the aligner's longest hold
-    /// (250 ms), so a held mic frame never leaves the mic player empty.
+    /// How long after it arrived each stream plays in the mix while the pipeline runs: what
+    /// each player is kept ahead of what it plays. Longer than the aligner's longest hold
+    /// (250 ms), so held mic still reaches its player in time.
     static let primingMs = 300
     static let primingFrames = AVAudioFrameCount(primingMs * EchoCanceller.sampleRate / 1_000)
-    /// `EchoAlignerConfig.placementToleranceMs` (2 ms) in frames: a PTS difference this small is left alone.
-    static let toleranceFrames = Int((EchoAlignerConfig().placementToleranceMs * Double(EchoCanceller.sampleRate) / 1_000).rounded())
-
-    /// The schedule for one of the recorder's players while this pipeline runs: the priming
-    /// ahead of its first audio, then each gap in its stream back as silence, so both players
-    /// keep the priming's delay for the whole recording (`PrimedPlaybackSchedule`).
-    static func playbackSchedule() -> PrimedPlaybackSchedule {
-        PrimedPlaybackSchedule(primingFrames: Int(primingFrames), toleranceFrames: toleranceFrames,
-                               sampleRate: Double(EchoCanceller.sampleRate))
-    }
 
     private static let statsInterval: TimeInterval = 30
 
@@ -74,6 +66,16 @@ final class EchoCapture {
         debug?.microphone(buffer, pts: seconds)
         if let mono = Self.mono(buffer) { aligner.appendCapture(mono, pts: seconds) }
         return release(aligner.drainReady())
+    }
+
+    /// What the mic player should have queued when the cleaned mic just returned goes in:
+    /// the priming less how long that mic's first frame waited in the aligner, so it plays
+    /// the priming after it arrived, as the system audio does. Read it right after
+    /// `system(_:pts:)`, `microphone(_:pts:)` or `finish()` returns cleaned mic.
+    var micTargetFrames: Int {
+        let priming = Double(Self.primingFrames)
+        let held = min(aligner.lastReleaseHoldSeconds * Double(EchoCanceller.sampleRate), priming)
+        return Int((priming - held).rounded())
     }
 
     /// The end of the recording: every mic sample still held, cleaned with whatever
@@ -152,7 +154,7 @@ final class EchoCapture {
 
     /// The PTS in seconds; nil when it's invalid or not finite, and placement then falls
     /// back to sample counts.
-    static func seconds(_ pts: CMTime) -> TimeInterval? {
+    private static func seconds(_ pts: CMTime) -> TimeInterval? {
         guard pts.isValid else { return nil }
         let seconds = pts.seconds
         return seconds.isFinite ? seconds : nil
@@ -177,7 +179,9 @@ final class EchoCapture {
 ///
 /// Best-effort: a track that can't be created or written is logged and dropped.
 private final class EchoDebugTracks {
-    private static let tolerance = EchoCapture.toleranceFrames
+    /// `EchoAlignerConfig.placementToleranceMs` (2 ms) in frames: a PTS difference this
+    /// small is left alone, as the aligner leaves it.
+    private static let tolerance = Int((EchoAlignerConfig().placementToleranceMs * Double(EchoCanceller.sampleRate) / 1_000).rounded())
 
     private var micRawTrack: DebugTrack?
     private var systemTrack: DebugTrack?
@@ -374,7 +378,7 @@ extension AVAudioPCMBuffer {
 
     /// A copy of the frames in `range` (a non-interleaved float buffer); nil if the range is
     /// empty or out of bounds, or the copy can't be made.
-    func copy(frames range: Range<Int>) -> AVAudioPCMBuffer? {
+    fileprivate func copy(frames range: Range<Int>) -> AVAudioPCMBuffer? {
         guard range.lowerBound >= 0, range.upperBound <= Int(frameLength), !range.isEmpty,
               let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(range.count)),
               let source = floatChannelData, let destination = copy.floatChannelData else { return nil }

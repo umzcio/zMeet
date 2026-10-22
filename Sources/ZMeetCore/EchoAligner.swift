@@ -101,6 +101,12 @@ public enum EchoAudio {
 /// NOT thread-safe: one instance per recording, used from one queue.
 public final class EchoAligner {
     public private(set) var stats: EchoAlignerStats
+    /// How long the first frame of the latest release (a `drainReady()` or `flush()` that
+    /// returned samples) waited between arriving and going out, in seconds; 0 if it waited
+    /// for nothing. A frame arrives with the mic buffer that brings its last sample. The
+    /// recorder takes this off the mic player's target, so held mic plays as long after it
+    /// arrived as the system audio does.
+    public private(set) var lastReleaseHoldSeconds: Double = 0
 
     private static let sampleRate = Double(EchoCanceller.sampleRate)
     private static let frameSize = EchoCanceller.frameSize
@@ -125,6 +131,8 @@ public final class EchoAligner {
     private var micStarted = false
     /// When each complete frame in `pending` was completed, oldest first.
     private var arrivals: [TimeInterval] = []
+    /// When the latest mic buffer arrived: the arrival of a partial frame at the end of `pending`.
+    private var lastCaptureArrival: TimeInterval?
 
     /// The reference: the newest `renderCount` samples, at indices
     /// [renderEnd − renderCount, renderEnd), index i in slot
@@ -181,6 +189,7 @@ public final class EchoAligner {
     public func appendCapture(_ samples: [Float], pts: TimeInterval?) {
         guard !samples.isEmpty else { return }
         let arrival = now()
+        lastCaptureArrival = arrival
         let pts = Self.usable(pts)
         if let pts, origin == nil { origin = pts }
         let first: Int
@@ -220,6 +229,7 @@ public final class EchoAligner {
                     oweRender(upTo: needed)
                 }
             }
+            if out.isEmpty { lastReleaseHoldSeconds = max(time - arrival, 0) }
             out += releaseNextFrame()
         }
         return out
@@ -229,6 +239,10 @@ public final class EchoAligner {
     /// where none arrived). A partial last frame is zero-padded for the processor
     /// and trimmed back to its real length.
     public func flush() -> [Float] {
+        let time = now()
+        if let first = arrivals.first ?? (pending.isEmpty ? nil : lastCaptureArrival) {
+            lastReleaseHoldSeconds = max(time - first, 0)
+        }
         var out: [Float] = []
         while !arrivals.isEmpty { out += releaseNextFrame() }
         if !pending.isEmpty {

@@ -259,6 +259,57 @@ private func runWithLateSystemAudio(far: [Float], mic: [Float]) throws -> [Float
     #expect(a.stats.referenceMoves == 1)
 }
 
+@Test func reportsHowLongTheReleasedMicWaited() {
+    let p = FakeProcessor()
+    let clock = ManualClock()
+    let a = makeAligner(p, clock: clock)
+    // A frame released by its reference arriving 0.15 s after it did.
+    a.appendCapture(zeros(480), pts: 0)
+    #expect(a.drainReady().isEmpty)
+    clock.t = 0.15
+    a.appendRender(ramp(0, 5_280), pts: 0)
+    #expect(a.drainReady().count == 480)
+    #expect(a.lastReleaseHoldSeconds == 0.15)
+    // Two frames released together, which arrived at 0.2 and 0.22 s: the first one's wait.
+    clock.t = 0.2
+    a.appendCapture(zeros(480), pts: 0.01)
+    #expect(a.drainReady().isEmpty)
+    clock.t = 0.22
+    a.appendCapture(zeros(480), pts: 0.02)
+    #expect(a.drainReady().isEmpty)
+    clock.t = 0.26
+    a.appendRender(ramp(5_280, 960), pts: 0.11)
+    #expect(a.drainReady().count == 960)
+    #expect(abs(a.lastReleaseHoldSeconds - 0.06) < 1e-9)
+    // A frame whose reference is already there goes straight out: it waited for nothing.
+    a.appendRender(ramp(6_240, 480), pts: 0.13)
+    #expect(a.drainReady().isEmpty)
+    clock.t = 0.3
+    a.appendCapture(zeros(480), pts: 0.03)
+    #expect(a.drainReady().count == 480)
+    #expect(a.lastReleaseHoldSeconds == 0)
+}
+
+@Test func flushReportsHowLongItsFirstFrameWaited() {
+    let p = FakeProcessor()
+    let clock = ManualClock()
+    let a = makeAligner(p, clock: clock)
+    // At stop: a frame still waiting for its reference, and a partial frame after it.
+    clock.t = 1.0
+    a.appendCapture(zeros(480 + 200), pts: 1.0)
+    #expect(a.drainReady().isEmpty)
+    clock.t = 1.2
+    #expect(a.flush().count == 680)
+    #expect(abs(a.lastReleaseHoldSeconds - 0.2) < 1e-9)
+    // Only a partial frame left: it has waited since the buffer that brought its last sample.
+    clock.t = 2.0
+    a.appendCapture(zeros(300), pts: nil)
+    #expect(a.drainReady().isEmpty)
+    clock.t = 2.05
+    #expect(a.flush().count == 300)
+    #expect(abs(a.lastReleaseHoldSeconds - 0.05) < 1e-9)
+}
+
 @Test func flushReturnsEveryPendingSample() {
     let p = FakeProcessor()
     let a = makeAligner(p)
