@@ -256,6 +256,7 @@ private func runWithLateSystemAudio(far: [Float], mic: [Float]) throws -> [Float
     let micStarts = (0..<190).map { $0 < 100 ? $0 * 480 : 6 * 48_000 + ($0 - 100) * 480 }
     #expect(micStarts.indices.allSatisfy { p.renders[$0][0] == Float(micStarts[$0] + 4_800) })
     #expect(a.stats.owedFrames == 0)
+    #expect(a.stats.referenceMoves == 1)
 }
 
 @Test func flushReturnsEveryPendingSample() {
@@ -295,6 +296,27 @@ private func runWithLateSystemAudio(far: [Float], mic: [Float]) throws -> [Float
     let stats = statsAfterOneProcessedFrame(lock: 60)
     #expect(stats.leadMs == 100)
     #expect(stats.leadChanges == 0)
+}
+
+/// Reports a 10 ms lock until it's reset, then none, and counts the resets.
+final class CountingLagTracker: EchoLagTracking {
+    var lockedLagMs: Double? = 10
+    var resetCount = 0
+    func append(reference: [Float], observed: [Float]) {}
+    func reset() { resetCount += 1; lockedLagMs = nil }
+}
+
+@Test func retargetResetsTheTracker() {
+    let p = FakeProcessor()
+    let tracker = CountingLagTracker()
+    let a = EchoAligner(processor: p, tracker: tracker, now: { 0 })
+    a.appendRender(zeros(12_000), pts: 0)  // reference for 3 frames, even at the 200 ms lead
+    _ = a.drainReady()
+    a.appendCapture(zeros(3 * 480), pts: 0)
+    _ = a.drainReady()
+    #expect(p.captures == 3)
+    #expect(tracker.resetCount == 1)
+    #expect(a.stats.leadChanges == 1)
 }
 
 @Test func monoMixAveragesChannels() {

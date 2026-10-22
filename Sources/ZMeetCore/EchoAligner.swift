@@ -39,6 +39,9 @@ public struct EchoAlignerStats: Sendable, Equatable {
     /// System-audio buffers whose start overlapped reference already placed (or
     /// owed), which was dropped.
     public var renderTrims = 0
+    /// Times a mic PTS jump (a stall or lost mic buffers) moved the reference
+    /// already placed, so that it kept its time position against the mic.
+    public var referenceMoves = 0
     /// Times the lead moved because the locked delay left the working window.
     public var leadChanges = 0
     /// The current lead.
@@ -297,6 +300,7 @@ public final class EchoAligner {
     /// under the mic's previous PTS keeps its time position against the mic.
     private func moveReference(by shift: Int) {
         guard let end = renderEnd else { return }
+        stats.referenceMoves += 1
         renderEnd = end + shift
         ringOffset = Self.modulo(ringOffset - shift, ring.count)
     }

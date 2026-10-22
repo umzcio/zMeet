@@ -32,6 +32,14 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     /// without suppressing a genuine mid-recording death, since that path
     /// reports before `stop()` is ever called.
     private var isStopping = false
+    /// This recording's echo pipeline: nil when echo cancellation is off, isn't
+    /// needed (mic or system audio not captured) or couldn't start. Confined to
+    /// `queue`, like the other mutable state.
+    private var echo: EchoCapture?
+    /// Whether each player has had its priming silence this recording (see
+    /// `prime`). Confined to `queue`.
+    private var systemPrimed = false
+    private var micPrimed = false
     var onCaptureFailure: (@Sendable (String) -> Void)?
 
     private let canonical = AVAudioFormat(
@@ -122,6 +130,8 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
             throw error
         }
 
+        startEcho(audio: audio, meetingFolder: url.deletingLastPathComponent())
+
         systemPlayer.play()
         micPlayer.play()
         // Mic-only pre-mix gain (1.0 = unchanged). Scales just the mic node's
@@ -147,6 +157,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         engine.detach(micPlayer)
         engine.detach(captureMixer)
         queue.sync {
+            echo = nil
             systemConverter = nil
             micConverter = nil
             audioFile = nil
@@ -154,6 +165,27 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
             systemFile = nil
             try? logHandle?.close()
             logHandle = nil
+        }
+    }
+
+    /// Sets up this recording's echo pipeline, on `queue`. It runs only when echo
+    /// cancellation is on and both the mic and the system audio are captured;
+    /// otherwise the mic path is today's. With the `ZMeetEchoDebugTracks` default
+    /// set, it also writes `<meeting folder>/echo-debug/` tracks for tuning.
+    private func startEcho(audio: AudioConfig, meetingFolder: URL) {
+        let active = audio.echoCancellation && audio.captureMicrophone && audio.captureSystemAudio
+        let debugFolder = UserDefaults.standard.bool(forKey: "ZMeetEchoDebugTracks")
+            ? meetingFolder.appendingPathComponent("echo-debug") : nil
+        queue.sync {
+            systemPrimed = false
+            micPrimed = false
+            guard active else {
+                echo = nil
+                log(audio.echoCancellation ? "echo: off (needs both the mic and system audio)" : "echo: off (turned off in Settings)")
+                return
+            }
+            echo = EchoCapture(canonical: canonical, debugFolder: debugFolder, log: { [weak self] in self?.log($0) })
+            if echo == nil { log("echo: unavailable — raw mic") }
         }
     }
 
@@ -202,16 +234,42 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
         case .audio:
             if let out = convert(pcm, using: &systemConverter, label: "system") {
                 if let systemFile { try? systemFile.write(from: out) }
+                if echo != nil, !systemPrimed { systemPrimed = true; prime(systemPlayer) }
                 systemPlayer.scheduleBuffer(out, completionHandler: nil)
+                // The system audio is also the canceller's reference; it can release held mic.
+                if let cleaned = echo?.system(out, pts: sampleBuffer.presentationTimeStamp) { emitMic(cleaned) }
             }
         case .microphone:
             if let out = convert(pcm, using: &micConverter, label: "mic") {
-                if let micFile { try? micFile.write(from: out) }
-                micPlayer.scheduleBuffer(out, completionHandler: nil)
+                if let echo {
+                    // Held until its reference arrives, then cleaned; the raw mic isn't played.
+                    if !micPrimed { micPrimed = true; prime(micPlayer) }
+                    if let cleaned = echo.microphone(out, pts: sampleBuffer.presentationTimeStamp) { emitMic(cleaned) }
+                } else {
+                    emitMic(out)
+                }
             }
         default:
             break
         }
+    }
+
+    /// The mic's way into the recording: `mic.m4a` when separate tracks are on, then the mix.
+    private func emitMic(_ buffer: AVAudioPCMBuffer) {
+        if let micFile { try? micFile.write(from: buffer) }
+        micPlayer.scheduleBuffer(buffer, completionHandler: nil)
+    }
+
+    /// Queues `EchoCapture.primingFrames` (300 ms) of silence on `player` ahead of its
+    /// stream's first audio. With echo cancellation on, the mic waits up to 250 ms for its
+    /// reference before it reaches the mic player; primed, that player never runs dry
+    /// during the wait, and both players carry the same delay, so the mic and the system
+    /// audio stay as aligned in the mix as they are without it. Priming at each stream's
+    /// first buffer, not at play(), keeps the full 300 ms however long the capture takes
+    /// to start.
+    private func prime(_ player: AVAudioPlayerNode) {
+        guard let silence = AVAudioPCMBuffer.silence(canonical, frames: EchoCapture.primingFrames) else { return }
+        player.scheduleBuffer(silence, completionHandler: nil)
     }
 
     private func convert(_ input: AVAudioPCMBuffer, using converter: inout AVAudioConverter?, label: String) -> AVAudioPCMBuffer? {
@@ -266,11 +324,22 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
             catch { log("stopCapture failed: \(error)") }
         }
         stream = nil
-        captureMixer.removeTap(onBus: 0)
         // Barrier: all queued sample callbacks/log writes finish before teardown.
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             queue.async { cont.resume() }
         }
+        // The mic the echo pipeline still holds goes to the mic player and mic.m4a.
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            queue.async {
+                if let tail = self.echo?.finish() { self.emitMic(tail) }
+                self.echo = nil
+                cont.resume()
+            }
+        }
+        // What the players still hold (the priming, held mic, that tail) plays
+        // through the capture mixer before the tap that writes the mix comes off.
+        await drainPlayers()
+        captureMixer.removeTap(onBus: 0)
         systemPlayer.stop()
         micPlayer.stop()
         engine.stop()
@@ -293,6 +362,28 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
             logHandle = nil
         }
         return RecorderStopDiagnostics(droppedMixBuffers: dropped)
+    }
+
+    /// Waits until both players have played everything scheduled on them: a 10 ms
+    /// silent buffer goes on each with `.dataPlayedBack`, and this returns once both
+    /// have played back, or after `timeout`. Skipped when the engine isn't running,
+    /// since then nothing would play.
+    private func drainPlayers(timeout: TimeInterval = 2) async {
+        guard engine.isRunning else {
+            log("stop: engine not running, players not drained")
+            return
+        }
+        let players = [systemPlayer, micPlayer]
+        let markers = players.compactMap { _ in AVAudioPCMBuffer.silence(canonical, frames: 480) }
+        guard markers.count == players.count else { return }
+        let drained = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            let gate = DrainGate(count: players.count, continuation: cont)
+            for (player, marker) in zip(players, markers) {
+                player.scheduleBuffer(marker, completionCallbackType: .dataPlayedBack) { _ in gate.arrive() }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { gate.expire() }
+        }
+        if !drained { log("stop: players didn't drain within \(Int(timeout)) s") }
     }
 
     /// Copies a canonical-format buffer so the render thread can hand it off
@@ -350,6 +441,34 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
 enum CaptureError: LocalizedError {
     case noDisplay
     var errorDescription: String? { "No display available for system-audio capture." }
+}
+
+/// Resumes a player drain exactly once: with true when every player has played its
+/// marker, or with false if the timeout fires first.
+private final class DrainGate: Sendable {
+    private let state: OSAllocatedUnfairLock<(remaining: Int, continuation: CheckedContinuation<Bool, Never>?)>
+
+    init(count: Int, continuation: CheckedContinuation<Bool, Never>) {
+        state = OSAllocatedUnfairLock(initialState: (remaining: count, continuation: continuation))
+    }
+
+    func arrive() {
+        let finished = state.withLock { state -> CheckedContinuation<Bool, Never>? in
+            state.remaining -= 1
+            guard state.remaining == 0 else { return nil }
+            defer { state.continuation = nil }
+            return state.continuation
+        }
+        finished?.resume(returning: true)
+    }
+
+    func expire() {
+        let pending = state.withLock { state -> CheckedContinuation<Bool, Never>? in
+            defer { state.continuation = nil }
+            return state.continuation
+        }
+        pending?.resume(returning: false)
+    }
 }
 
 /// Tracks whether the single input buffer has been handed to an AVAudioConverter
