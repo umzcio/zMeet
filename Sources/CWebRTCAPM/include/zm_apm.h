@@ -8,7 +8,8 @@
 // float in [-1, 1], interleaved when num_channels > 1.
 // One instance per recording. Render and capture keep separate buffers, so
 // one render thread + one capture thread is allowed by APM's contract, but
-// only single-queue use has been tested.
+// only single-queue use has been tested. Call zm_apm_get_stats on the capture
+// thread.
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,7 +46,11 @@ int zm_apm_process_capture(ZMApm *apm, float *frame);
 // Optional hint: render->capture delay in ms (AEC3 estimates it anyway).
 int zm_apm_set_stream_delay_ms(ZMApm *apm, int delay_ms);
 
-int zm_apm_get_stats(ZMApm *apm, ZMApmStats *out);
+// APM's statistics as of the latest zm_apm_process_capture call, however
+// long ago the previous read was; every has_* is 0 before the first call.
+// Reads what zm_apm_process_capture stored, so call it on the capture thread.
+// Returns 0, or -1 on NULL arguments.
+int zm_apm_get_stats(const ZMApm *apm, ZMApmStats *out);
 
 #ifdef __cplusplus
 }

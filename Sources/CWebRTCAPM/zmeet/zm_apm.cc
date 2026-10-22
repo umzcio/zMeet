@@ -32,12 +32,14 @@ struct Planar {
 };
 
 // Render and capture use separate buffers, so one render thread and one
-// capture thread may call in concurrently (APM locks internally).
+// capture thread may call in concurrently (APM locks internally). `stats` is
+// capture-side: zm_apm_process_capture writes it, zm_apm_get_stats reads it.
 struct ZMApm {
   rtc::scoped_refptr<webrtc::AudioProcessing> apm;
   webrtc::StreamConfig stream;
   int frames;  // samples per channel per 10 ms
   Planar capture, render_in, render_out;
+  webrtc::AudioProcessingStats stats;  // as of the latest capture frame
   ZMApm(int rate, int ch)
       : stream(rate, static_cast<size_t>(ch)), frames(rate / 100),
         capture(rate / 100, ch), render_in(rate / 100, ch),
@@ -94,6 +96,11 @@ int zm_apm_process_capture(ZMApm* z, float* frame) {
   int err = z->apm->ProcessStream(z->capture.ptr.data(), z->stream, z->stream,
                                   z->capture.ptr.data());
   z->capture.To(frame);
+  // APM hands statistics over through a one-slot queue that keeps the oldest
+  // unread entry and drops every newer one, so reading it only now and then
+  // returns the first frame after the previous read. Draining it on every
+  // frame keeps `stats` at the latest frame's values.
+  z->stats = z->apm->GetStatistics();
   return err;
 }
 
@@ -102,9 +109,9 @@ int zm_apm_set_stream_delay_ms(ZMApm* z, int delay_ms) {
   return z->apm->set_stream_delay_ms(delay_ms);
 }
 
-int zm_apm_get_stats(ZMApm* z, ZMApmStats* out) {
+int zm_apm_get_stats(const ZMApm* z, ZMApmStats* out) {
   if (!z || !out) return -1;
-  webrtc::AudioProcessingStats s = z->apm->GetStatistics();
+  const webrtc::AudioProcessingStats& s = z->stats;
   *out = ZMApmStats{};
   if (s.echo_return_loss) {
     out->has_echo_return_loss = 1;

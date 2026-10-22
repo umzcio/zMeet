@@ -1,7 +1,10 @@
 import CWebRTCAPM
 import Foundation
 
-/// AEC3's own view of the echo path. Each value is nil until AEC3 has one.
+/// AEC3's own view of the echo path, as of the latest capture frame. Every value
+/// is nil before the first `processCapture` and set on every frame after it.
+/// AEC3 starts from fixed values (ERL −30 dB, ERLE ≈ 0.2 dB, delay 16 ms) and
+/// refines them as it converges, so a value alone doesn't mean it has converged.
 public struct EchoStatistics: Sendable, Equatable {
     /// ERL, 10·log10(P_far / P_echo): how much quieter the echo is than the reference.
     public var echoReturnLossDB: Double?
@@ -54,6 +57,8 @@ public final class EchoCanceller: EchoProcessing {
         return zm_apm_process_capture(apm, &frame) == 0
     }
 
+    /// As of the latest `processCapture`, at any read cadence: reading has no
+    /// effect on later reads.
     public var statistics: EchoStatistics {
         var stats = ZMApmStats()
         guard zm_apm_get_stats(apm, &stats) == 0 else { return EchoStatistics() }
