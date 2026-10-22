@@ -103,10 +103,16 @@ public final class EchoAligner {
     public private(set) var stats: EchoAlignerStats
     /// How long the first frame of the latest release (a `drainReady()` or `flush()` that
     /// returned samples) waited between arriving and going out, in seconds; 0 if it waited
-    /// for nothing. A frame arrives with the mic buffer that brings its last sample. The
+    /// for nothing. A frame arrives with the mic buffer that brings its last sample.
+    public private(set) var lastReleaseHoldSeconds: Double = 0
+    /// How old the first sample of the latest release is when it goes out, in seconds. A
+    /// sample arrives with the mic buffer that brings it, plus its place in that buffer at
+    /// 48 kHz: when it would have started playing had that buffer gone straight to a player.
+    /// So this is the first frame's hold plus its wait for its later samples, and it is
+    /// negative for a frame that starts partway into a buffer that has only just arrived. The
     /// recorder takes this off the mic player's target, so held mic plays as long after it
     /// arrived as the system audio does.
-    public private(set) var lastReleaseHoldSeconds: Double = 0
+    public private(set) var lastReleaseAgeSeconds: Double = 0
 
     private static let sampleRate = Double(EchoCanceller.sampleRate)
     private static let frameSize = EchoCanceller.frameSize
@@ -129,10 +135,19 @@ public final class EchoAligner {
     private var pending: [Float] = []
     private var pendingStart = 0
     private var micStarted = false
-    /// When each complete frame in `pending` was completed, oldest first.
-    private var arrivals: [TimeInterval] = []
+    /// A complete frame in `pending`: when the mic buffer that completed it arrived, and when
+    /// its first sample did (see `lastReleaseAgeSeconds`).
+    private struct FrameArrival {
+        var completed: TimeInterval
+        var firstSample: TimeInterval
+    }
+    /// Each complete frame in `pending`, oldest first.
+    private var arrivals: [FrameArrival] = []
     /// When the latest mic buffer arrived: the arrival of a partial frame at the end of `pending`.
     private var lastCaptureArrival: TimeInterval?
+    /// When the first sample of the partial frame at the end of `pending` arrived; nil when
+    /// there is none.
+    private var partialFrameFirstSample: TimeInterval?
 
     /// The reference: the newest `renderCount` samples, at indices
     /// [renderEnd − renderCount, renderEnd), index i in slot
@@ -209,10 +224,20 @@ public final class EchoAligner {
             micStarted = true
         }
         if let pts { micAnchor = (pts, first) }
-        let completeBefore = pending.count / Self.frameSize
+        let before = pending.count
         pending.append(contentsOf: samples)
-        let completeAfter = pending.count / Self.frameSize
-        arrivals.append(contentsOf: repeatElement(arrival, count: completeAfter - completeBefore))
+        // When the sample at `offset` in `pending` arrived: this buffer's arrival plus the
+        // sample's place in it, or, for the partial frame that was already waiting, when that
+        // frame's first sample arrived.
+        func arrived(_ offset: Int) -> TimeInterval {
+            offset >= before ? arrival + Double(offset - before) / Self.sampleRate
+                : partialFrameFirstSample ?? arrival
+        }
+        for frame in (before / Self.frameSize)..<(pending.count / Self.frameSize) {
+            arrivals.append(FrameArrival(completed: arrival, firstSample: arrived(frame * Self.frameSize)))
+        }
+        let partial = pending.count / Self.frameSize * Self.frameSize
+        partialFrameFirstSample = partial < pending.count ? arrived(partial) : nil
     }
 
     /// The cleaned mic samples releasable now, in order (possibly none): every
@@ -225,11 +250,14 @@ public final class EchoAligner {
             if !stats.failed {
                 let needed = pendingStart + lead + Self.frameSize
                 if renderEnd.map({ $0 < needed }) ?? true {
-                    guard (time - arrival) * 1_000 >= config.maxHoldMs else { break }
+                    guard (time - arrival.completed) * 1_000 >= config.maxHoldMs else { break }
                     oweRender(upTo: needed)
                 }
             }
-            if out.isEmpty { lastReleaseHoldSeconds = max(time - arrival, 0) }
+            if out.isEmpty {
+                lastReleaseHoldSeconds = max(time - arrival.completed, 0)
+                lastReleaseAgeSeconds = time - arrival.firstSample
+            }
             out += releaseNextFrame()
         }
         return out
@@ -240,8 +268,11 @@ public final class EchoAligner {
     /// and trimmed back to its real length.
     public func flush() -> [Float] {
         let time = now()
-        if let first = arrivals.first ?? (pending.isEmpty ? nil : lastCaptureArrival) {
+        if let first = arrivals.first?.completed ?? (pending.isEmpty ? nil : lastCaptureArrival) {
             lastReleaseHoldSeconds = max(time - first, 0)
+        }
+        if let first = arrivals.first?.firstSample ?? (pending.isEmpty ? nil : partialFrameFirstSample) {
+            lastReleaseAgeSeconds = time - first
         }
         var out: [Float] = []
         while !arrivals.isEmpty { out += releaseNextFrame() }
@@ -253,6 +284,7 @@ public final class EchoAligner {
             pendingStart += count
             out += process(padded, at: start).prefix(count)
         }
+        partialFrameFirstSample = nil
         return out
     }
 

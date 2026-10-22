@@ -8,13 +8,14 @@ import ZMeetCore
 /// The system audio is AEC3's reference and the mic is what gets cleaned. Both arrive
 /// canonical (48 kHz, 2 channels, non-interleaved float) and run mono
 /// (`EchoAudio.monoMix`) through `EchoAligner` and `EchoCanceller`. The cleaned mic comes
-/// back canonical, with the mono in both channels. A mic frame waits for its reference
-/// (up to the aligner's hold), so the cleaned mic comes out later than the raw mic went
-/// in. To keep that wait out of the mix, the recorder keeps each of its players
-/// `primingFrames` ahead of what it plays, the mic player less the mic's wait
+/// back canonical, with the mono in both channels. A mic frame waits for the rest of its
+/// samples and for its reference (up to the aligner's hold), and AEC3 hands each sample back
+/// about 9 ms later still, so the cleaned mic comes out later than the raw mic went in. To
+/// keep that out of the mix, the recorder keeps each of its players `primingFrames` ahead of
+/// what it plays, the mic player less how much later the cleaned mic is
 /// (`micTargetFrames`). It measures each player's queue from the player's own position
-/// (`PlaybackQueueController`), so both streams play the priming after they arrived
-/// through gaps, stalls and clock drift too.
+/// (`PlaybackQueueController`), so both streams play the priming after they arrived, through
+/// gaps, stalls and clock drift too.
 ///
 /// Logs `echo: on …` at creation, a stats line every 30 s while handling input, one line
 /// if the canceller fails (the raw mic passes through from then on), and `echo: final …`
@@ -68,14 +69,21 @@ final class EchoCapture {
         return release(aligner.drainReady())
     }
 
-    /// What the mic player should have queued when the cleaned mic just returned goes in:
-    /// the priming less how long that mic's first frame waited in the aligner, so it plays
-    /// the priming after it arrived, as the system audio does. Read it right after
-    /// `system(_:pts:)`, `microphone(_:pts:)` or `finish()` returns cleaned mic.
+    /// What the mic player should have queued when the cleaned mic just returned goes in, so
+    /// that it plays the priming after it arrived, as the system audio does. That is the
+    /// priming less how much later than the raw mic it is:
+    /// - how old its first sample already is (`EchoAligner.lastReleaseAgeSeconds`: the hold,
+    ///   plus the wait for the rest of that sample's 10 ms frame);
+    /// - while the canceller runs, AEC3's own latency, since each cleaned sample carries the
+    ///   mic from `EchoCanceller.captureLatencySamples` earlier. The raw mic that passes
+    ///   through after a failure has none.
+    ///
+    /// Never below 0. Read it right after `system(_:pts:)`, `microphone(_:pts:)` or `finish()`
+    /// returns cleaned mic.
     var micTargetFrames: Int {
-        let priming = Double(Self.primingFrames)
-        let held = min(aligner.lastReleaseHoldSeconds * Double(EchoCanceller.sampleRate), priming)
-        return Int((priming - held).rounded())
+        let latency = aligner.stats.failed ? 0 : EchoCanceller.captureLatencySamples
+        let later = aligner.lastReleaseAgeSeconds * Double(EchoCanceller.sampleRate) + Double(latency)
+        return max(0, Int((Double(Self.primingFrames) - later).rounded()))
     }
 
     /// The end of the recording: every mic sample still held, cleaned with whatever
@@ -192,7 +200,9 @@ private final class EchoDebugTracks {
     private var micEnd: Int?
     /// The latest mic buffer with a PTS: that PTS and the index of its first sample.
     private var micAnchor: (pts: TimeInterval, index: Int)?
-    /// The index of the next cleaned sample, which is the raw sample it came from.
+    /// The index of the next cleaned sample, counted as the raw mic is. AEC3 hands each
+    /// sample back `EchoCanceller.captureLatencySamples` later, so the cleaned track's audio
+    /// trails the raw track's by about 9 ms.
     private var cleanedEnd = 0
     private var systemStarted = false
 

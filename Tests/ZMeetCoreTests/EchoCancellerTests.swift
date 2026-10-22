@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ZMeetCore
 
@@ -21,6 +22,40 @@ import Testing
     let out = EchoTestSignals.runCanceller(canceller, mic: mic, far: [Float](repeating: 0, count: mic.count))
     let window = 48_000..<(4 * 48_000)
     #expect(abs(EchoTestSignals.rmsDB(out[window]) - EchoTestSignals.rmsDB(mic[window])) <= 1)
+}
+
+@Test func returnsEachMicSampleCaptureLatencySamplesLater() throws {
+    // APM's band split and AEC3's 4 ms blocks hand each mic sample back a fixed 430 samples
+    // (about 9 ms) after it went in, wherever it falls in the 10 ms frame and whether the
+    // reference is silent or not. The recorder takes this off the mic player's target, so the
+    // cleaned mic keeps its place in the mix.
+    #expect(EchoCanceller.captureLatencySamples == 430)
+    let silence = [Float](repeating: 0, count: 48_000)
+    for offset in [0, 1, 97, 191, 300, 479] {
+        let canceller = try #require(EchoCanceller())
+        var mic = silence
+        mic[24_000 + offset] = 0.5
+        let out = EchoTestSignals.runCanceller(canceller, mic: mic, far: silence)
+        let peak = try #require(out.indices.max { abs(out[$0]) < abs(out[$1]) })
+        #expect(peak - (24_000 + offset) == EchoCanceller.captureLatencySamples,
+                "impulse \(offset) samples into its frame")
+    }
+    // While the far end talks (with no echo of it in the mic), a 100 ms noise burst of the
+    // user's comes back just as late: its cross-correlation with the output peaks there.
+    let canceller = try #require(EchoCanceller())
+    let far = EchoTestSignals.speechLike(seconds: 2, seed: 5)
+    var generator = SeededGenerator(seed: 99)
+    var mic = [Float](repeating: 0, count: far.count)
+    let burst = 48_000..<52_800
+    for i in burst {
+        let window = 0.5 - 0.5 * cos(2 * Double.pi * Double(i - burst.lowerBound) / Double(burst.count))
+        let uniform = Double(generator.next() >> 11) / Double(UInt64(1) << 53)
+        mic[i] = Float(window * 0.3 * (2 * uniform - 1))
+    }
+    let out = EchoTestSignals.runCanceller(canceller, mic: mic, far: far)
+    let scores = (0...960).map { lag in burst.reduce(0.0) { $0 + Double(mic[$1]) * Double(out[$1 + lag]) } }
+    let lag = try #require(scores.indices.max { scores[$0] < scores[$1] })
+    #expect(lag == EchoCanceller.captureLatencySamples)
 }
 
 @Test func statisticsAreEmptyOnlyBeforeTheFirstCaptureFrame() throws {

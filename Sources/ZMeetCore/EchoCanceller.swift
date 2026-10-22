@@ -32,6 +32,12 @@ public protocol EchoProcessing: AnyObject {
 public final class EchoCanceller: EchoProcessing {
     public static let sampleRate = 48_000
     public static let frameSize = 480
+    /// How much later each mic sample comes out of `processCapture` than it went in. APM's
+    /// three-band split and AEC3's 4 ms blocks hold the capture side back by this fixed amount
+    /// (about 9 ms), whatever the signal or the reference; only the first samples of the very
+    /// first frame come out sooner. So the cleaned mic trails the raw mic by it, and the
+    /// recorder takes it off the mic player's target to keep the cleaned mic's place in the mix.
+    public static let captureLatencySamples = 430
 
     private let apm: OpaquePointer
 

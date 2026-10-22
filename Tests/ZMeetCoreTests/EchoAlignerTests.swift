@@ -310,6 +310,84 @@ private func runWithLateSystemAudio(far: [Float], mic: [Float]) throws -> [Float
     #expect(abs(a.lastReleaseHoldSeconds - 0.05) < 1e-9)
 }
 
+@Test func timesTheReleasedMicFromItsFirstSample() {
+    // 441-sample mic buffers, then a 1 024-sample one. A frame's first sample arrives with the
+    // buffer that brings it, plus its place in that buffer. So the release can be older than
+    // its hold (the frame also waited for its later samples), or younger (it starts partway
+    // into a buffer that has only just arrived).
+    let p = FakeProcessor()
+    let clock = ManualClock()
+    let a = makeAligner(p, clock: clock)
+    let rate = 48_000.0
+    func capture(_ count: Int, from index: Int, at time: TimeInterval) -> [Float] {
+        clock.t = time
+        a.appendCapture(zeros(count), pts: 1.0 + Double(index) / rate)
+        return a.drainReady()
+    }
+    func render(_ count: Int, from index: Int, at time: TimeInterval) -> [Float] {
+        clock.t = time
+        a.appendRender(ramp(index, count), pts: 1.0 + Double(index) / rate)
+        return a.drainReady()
+    }
+    #expect(render(5_280, from: 0, at: 1.0).isEmpty)  // frame 0's reference, at the 100 ms lead
+    #expect(capture(441, from: 0, at: 1.0).isEmpty)
+    // Frame 0 completes with the second buffer and goes straight out: no hold, but its first
+    // sample came with the first buffer.
+    let second = 1.0 + 441 / rate
+    #expect(capture(441, from: 441, at: second).count == 480)
+    #expect(a.lastReleaseHoldSeconds == 0)
+    #expect(abs(a.lastReleaseAgeSeconds - 441 / rate) < 1e-9)
+    // Frame 1 starts 39 samples into the second buffer and completes with the third; its
+    // reference comes at 1.2 s.
+    let third = 1.0 + 882 / rate
+    #expect(capture(441, from: 882, at: third).isEmpty)
+    #expect(render(480, from: 5_280, at: 1.2).count == 480)
+    #expect(abs(a.lastReleaseHoldSeconds - (1.2 - third)) < 1e-9)
+    #expect(abs(a.lastReleaseAgeSeconds - (1.2 - (second + 39 / rate))) < 1e-9)
+    // A 1 024-sample buffer at 1.3 s completes frame 2, begun 78 samples into the third
+    // buffer, and frame 3, which starts 117 samples into it. Frame 2's reference is there;
+    // frame 3's comes 1 ms later, before its first sample would have played.
+    #expect(render(480, from: 5_760, at: 1.3).isEmpty)
+    #expect(capture(1_024, from: 1_323, at: 1.3).count == 480)
+    #expect(abs(a.lastReleaseAgeSeconds - (1.3 - (third + 78 / rate))) < 1e-9)
+    #expect(render(480, from: 6_240, at: 1.301).count == 480)
+    #expect(abs(a.lastReleaseHoldSeconds - 0.001) < 1e-9)
+    #expect(abs(a.lastReleaseAgeSeconds - (0.001 - 117 / rate)) < 1e-9)
+}
+
+@Test func flushTimesItsFirstSampleToo() {
+    let p = FakeProcessor()
+    let clock = ManualClock()
+    let a = makeAligner(p, clock: clock)
+    let rate = 48_000.0
+    // Frame 0 goes straight out. Frame 1 starts 480 samples into the first buffer and
+    // completes with the second, but its reference never comes.
+    clock.t = 1.0
+    a.appendRender(ramp(0, 5_280), pts: 1.0)
+    a.appendCapture(zeros(680), pts: 1.0)
+    #expect(a.drainReady().count == 480)
+    clock.t = 1.1
+    a.appendCapture(zeros(400), pts: 1.0 + 680 / rate)
+    #expect(a.drainReady().isEmpty)
+    // At stop, frame 1 and the partial frame after it go out together, timed from frame 1's
+    // first sample.
+    clock.t = 1.2
+    #expect(a.flush().count == 600)
+    #expect(abs(a.lastReleaseHoldSeconds - 0.1) < 1e-9)
+    #expect(abs(a.lastReleaseAgeSeconds - (0.2 - 480 / rate)) < 1e-9)
+    // Only a partial frame left, brought by two buffers: timed from its first sample, where
+    // the hold counts from the buffer that brought its last.
+    clock.t = 2.0
+    a.appendCapture(zeros(200), pts: nil)
+    clock.t = 2.03
+    a.appendCapture(zeros(100), pts: nil)
+    #expect(a.drainReady().isEmpty)
+    clock.t = 2.05
+    #expect(a.flush().count == 300)
+    #expect(abs(a.lastReleaseHoldSeconds - 0.02) < 1e-9)
+    #expect(abs(a.lastReleaseAgeSeconds - 0.05) < 1e-9)
+}
+
 @Test func flushReturnsEveryPendingSample() {
     let p = FakeProcessor()
     let a = makeAligner(p)

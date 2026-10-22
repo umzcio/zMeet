@@ -37,16 +37,19 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     /// `queue`, like the other mutable state.
     private var echo: EchoCapture?
     /// Each player's fill controller while the echo pipeline runs; nil otherwise, when each
-    /// player plays its audio as it comes. With the pipeline, the mic waits up to 250 ms for
-    /// its reference before it reaches the mic player. So before each buffer goes to a
+    /// player plays its audio as it comes. With the pipeline, the cleaned mic reaches the mic
+    /// player later than the raw mic arrived: it waits for the rest of its 10 ms frame and up
+    /// to 250 ms for its reference, and AEC3 adds about 9 ms. So before each buffer goes to a
     /// player, its controller measures what the player still has queued, counted from the
     /// player's own position, and tops it up with silence to its target:
-    /// `EchoCapture.primingFrames` (300 ms) on the system player, that less the mic's wait on
-    /// the mic player (`EchoCapture.micTargetFrames`). Both streams then play 300 ms after
-    /// they arrived, so they stay as aligned in the mix as without echo cancellation, through
-    /// gaps in either stream, stalls, a player that ran dry and a clock slower than the
-    /// output's. The silence goes to the players only: `mic.m4a` and `system.m4a` get their
-    /// audio as without echo cancellation. Confined to `queue`.
+    /// `EchoCapture.primingFrames` (300 ms) on the system player, that less how much later
+    /// the cleaned mic is on the mic player (`EchoCapture.micTargetFrames`). Both streams then
+    /// play 300 ms after they arrived, so they stay as aligned in the mix as without echo
+    /// cancellation, through gaps in either stream, stalls, a player that ran dry and a clock
+    /// slower than the output's. That holds to about 10 ms: a queue is topped up only once
+    /// it's more than 10 ms short, and positions come from each player's last render. The
+    /// silence goes to the players only, never to `mic.m4a` or `system.m4a`. Confined to
+    /// `queue`.
     private var systemPlayerFill: PlaybackQueueController?
     private var micPlayerFill: PlaybackQueueController?
     var onCaptureFailure: (@Sendable (String) -> Void)?
@@ -269,8 +272,9 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     }
 
     /// The mic's way into the recording: `mic.m4a` when separate tracks are on, then the mix.
-    /// While the echo pipeline runs, the mic player is kept the priming less this mic's wait
-    /// ahead of what it plays (`EchoCapture.micTargetFrames`).
+    /// While the echo pipeline runs, the mic player is kept the priming, less how much later
+    /// this cleaned mic is than the raw mic it came from, ahead of what it plays
+    /// (`EchoCapture.micTargetFrames`).
     private func emitMic(_ buffer: AVAudioPCMBuffer) {
         if let micFile { try? micFile.write(from: buffer) }
         schedule(buffer, on: micPlayer, through: &micPlayerFill, target: echo?.micTargetFrames ?? 0)
@@ -363,7 +367,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
                 cont.resume()
             }
         }
-        // What the players still have queued (with the echo pipeline, up to 300 ms each, and
+        // What the players still have queued (with the echo pipeline, about 300 ms each, and
         // that tail) plays through the capture mixer before the tap that writes the mix comes off.
         await drainPlayers()
         captureMixer.removeTap(onBus: 0)

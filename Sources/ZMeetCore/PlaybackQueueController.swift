@@ -3,11 +3,12 @@ import Foundation
 /// Keeps one of the recorder's players a set distance ahead of what it's playing, by
 /// measuring what the player still has queued, while the echo pipeline runs.
 ///
-/// The echo pipeline holds the mic until its reference arrives, so the mic reaches its
-/// player later than it arrived. Each player is therefore kept `targetFrames` ahead: a
-/// buffer then plays that long after it's scheduled. The system player's target is the
-/// priming; the mic player's is the priming less how long the mic waited. Both streams then
-/// play the priming after they arrived, and stay as aligned in the mix as without the pipeline.
+/// The echo pipeline holds the mic until its reference arrives, and the canceller adds its
+/// own latency, so the mic reaches its player later than it arrived. Each player is therefore
+/// kept `targetFrames` ahead: a buffer then plays that long after it's scheduled. The system
+/// player's target is the priming; the mic player's is the priming less how much later the
+/// mic got there. Both streams then play the priming after they arrived, and stay as aligned
+/// in the mix as without the pipeline.
 ///
 /// Before each buffer goes to the player, the controller compares what the player still has
 /// queued, counted from its own position, with the target. A queue more than the tolerance
