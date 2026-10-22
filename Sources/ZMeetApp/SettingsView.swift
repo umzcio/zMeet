@@ -630,6 +630,10 @@ struct SettingsView: View {
                       "Cleans up steady background noise (fans, hum) after each meeting.",
                       profileBool(\.noiseSuppression))
             divider
+            toggleRow("Remove speaker echo",
+                      "When you use speakers instead of headphones, removes the other participants' voices that your mic picks up. (Applies to all modes.)",
+                      boolBinding(\.audio.echoCancellation))
+            divider
             row("Audio quality", "Higher quality means larger files. (Applies to all modes.)") {
                 dropdownTrigger(.quality)
             }

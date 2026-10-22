@@ -184,6 +184,12 @@ public struct AudioConfig: Codable, Equatable, Sendable {
     /// (set at record time when speaker labeling is on and the mode captures system
     /// audio). Transient — consumed and deleted by processing.
     public var separateTracks: Bool
+    /// "Remove speaker echo": cancel the other participants' voices that the mic
+    /// re-records from the speakers, using the captured system audio as the
+    /// reference. Only acts when both the mic and system audio are captured.
+    /// Global (all modes), so it is not part of CaptureProfile. Default on, and
+    /// configs written before this key existed decode to on.
+    public var echoCancellation: Bool
 
     public init(
         captureSystemAudio: Bool = true,
@@ -192,7 +198,8 @@ public struct AudioConfig: Codable, Equatable, Sendable {
         bitrate: Int = 128_000,
         micDeviceID: String? = nil,
         micGain: Float = 1.0,
-        separateTracks: Bool = false
+        separateTracks: Bool = false,
+        echoCancellation: Bool = true
     ) {
         self.captureSystemAudio = captureSystemAudio
         self.captureMicrophone = captureMicrophone
@@ -201,6 +208,7 @@ public struct AudioConfig: Codable, Equatable, Sendable {
         self.micDeviceID = micDeviceID
         self.micGain = micGain
         self.separateTracks = separateTracks
+        self.echoCancellation = echoCancellation
     }
 
     public init(from decoder: Decoder) throws {
@@ -212,6 +220,7 @@ public struct AudioConfig: Codable, Equatable, Sendable {
         micDeviceID = try c.decodeIfPresent(String.self, forKey: .micDeviceID)
         micGain = try c.decodeIfPresent(Float.self, forKey: .micGain) ?? 1.0
         separateTracks = try c.decodeIfPresent(Bool.self, forKey: .separateTracks) ?? false
+        echoCancellation = try c.decodeIfPresent(Bool.self, forKey: .echoCancellation) ?? true
     }
 }
 

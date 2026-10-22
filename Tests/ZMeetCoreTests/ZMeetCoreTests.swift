@@ -621,6 +621,20 @@ private final class CapturedMessageBox: @unchecked Sendable {
     #expect(decoded.audio.separateTracks == true)
 }
 
+@Test func echoCancellationDefaultsOn() { #expect(AudioConfig().echoCancellation == true) }
+
+@Test func legacyAudioConfigDecodesWithEchoCancellationOn() throws {
+    let json = #"{"captureSystemAudio":true,"captureMicrophone":true,"sampleRate":48000,"bitrate":128000}"#
+    let audio = try JSONDecoder().decode(AudioConfig.self, from: Data(json.utf8))
+    #expect(audio.echoCancellation == true)
+}
+
+@Test func echoCancellationOffSurvivesARoundTrip() throws {
+    var audio = AudioConfig(); audio.echoCancellation = false
+    let back = try JSONDecoder().decode(AudioConfig.self, from: JSONEncoder().encode(audio))
+    #expect(back.echoCancellation == false)
+}
+
 @Test func processingIndexesMeetingForSearch() async throws {
     let (config, root) = makeTempConfig()
     defer { try? FileManager.default.removeItem(at: root) }
