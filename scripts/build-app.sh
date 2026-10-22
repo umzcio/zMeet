@@ -81,6 +81,11 @@ cp "$ROOT"/assets/menubar/MenuBarIcon*.png "$RES_DIR/"
 # In-app "z" brand mark (ZMeetWordmark), 1x + 2x — regenerate with scripts/make-zmark.py.
 cp "$ROOT"/assets/brand/ZMark*.png "$RES_DIR/"
 
+# Third-party notices: the vendored WebRTC audio processing and Abseil code is compiled
+# into the binary, and its BSD, FFTPACK and Apache-2.0 terms require the notices to ship
+# with it. Copied before signing, so the signature seals it with the other resources.
+cp "$ROOT/THIRD-PARTY-NOTICES.md" "$RES_DIR/THIRD-PARTY-NOTICES.md"
+
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
