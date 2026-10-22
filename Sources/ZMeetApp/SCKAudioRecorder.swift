@@ -335,8 +335,11 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     }
 
     /// `player`'s sample position as of its last render; nil before its first render.
+    /// A detached player (engine nil) also returns nil: `lastRenderTime` raises an
+    /// uncatchable exception there, so this must never depend on stop()'s ordering.
     private static func position(of player: AVAudioPlayerNode) -> Int64? {
-        guard let rendered = player.lastRenderTime,
+        guard player.engine != nil,
+              let rendered = player.lastRenderTime,
               let time = player.playerTime(forNodeTime: rendered), time.isSampleTimeValid else { return nil }
         return time.sampleTime
     }

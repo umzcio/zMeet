@@ -265,12 +265,13 @@ zMeet/
 │   └── aec-probe/          # offline echo-pipeline tool: replays mic/system tracks, --selftest
 ├── Tests/
 │   └── ZMeetCoreTests/     # Swift Testing suite for the engine
+├── assets/                 # app icon (.icon), brand mark, menu-bar icons, fonts
 └── scripts/
     ├── build-app.sh        # build + bundle + sign zMeet.app
     ├── make-dmg.sh         # package a drag-to-Applications .dmg
     ├── notarize.sh         # notarize + staple (App Store Connect API key)
     ├── release.sh          # build → dmg → notarize → signed Sparkle appcast
-    └── assets/             # app icon + bundled wordmark font (OFL)
+    └── vendor-webrtc-apm.sh  # regenerate Sources/CWebRTCAPM from the pinned upstream release
 ```
 
 ---
