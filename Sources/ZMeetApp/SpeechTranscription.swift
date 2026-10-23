@@ -8,45 +8,12 @@ import ZMeetCore
 /// Stateless (a value type), so it's trivially Sendable and safe to call from
 /// any actor. The speech model is system-managed and downloaded on first use.
 struct SpeechTranscription: Sendable {
+    /// The whole recording as readable Markdown: timestamped paragraphs broken at
+    /// pauses and length (`TranscriptFormatter`).
     func transcribe(audioURL: URL, onProgress: (@Sendable (Double) -> Void)? = nil) async throws -> String {
-        guard await ensureAuthorized() else {
-            throw TranscriptionError.notAuthorized
-        }
-
-        let locale = bestLocale()
-        let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
-
-        // Ensure the on-device model assets for this locale are installed.
-        if let installation = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-            try await installation.downloadAndInstall()
-        }
-
-        let audioFile = try AVAudioFile(forReading: audioURL)
-        let duration = Double(audioFile.length) / audioFile.fileFormat.sampleRate
-        let analyzer = SpeechAnalyzer(modules: [transcriber])
-
-        // Collect transcript text as results stream in.
-        let collector = Task {
-            var text = AttributedString()
-            for try await result in transcriber.results {
-                text.append(result.text)
-                if duration > 0 { onProgress?(min(1, result.range.end.seconds / duration)) }
-            }
-            return text
-        }
-        defer { collector.cancel() }
-
-        do {
-            _ = try await analyzer.analyzeSequence(from: audioFile)
-            try await analyzer.finalizeAndFinishThroughEndOfInput()
-        } catch {
-            await analyzer.cancelAndFinishNow()
-            throw error
-        }
-
-        let attributed = try await collector.value
-        let plain = String(attributed.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-        return plain.isEmpty ? "(No speech detected in the recording.)" : plain
+        let segments = try await transcribeSegments(audioURL: audioURL, onProgress: onProgress)
+        let text = TranscriptFormatter().format(segments)
+        return text.isEmpty ? "(No speech detected in the recording.)" : text
     }
 
     func transcribeSegments(audioURL: URL, onProgress: (@Sendable (Double) -> Void)? = nil) async throws -> [TranscriptSegment] {
@@ -64,8 +31,8 @@ struct SpeechTranscription: Sendable {
             var segments: [TranscriptSegment] = []
             for try await result in transcriber.results {
                 let text = String(result.text.characters)
-                let start = result.range.start.seconds
-                segments.append(TranscriptSegment(text: text, start: start))
+                segments.append(TranscriptSegment(text: text, start: result.range.start.seconds,
+                                                  end: result.range.end.seconds))
                 if duration > 0 { onProgress?(min(1, result.range.end.seconds / duration)) }
             }
             return segments
