@@ -127,7 +127,12 @@ public enum ZMeetText {
     /// links, a spaced "a < b") passes through. Apply to every model-, user- or
     /// window-derived string that reaches a rendered note, including titles.
     public static func sanitizeNoteMarkdown(_ md: String) -> String {
-        let unembedded = md.replacingOccurrences(of: "![", with: "[")
+        // Repeat until none is left: one pass turns "!![" into a live "![" again.
+        // Each pass removes a "!", so this always terminates.
+        var unembedded = md
+        while unembedded.contains("![") {
+            unembedded = unembedded.replacingOccurrences(of: "![", with: "[")
+        }
         var out = ""
         out.reserveCapacity(unembedded.count)
         var characters = unembedded.makeIterator()

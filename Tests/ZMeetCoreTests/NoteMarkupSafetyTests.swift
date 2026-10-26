@@ -80,3 +80,23 @@ private func session(title: String) -> MeetingSession {
     #expect(!hasLiveMarkup(body(transcript)))
     #expect(main.contains("[[Eve img src=x]]"))
 }
+
+@Test func repeatedBangsCannotReformAnImageEmbed() {
+    for attack in ["!![](https://x)", "!!![](https://x)", "a !![b](https://x) c", "!!!![x](y)"] {
+        #expect(!ZMeetText.sanitizeNoteMarkdown(attack).contains("!["), "re-formed: \(attack)")
+    }
+    #expect(ZMeetText.sanitizeNoteMarkdown("Weekly call !![](https://x)") == "Weekly call [](https://x)")
+}
+
+@Test func repeatedBangTitleAndSummaryStayInertInNotesAndBothVaultNotes() {
+    let s = session(title: "Weekly call !![](https://x/b)")
+    let summary = "## Summary\nok !!![](https://x/?q=secret)"
+    let notes = MarkdownRenderer().renderProcessedNote(session: s, transcriptURL: URL(fileURLWithPath: "/x/transcript.md"),
+        noteURL: URL(fileURLWithPath: "/x/notes.md"), summaryMarkdown: summary)
+    let main = ObsidianNoteRenderer.mainNote(session: s, summary: summary, entities: MeetingEntities(), transcriptNoteName: "T")
+    let transcript = ObsidianNoteRenderer.transcriptNote(session: s, transcript: "!![](https://x)", mainNoteName: "M")
+    for note in [notes, main, transcript] {
+        #expect(!hasLiveMarkup(body(note)))
+        #expect(body(note).contains("# Weekly call [](https://x/b)"))
+    }
+}
