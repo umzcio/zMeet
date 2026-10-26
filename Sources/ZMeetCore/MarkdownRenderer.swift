@@ -38,7 +38,7 @@ public struct MarkdownRenderer {
         return """
         \(frontmatter.joined(separator: "\n"))
 
-        # \(session.title)
+        # \(ZMeetText.sanitizeNoteMarkdown(session.title))
 
         \(ZMeetText.sanitizeNoteMarkdown(summaryMarkdown).trimmingCharacters(in: .whitespacesAndNewlines))
 

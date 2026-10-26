@@ -22,7 +22,7 @@ public enum ObsidianNoteRenderer {
         fm.append("tags: [meeting]")
         fm.append("---")
 
-        var body = [fm.joined(separator: "\n"), "", "# \(session.title)", "",
+        var body = [fm.joined(separator: "\n"), "", "# \(ZMeetText.sanitizeNoteMarkdown(session.title))", "",
                     ZMeetText.sanitizeNoteMarkdown(summary).trimmingCharacters(in: .whitespacesAndNewlines)]
         func linkSection(_ heading: String, _ items: [String]) {
             guard !items.isEmpty else { return }
@@ -35,7 +35,7 @@ public enum ObsidianNoteRenderer {
         linkSection("Topics", entities.topics)
         body.append("")
         body.append("## Transcript")
-        body.append("[[\(transcriptNoteName)]]")
+        body.append("[[\(sanitizeLink(transcriptNoteName))]]")
         return body.joined(separator: "\n") + "\n"
     }
 
@@ -46,9 +46,9 @@ public enum ObsidianNoteRenderer {
         type: transcript
         ---
 
-        # \(session.title) — Transcript
+        # \(ZMeetText.sanitizeNoteMarkdown(session.title)) — Transcript
 
-        Meeting: [[\(mainNoteName)]]
+        Meeting: [[\(sanitizeLink(mainNoteName))]]
 
         \(ZMeetText.sanitizeNoteMarkdown(transcript).trimmingCharacters(in: .whitespacesAndNewlines))
         """ + "\n"
@@ -59,9 +59,10 @@ public enum ObsidianNoteRenderer {
         let m = max(0, Int(s) / 60); return m >= 60 ? "\(m/60)h \(m%60)m" : "\(m)m"
     }
     private static func yaml(_ s: String) -> String { ZMeetText.yamlQuote(s) }
-    /// Strip characters that break a [[wikilink]].
+    /// Strip characters that break a [[wikilink]], plus `<` and `>` so no HTML
+    /// tag can ride inside one (entities are model-derived, note names title-derived).
     private static func sanitizeLink(_ s: String) -> String {
-        s.components(separatedBy: CharacterSet(charactersIn: "[]|#^")).joined(separator: " ")
-         .trimmingCharacters(in: .whitespaces)
+        s.components(separatedBy: CharacterSet(charactersIn: "[]|#^<>")).joined(separator: " ")
+         .split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 }

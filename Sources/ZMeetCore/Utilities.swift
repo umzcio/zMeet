@@ -120,13 +120,26 @@ public enum ZMeetText {
     }
 
     /// Neutralizes Markdown that turns a note into an egress or execution channel
-    /// when rendered (Obsidian fetches remote images automatically): image embeds
-    /// become plain links, raw HTML img/script/iframe tags are escaped. Everything
-    /// else (headings, lists, code fences, normal links) passes through.
+    /// when rendered (Obsidian renders inline HTML and fetches remote images):
+    /// image embeds become plain links, and every `<` that could open an HTML tag,
+    /// comment or declaration (followed by a letter, `/`, `!` or `?`) is escaped,
+    /// whatever the element or its case. Everything else (headings, lists, normal
+    /// links, a spaced "a < b") passes through. Apply to every model-, user- or
+    /// window-derived string that reaches a rendered note, including titles.
     public static func sanitizeNoteMarkdown(_ md: String) -> String {
-        var out = md.replacingOccurrences(of: "![", with: "[")
-        for tag in ["<img", "<script", "<iframe", "<IMG", "<SCRIPT", "<IFRAME"] {
-            out = out.replacingOccurrences(of: tag, with: "&lt;" + tag.dropFirst())
+        let unembedded = md.replacingOccurrences(of: "![", with: "[")
+        var out = ""
+        out.reserveCapacity(unembedded.count)
+        var characters = unembedded.makeIterator()
+        var pending = characters.next()
+        while let c = pending {
+            let next = characters.next()
+            if c == "<", let n = next, n.isLetter || n == "/" || n == "!" || n == "?" {
+                out += "&lt;"
+            } else {
+                out.append(c)
+            }
+            pending = next
         }
         return out
     }
