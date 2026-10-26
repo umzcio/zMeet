@@ -643,7 +643,8 @@ final class AppState: ObservableObject {
                 if case .onDeviceAfterFailure(let failed) = engine {
                     notice = UserNotice(kind: .warning, message: AICopy.fallbackNotice(provider: failed))
                 }
-                // Give untitled meetings (in-person / manual) a descriptive title from
+                // Give untitled meetings (in-person / manual, or an app's generic window
+                // title like "Zoom Meeting") a descriptive title from
                 // their notes, before the note is written + published so it carries
                 // through. Best-effort; never overwrites a real/user-set title. You can
                 // still rename afterward (Library → Rename), which republishes cleanly.
@@ -689,11 +690,11 @@ final class AppState: ObservableObject {
     }
 
     /// Whether a meeting should get an auto-generated title: only when it has no real
-    /// one (blank or the "Untitled Meeting" placeholder), so a user-set or detected
-    /// title is never overwritten.
+    /// one (blank, "Untitled Meeting", or an app's generic window title such as
+    /// "Zoom Meeting"), so a user-set title or a real meeting subject is never
+    /// overwritten.
     private static func needsAutoTitle(_ title: String) -> Bool {
-        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty || t == "Untitled Meeting"
+        MeetingTitle.isPlaceholder(title)
     }
 
     private func transcribeForNotes(audioURL: URL, id: String) async throws -> String {

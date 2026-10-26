@@ -16,4 +16,27 @@ public enum MeetingTitle {
         guard !t.isEmpty else { return nil }
         return String(t.prefix(80))
     }
+
+    /// Generic titles the meeting apps put in their window names, or our own
+    /// placeholder. A meeting with one of these gets an AI-written title after
+    /// processing; any real subject or user-typed title is kept.
+    private static let genericTitles: Set<String> = [
+        "untitled meeting", "zoom", "zoom meeting", "zoom webinar",
+        "teams meeting", "microsoft teams", "microsoft teams meeting",
+    ]
+    private static let teamsWindowSuffix = " | microsoft teams"
+
+    /// Whether `title` carries no real information about the meeting: blank, our
+    /// "Untitled Meeting", an app's generic window title ("Zoom Meeting", "Microsoft
+    /// Teams Meeting"), a Zoom personal room ("Pat's Zoom Meeting"), or a Teams
+    /// ad-hoc call window ("Meeting with Doe, Jane | Microsoft Teams"). Case-insensitive.
+    public static func isPlaceholder(_ title: String) -> Bool {
+        var t = title.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+            .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        if t.isEmpty || genericTitles.contains(t) { return true }
+        if t.hasSuffix("'s zoom meeting") || t.hasSuffix("'s personal meeting room") { return true }
+        guard t.hasSuffix(teamsWindowSuffix) else { return false }
+        t.removeLast(teamsWindowSuffix.count)
+        return genericTitles.contains(t) || t.hasPrefix("meeting with ")
+    }
 }
