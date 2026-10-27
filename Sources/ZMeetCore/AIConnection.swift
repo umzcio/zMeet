@@ -36,11 +36,12 @@ public struct AIConnection: Sendable, Equatable {
         return true
     }
 
-    /// Map-reduce under the provider's chunk budget, or extract-then-write over
-    /// the whole (capped) transcript.
+    /// Map-reduce under the provider's chunk budget (with the compact fallback),
+    /// or extract-then-write over the whole (capped) transcript.
     public func summarizer(complete: @escaping MapReduceSummarizer.Complete) -> any Summarizer {
         if let budget = provider.chunkBudget {
-            return MapReduceSummarizer(maxChunkCharacters: budget, complete: complete)
+            // Small local models get the same compact fallback as on-device.
+            return StructuredNotesSummarizer(maxChunkCharacters: budget, complete: complete)
         }
         return FactFirstSummarizer(complete: complete)
     }

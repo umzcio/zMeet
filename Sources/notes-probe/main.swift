@@ -125,7 +125,7 @@ final class RedirectRefuser: NSObject, URLSessionTaskDelegate {
 let session: URLSession = {
     let config = URLSessionConfiguration.ephemeral
     config.timeoutIntervalForRequest = 300
-    config.timeoutIntervalForResource = 600
+    config.timeoutIntervalForResource = 1_800
     return URLSession(configuration: config, delegate: RedirectRefuser(), delegateQueue: nil)
 }()
 

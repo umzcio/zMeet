@@ -26,7 +26,14 @@ public enum SummaryOutput {
             lines.removeLast()
             text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return renamingTranscriptHeadings(text)
+        return renamingTranscriptHeadings(droppingLeadingTitle(text))
+    }
+
+    /// The note template writes its own `# Title`; models (OpenAI and Ollama
+    /// especially) often prefix one, which would fail the `## Summary` anchor.
+    private static func droppingLeadingTitle(_ text: String) -> String {
+        guard text.hasPrefix("# ") else { return text }
+        return text.drop { $0 != "\n" }.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// notes.md readers stop at a `## Transcript` line (the link section), so a

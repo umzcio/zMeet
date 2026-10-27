@@ -65,3 +65,15 @@ struct SummaryOutputAnchorTests {
         #expect(!lines.contains("## transcript"))
     }
 }
+
+@Test func cleanDropsALeadingModelWrittenTitle() {
+    // The note template writes its own `# Title`; a model-added one would fail
+    // the "starts with ## Summary" anchor and cost a retry and a fallback.
+    let cleaned = SummaryOutput.clean("# Weekly Sync Notes\n\n## Summary\nWe met.\n\n## Plan\n- a\n\n## Decisions\n- None\n\n## Action Items\n- None")
+    #expect(cleaned.hasPrefix("## Summary"))
+    #expect(SummaryOutput.hasRequiredSections(cleaned))
+}
+
+@Test func cleanKeepsALaterHashTitleLine() {
+    #expect(SummaryOutput.clean("## Summary\nx\n# Not a lead").contains("# Not a lead"))
+}

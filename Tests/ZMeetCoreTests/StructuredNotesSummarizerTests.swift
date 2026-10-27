@@ -72,3 +72,21 @@ private final class FormatModel: @unchecked Sendable {
     #expect(json["max_tokens"] as? Int == 64_000)
     #expect(json["stream"] as? Bool == true)
 }
+
+@Test func aThrownFullAttemptStillReachesCompact() async throws {
+    // The full prompts are larger; a context overflow or guardrail error on them
+    // must not skip straight past the compact notes.
+    struct Overflow: Error {}
+    let out = try await StructuredNotesSummarizer(maxChunkCharacters: 1_000) { prompt in
+        if prompt.contains("## Key Points") { return compactNotes }
+        throw Overflow()
+    }.summarize(transcript: "We shipped.", title: "Sync")
+    #expect(out.contains("## Key Points"))
+}
+
+@Test func cancellationIsNotRetriedAsCompact() async {
+    await #expect(throws: CancellationError.self) {
+        _ = try await StructuredNotesSummarizer(maxChunkCharacters: 1_000) { _ in throw CancellationError() }
+            .summarize(transcript: "We shipped.", title: "Sync")
+    }
+}

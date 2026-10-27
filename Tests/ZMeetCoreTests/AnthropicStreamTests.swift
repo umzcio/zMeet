@@ -54,6 +54,16 @@ data: {"type":"message_stop"}
     #expect(stream.outputTokens == 5100)
 }
 
+@Test func streamCutOffAtTheTokenLimitIsAnError() throws {
+    // A fact list cut off at max_tokens would silently drop the end of the
+    // meeting; failing lets the policy retry and then fall back honestly.
+    let stream = try accumulate("""
+    data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"FACT [0:05] a"}}
+    data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":64000}}
+    """)
+    #expect(throws: AIProviderError.decode) { try stream.result() }
+}
+
 @Test func streamWithNoTextIsADecodeError() throws {
     let stream = try accumulate("""
     data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"x"}}

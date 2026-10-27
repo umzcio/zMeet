@@ -36,10 +36,11 @@ public struct AnthropicStream: Sendable {
         }
     }
 
-    /// The reply's text; a stream that produced none (e.g. all thinking) is a
-    /// decode error, like an empty non-streamed reply.
+    /// The reply's text. A stream that produced none (e.g. all thinking) is a
+    /// decode error, like an empty non-streamed reply, and so is one cut off at
+    /// max_tokens: a partial fact list would silently drop the meeting's end.
     public func result() throws -> String {
-        guard !text.isEmpty else { throw AIProviderError.decode }
+        guard !text.isEmpty, stopReason != "max_tokens" else { throw AIProviderError.decode }
         return text
     }
 }

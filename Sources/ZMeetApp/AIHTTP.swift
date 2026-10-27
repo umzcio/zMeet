@@ -9,8 +9,10 @@ import Foundation
 enum AIHTTP {
     static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 300   // map-reduce summary calls can be slow
-        config.timeoutIntervalForResource = 600
+        config.timeoutIntervalForRequest = 300   // idle: map-reduce summary calls can be slow
+        // Whole request: a streamed fact extraction for a long meeting can run
+        // past 10 minutes (~95 tokens/s); the idle timeout still catches stalls.
+        config.timeoutIntervalForResource = 1_800
         return URLSession(configuration: config, delegate: RedirectRefuser(), delegateQueue: nil)
     }()
 
