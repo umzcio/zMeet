@@ -79,7 +79,11 @@ final class AppState: ObservableObject {
     @Published private(set) var speechGranted: Bool = false
 
     private let store = ConfigStore()
-    private let secretStore: SecretStore = KeychainSecretStore()
+    // Keys saved under the old bundle ID move to the new service on first read
+    // (macOS may ask once to allow it).
+    private let secretStore: SecretStore = MigratingSecretStore(
+        primary: KeychainSecretStore(),
+        legacy: KeychainSecretStore(service: LegacyIdentityMigration.legacyBundleID))
     private var recorder: MeetingRecorder
     @Published private(set) var config: ZMeetConfig
     private var manager: SessionManager
@@ -181,6 +185,12 @@ final class AppState: ObservableObject {
 
     /// Dismiss the current menu notice.
     func dismissNotice() { notice = nil }
+
+    /// Shown once after an update moved zMeet off its old bundle ID: macOS ties
+    /// permissions and the login item to the app's identity, so those reset.
+    func announceIdentityMove() {
+        notice = UserNotice(kind: .info, message: "zMeet has a new app identity. macOS may ask again for screen recording and microphone access, and once to allow your saved AI key. If you used Launch at login, turn it back on in Settings.")
+    }
 
     /// Re-open the setup window on demand (from the menu's permission hint).
     func openOnboarding() {

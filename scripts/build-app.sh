@@ -4,8 +4,16 @@ set -euo pipefail
 # Builds Sources/ZMeetApp into a signed ZMeet.app bundle.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="zMeet"
-BUNDLE_ID="edu.umontana.zmeet"
-IDENTITY="Developer ID Application: The University of Montana (5JJ6G6A84S)"
+BUNDLE_ID="com.zapps.zmeet"
+# Signs with the zApps Developer ID Application certificate, found by team ID
+# so no personal name lives in the repo. ZMEET_SIGN_IDENTITY (a SHA-1 hash or
+# name) overrides the lookup, but any certificate outside the team is refused.
+TEAM_ID="V2P99VF75Q"
+IDENTITY="${ZMEET_SIGN_IDENTITY:-$(security find-identity -v -p codesigning \
+    | awk -v team="($TEAM_ID)" '/"Developer ID Application:/ && index($0, team) { print $2; exit }')}"
+[ -n "$IDENTITY" ] || { echo "error: no Developer ID Application certificate for team $TEAM_ID in the keychain" >&2; exit 1; }
+security find-identity -v -p codesigning | grep -F "$IDENTITY" | grep -qF "($TEAM_ID)\"" \
+    || { echo "error: refusing to sign with a certificate outside team $TEAM_ID: $IDENTITY" >&2; exit 1; }
 APP_DIR="$ROOT/build/$APP_NAME.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RES_DIR="$APP_DIR/Contents/Resources"
@@ -123,7 +131,7 @@ codesign --force --options runtime --timestamp --sign "$IDENTITY" "$SPK/Updater.
 codesign --force --options runtime --timestamp --sign "$IDENTITY" "$SPK/Autoupdate"
 codesign --force --options runtime --timestamp --sign "$IDENTITY" "$FW_DIR/Sparkle.framework"
 
-echo "==> Code signing app with: $IDENTITY"
+echo "==> Code signing app with team $TEAM_ID ($IDENTITY)"
 codesign --force --options runtime \
     --entitlements "$ROOT/scripts/ZMeet.entitlements" \
     --sign "$IDENTITY" \

@@ -21,7 +21,7 @@ final class SCKAudioRecorder: NSObject, MeetingRecorder, SCStreamOutput, SCStrea
     private var systemFile: AVAudioFile?
     private var logHandle: FileHandle?
     private var startTask: Task<Void, Never>?
-    private let queue = DispatchQueue(label: "edu.umontana.zmeet.capture")
+    private let queue = DispatchQueue(label: "com.zapps.zmeet.capture")
     private static let queueKey = DispatchSpecificKey<Void>()
     /// Whether a capture failure has already been reported for the current
     /// recording. Confined to `queue`, like the other mutable state.

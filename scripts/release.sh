@@ -5,9 +5,10 @@ set -euo pipefail
 # Produces build/dist/{zMeet-<version>.dmg, appcast.xml} ready to upload.
 #
 # Prereqs:
-#   - scripts/build-app.sh signing identity is set (+ VERSION bumped)
+#   - the team's Developer ID Application certificate in the keychain (build-app.sh
+#     finds it by TEAM_ID), and VERSION bumped
 #   - Sparkle EdDSA key generated (generate_keys) — private key in keychain
-#   - scripts/.notary-config.local set up (see .notary-config.example)
+#   - a notarytool Keychain profile named "notary" (see docs/RELEASING.md)
 #
 # Usage: scripts/release.sh 1.0.0
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

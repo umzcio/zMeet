@@ -51,7 +51,7 @@ public final class SearchStore: @unchecked Sendable {
     private static let schemaVersion = 1
 
     private var db: OpaquePointer?
-    private let queue = DispatchQueue(label: "edu.umontana.zmeet.search")
+    private let queue = DispatchQueue(label: "com.zapps.zmeet.search")
 
     public init(databaseURL: URL) throws {
         try ZMeetPaths.ensurePrivateDirectory(databaseURL.deletingLastPathComponent())

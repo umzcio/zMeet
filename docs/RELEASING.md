@@ -5,20 +5,24 @@ distribution pipeline.
 
 ## One-time setup
 
-1. **Signing identity** — set `IDENTITY` at the top of `scripts/build-app.sh` to your
-   Developer ID Application certificate (`security find-identity -p codesigning` lists them).
+1. **Signing identity** — `scripts/build-app.sh` signs with the Developer ID Application
+   certificate of team `TEAM_ID` (set at its top), looked up in the keychain, and refuses
+   any other team's certificate. `ZMEET_SIGN_IDENTITY` (hash or name) overrides the lookup.
+   `security find-identity -v -p codesigning` lists what's installed.
 
 2. **Sparkle update-signing key** — already generated (`generate_keys`); the private key
    lives in your login keychain and the public key (`SUPublicEDKey`) is baked into
    `build-app.sh`. To see it again: `.build/artifacts/sparkle/Sparkle/bin/generate_keys -p`.
 
-3. **Notary credentials** — store an app-specific password as a keychain profile:
+3. **Notary credentials** — a notarytool Keychain profile named `notary` for the same
+   team (`scripts/notarize.sh` uses it; `NOTARY_PROFILE` overrides the name):
    ```sh
-   xcrun notarytool store-credentials zmeet-notary \
+   xcrun notarytool store-credentials notary \
      --apple-id "you@example.com" \
      --team-id  "YOURTEAMID" \
      --password "app-specific-password"   # create at appleid.apple.com
    ```
+   Check it with `xcrun notarytool history --keychain-profile notary`.
 
 4. **Hosting** — decide where the `.dmg` is downloaded from and where `appcast.xml` lives.
    - `SUFeedURL` in `build-app.sh` = the appcast URL the app polls (e.g. a stable

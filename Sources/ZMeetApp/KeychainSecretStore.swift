@@ -5,7 +5,13 @@ import ZMeetCore
 /// Stores zMeet secrets (currently the Anthropic API key) in the macOS Keychain.
 /// The only place the key is persisted — never in config.json, logs, or git.
 struct KeychainSecretStore: SecretStore {
-    private let service = "edu.umontana.zmeet"
+    private let service: String
+
+    /// zMeet's own items live under its bundle ID; pass
+    /// `LegacyIdentityMigration.legacyBundleID` to read items saved before the move.
+    init(service: String = "com.zapps.zmeet") {
+        self.service = service
+    }
 
     private func baseQuery(account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,

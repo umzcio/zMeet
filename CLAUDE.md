@@ -54,7 +54,7 @@ and include/zm_apm.h are ours.
   silence only ever goes to the players, never into mic.m4a/system.m4a.
   stop() cancels the poll, flushes the aligner and drains both players
   (100 ms marker) before removing the tap. Tune on real audio with
-  `defaults write edu.umontana.zmeet ZMeetEchoDebugTracks -bool YES` (writes
+  `defaults write com.zapps.zmeet ZMeetEchoDebugTracks -bool YES` (writes
   echo-debug/ tracks) and `aec-probe`.
 - AppState.Phase has NO .processing case — processing lives in
   ProcessingRegistry (Core); recording and processing can overlap.

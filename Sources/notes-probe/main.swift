@@ -93,12 +93,17 @@ struct NoFallback: Summarizer {
     func summarize(transcript: String, title: String) async throws -> String { throw RemoteFailed() }
 }
 
-/// zMeet's Keychain item, read-only. Same service and accounts as the app's store.
+/// zMeet's Keychain item, read-only: the app's service, then the pre-move one.
+/// Never migrates (that's the app's job).
 struct KeychainReader: SecretStore {
     func read(account: String) -> String? {
+        read(account: account, service: "com.zapps.zmeet")
+            ?? read(account: account, service: LegacyIdentityMigration.legacyBundleID)
+    }
+    private func read(account: String, service: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "edu.umontana.zmeet",
+            kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
