@@ -69,12 +69,27 @@ and include/zm_apm.h are ours.
   menu (Edit ⌘C/⌘V); keep its .appSettings replacement.
 - AI providers: one selected AIProvider (Core) drives summaries, auto-titles,
   and entity links. Non-Apple output goes through SummarizationPolicy (clean →
-  four-section check → one retry → on-device fallback with an honest footer).
-  Every provider request goes through AIHTTP.session (redirect-refusing) — never
-  a new URLSession. Request-building/parsing stays in Core; ZMeetApp only sends.
+  anchor check → one retry → on-device fallback with an honest footer).
+  Cloud models extract facts then write (FactFirstSummarizer); on-device and
+  Ollama map-reduce fact lists (MapReduceSummarizer), and on-device falls back
+  to compact four-section notes (StructuredNotesSummarizer). Anthropic replies
+  stream (AnthropicStream) — current models think by default and thinking
+  counts toward max_tokens. Every provider request goes through
+  AIHTTP.session (redirect-refusing) — never a new URLSession; the dev-only
+  notes-probe keeps its own copy. Request-building/parsing stays in Core;
+  ZMeetApp only sends.
+- Notes prompts (MeetingSummaryPrompt) are tuned with `notes-probe <transcript>
+  --provider anthropic|ondevice [--no-fallback]` on a copy of a real transcript;
+  it never writes into the meetings folder. Transcripts have no speaker labels,
+  so attribution rules are deliberately strict.
 - The notes.md format is written by MarkdownRenderer and parsed in several
   places (Library reader, search indexing, Obsidian backfill) — template
-  changes break all three differently.
+  changes break all three differently. A valid note starts with `## Summary`
+  and has `## Decisions` + `## Action Items` + one more section
+  (SummaryOutput.hasRequiredSections); old four-section notes still pass.
+  Pipe tables parse to NoteElement.table (ragged ones stay paragraphs).
+  SummaryOutput.clean renames a model-written `## Transcript` heading, since
+  every parser stops there.
 - Colors: use ZMeetPalette (Sources/ZMeetApp/ZMeetPalette.swift) — add members
   there, never new one-off hex literals. Known drifted residuals awaiting a
   visual pass: SettingsView.sidebarBG/hairline, ModeChoicePopup.bg/card.
