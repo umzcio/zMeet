@@ -278,11 +278,11 @@ zMeet/
 
 ## Roadmap
 
-Current release **v1.17.2**. Shipped on top of the v1.0 capture → transcript → notes pipeline:
+Current release **v1.18.0**. Shipped on top of the v1.0 capture → transcript → notes pipeline:
 an in-app Library/Reader window, a Settings UI, full-text search, audio retention/storage
 management, right-click actions, recording modes (remote/hybrid/in-person) with per-mode capture
 profiles, mic gain, background-noise reduction, speaker-echo cancellation, You-vs-Others speaker labeling, full-meeting
-map-reduce summarization, a choice of AI provider (on-device, Ollama, OpenAI, Anthropic), and Obsidian linked-vault export.
+structured notes (topics, decisions, action items, open questions), a choice of AI provider (on-device, Ollama, OpenAI, Anthropic), and Obsidian linked-vault export.
 
 Next: an **Obsidian MCP chat** layer (ask plain-language questions across the vault), a **Notion**
 export, and cross-machine **vault sync** options.
