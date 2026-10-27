@@ -66,7 +66,9 @@ private final class FormatModel: @unchecked Sendable {
     let req = try AnthropicSummary.makeRequest(key: "k", prompt: "p")
     let body = try #require(req.httpBody)
     let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-    // Sonnet 5 thinks by default and thinking tokens count toward max_tokens;
-    // 4096 left notes truncated or empty.
-    #expect(json["max_tokens"] as? Int == 16_000)
+    // Sonnet 5 thinks by default and thinking tokens count toward max_tokens:
+    // 4096 left notes truncated or empty, and fact extraction nearly filled
+    // 16,000. Streaming lets the cap be high without hitting the idle timeout.
+    #expect(json["max_tokens"] as? Int == 64_000)
+    #expect(json["stream"] as? Bool == true)
 }

@@ -47,9 +47,11 @@ public enum AnthropicSummary {
         return req
     }
 
+    /// A streamed generation request; read the reply with `AnthropicStream`.
     /// `maxTokens` covers thinking too: current models think by default and those
     /// tokens count toward the cap, so a low cap truncates or empties the notes.
-    public static func makeRequest(key: String, model: String = AnthropicSummary.model, prompt: String, maxTokens: Int = 16_000) throws -> URLRequest {
+    /// Streaming is what makes a high cap safe under the session's idle timeout.
+    public static func makeRequest(key: String, model: String = AnthropicSummary.model, prompt: String, maxTokens: Int = 64_000) throws -> URLRequest {
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
         req.setValue(key, forHTTPHeaderField: "x-api-key")
@@ -58,12 +60,15 @@ public enum AnthropicSummary {
         let payload: [String: Any] = [
             "model": model,
             "max_tokens": maxTokens,
+            "stream": true,
             "messages": [["role": "user", "content": prompt]],
         ]
         req.httpBody = try JSONSerialization.data(withJSONObject: payload)
         return req
     }
 
+    /// Parses a non-streamed reply; with a streamed request, use it for the
+    /// body of a non-200 response, which arrives as plain JSON.
     public static func parseSummary(data: Data, status: Int) throws -> String {
         guard status == 200 else { throw AIProviderError.http(status: status) }
         guard

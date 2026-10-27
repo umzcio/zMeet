@@ -13,7 +13,7 @@ extension AIConnection {
             throw AIProviderError.decode
         case .anthropic:
             guard let key, !key.isEmpty else { throw AIProviderError.missingKey }
-            request = try AnthropicSummary.makeRequest(key: key, model: model, prompt: prompt)
+            return try await Self.sendStreaming(AnthropicSummary.makeRequest(key: key, model: model, prompt: prompt))
         case .openAI:
             guard let key, !key.isEmpty else { throw AIProviderError.missingKey }
             request = try OpenAIChat.makeRequest(baseURL: OpenAIChat.openAIBaseURL, key: key, model: model, prompt: prompt)
@@ -22,9 +22,7 @@ extension AIConnection {
             request = try OpenAIChat.makeRequest(baseURL: base, key: key, model: model, prompt: prompt)
         }
         let (data, status) = try await Self.send(request)
-        return provider == .anthropic
-            ? try AnthropicSummary.parseSummary(data: data, status: status)
-            : try OpenAIChat.parseCompletion(data: data, status: status)
+        return try OpenAIChat.parseCompletion(data: data, status: status)
     }
 
     /// The provider's models, for the Settings picker and Test connection.
@@ -50,6 +48,30 @@ extension AIConnection {
             let (data, status) = try await Self.send(request)
             guard status == 200 else { throw AIProviderError.http(status: status) }
             return try ModelCatalog.parseOllamaTags(data)
+        }
+    }
+
+    /// Anthropic replies stream (see AnthropicStream) so long thinking doesn't
+    /// trip the idle timeout. A non-200 reply arrives as plain JSON and maps to
+    /// the same errors as a non-streamed one.
+    private static func sendStreaming(_ request: URLRequest) async throws -> String {
+        do {
+            let (bytes, response) = try await AIHTTP.session.bytes(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard status == 200 else {
+                var body = Data()
+                for try await byte in bytes { body.append(byte) }
+                return try AnthropicSummary.parseSummary(data: body, status: status)
+            }
+            var stream = AnthropicStream()
+            for try await line in bytes.lines { try stream.consume(line: line) }
+            return try stream.result()
+        } catch let error as AIProviderError {
+            throw error
+        } catch let error as URLError where error.code == .appTransportSecurityRequiresSecureConnection {
+            throw AIProviderError.insecureConnectionBlocked
+        } catch {
+            throw AIProviderError.network
         }
     }
 

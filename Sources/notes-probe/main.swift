@@ -70,21 +70,20 @@ enum Diagnostics {
 
     /// One stderr line per Anthropic reply: why a remote attempt failed is otherwise
     /// invisible, since the policy falls back silently. Never logs the request.
-    static func report(status: Int, data: Data, seconds: TimeInterval) {
-        let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        let text = ((obj?["content"] as? [[String: Any]]) ?? []).compactMap { $0["text"] as? String }.joined()
-        let usage = obj?["usage"] as? [String: Any]
-        var line = "anthropic: HTTP \(status) in \(Int(seconds)) s, stop=\(obj?["stop_reason"] ?? "-"), out_tokens=\(usage?["output_tokens"] ?? "-")"
-        if status == 200 {
-            let cleaned = SummaryOutput.clean(text)
-            line += cleaned.hasPrefix("## ")
-                ? ", anchors=\(SummaryOutput.hasRequiredSections(cleaned) ? "ok" : "FAIL")"
-                : ", fact lines=\(cleaned.split(separator: "\n").count)"
-            line += ", first=\(cleaned.prefix(60).debugDescription)"
-        } else {
-            line += ", error=\(((obj?["error"] as? [String: Any])?["message"] as? String ?? "-").prefix(200))"
-        }
+    static func report(_ stream: AnthropicStream, seconds: TimeInterval) {
+        var line = "anthropic: HTTP 200 in \(Int(seconds)) s, stop=\(stream.stopReason ?? "-"), out_tokens=\(stream.outputTokens.map(String.init) ?? "-")"
+        let cleaned = SummaryOutput.clean(stream.text)
+        line += cleaned.hasPrefix("## ")
+            ? ", anchors=\(SummaryOutput.hasRequiredSections(cleaned) ? "ok" : "FAIL")"
+            : ", fact lines=\(cleaned.split(separator: "\n").count)"
+        line += ", first=\(cleaned.prefix(60).debugDescription)"
         log(line)
+    }
+
+    static func report(status: Int, body: Data, seconds: TimeInterval) {
+        let obj = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+        let message = ((obj?["error"] as? [String: Any])?["message"] as? String ?? "-").prefix(200)
+        log("anthropic: HTTP \(status) in \(Int(seconds)) s, error=\(message)")
     }
 }
 
@@ -147,10 +146,19 @@ case "anthropic":
     let remote = connection.summarizer(complete: { prompt in
         let sent = Date()
         do {
-            let (data, response) = try await session.data(for: AnthropicSummary.makeRequest(key: key, model: model, prompt: prompt))
+            // Same as the app's AIConnection.sendStreaming.
+            let (bytes, response) = try await session.bytes(for: AnthropicSummary.makeRequest(key: key, model: model, prompt: prompt))
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            Diagnostics.report(status: status, data: data, seconds: Date().timeIntervalSince(sent))
-            return try AnthropicSummary.parseSummary(data: data, status: status)
+            guard status == 200 else {
+                var body = Data()
+                for try await byte in bytes { body.append(byte) }
+                Diagnostics.report(status: status, body: body, seconds: Date().timeIntervalSince(sent))
+                return try AnthropicSummary.parseSummary(data: body, status: status)
+            }
+            var stream = AnthropicStream()
+            for try await line in bytes.lines { try stream.consume(line: line) }
+            Diagnostics.report(stream, seconds: Date().timeIntervalSince(sent))
+            return try stream.result()
         } catch {
             Diagnostics.log("anthropic: \(type(of: error)) \(error) after \(Int(Date().timeIntervalSince(sent))) s")
             throw error
