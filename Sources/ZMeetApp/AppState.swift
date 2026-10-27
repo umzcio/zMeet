@@ -79,8 +79,8 @@ final class AppState: ObservableObject {
     @Published private(set) var speechGranted: Bool = false
 
     private let store = ConfigStore()
-    // Keys saved under the old bundle ID move to the new service on first read
-    // (macOS may ask once to allow it).
+    // Keys saved under the old bundle ID are copied to the new service on first
+    // read (macOS may ask once to allow it).
     private let secretStore: SecretStore = MigratingSecretStore(
         primary: KeychainSecretStore(),
         legacy: KeychainSecretStore(service: LegacyIdentityMigration.legacyBundleID))

@@ -59,12 +59,14 @@ private final class MemoryStore: SecretStore, @unchecked Sendable {
     #expect(store.read(account: "k") == "new")
 }
 
-@Test func legacySecretMovesToPrimaryOnFirstRead() {
+@Test func legacySecretIsCopiedToPrimaryOnFirstRead() {
+    // Copied, not moved: an older zMeet still installed (or a downgrade) keeps
+    // working. Deleting the key in the app clears both.
     let primary = MemoryStore(), legacy = MemoryStore(["k": "old"])
     let store = MigratingSecretStore(primary: primary, legacy: legacy)
     #expect(store.read(account: "k") == "old")
     #expect(primary.read(account: "k") == "old")
-    #expect(legacy.read(account: "k") == nil)
+    #expect(legacy.read(account: "k") == "old")
 }
 
 @Test func failedMoveKeepsTheLegacySecret() {

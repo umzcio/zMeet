@@ -24,9 +24,10 @@ public enum LegacyIdentityMigration {
     }
 }
 
-/// Reads through to a legacy store: a secret found only there is moved to the
-/// primary store on first read (and removed from the legacy one only once that
-/// write succeeds). Writes go to the primary store; deletes clear both.
+/// Reads through to a legacy store: a secret found only there is copied to the
+/// primary store on first read. It stays in the legacy store, so an older
+/// install or a downgrade keeps working. Writes go to the primary store;
+/// deletes clear both.
 public struct MigratingSecretStore: SecretStore {
     let primary: SecretStore
     let legacy: SecretStore
@@ -39,9 +40,7 @@ public struct MigratingSecretStore: SecretStore {
     public func read(account: String) -> String? {
         if let value = primary.read(account: account) { return value }
         guard let value = legacy.read(account: account) else { return nil }
-        if (try? primary.write(value, account: account)) != nil {
-            try? legacy.delete(account: account)
-        }
+        try? primary.write(value, account: account)
         return value
     }
 
