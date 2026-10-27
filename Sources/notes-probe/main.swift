@@ -1,0 +1,144 @@
+import Foundation
+import FoundationModels
+import Security
+import ZMeetCore
+
+// notes-probe: runs zMeet's summarization offline on a saved transcript, the way the
+// app does after a meeting, so the notes prompts can be tuned against a real meeting
+// without re-processing it. A developer tool; never shipped in the app bundle.
+//
+//   notes-probe <transcript.md> --provider anthropic|ondevice [--title "<title>"] [--out <dir>]
+//
+// anthropic  the app's remote path: SummarizationPolicy over the configured model
+//            (~/.zmeet/config.json), on-device as the fallback. The key is read from
+//            zMeet's Keychain item (macOS may ask once to allow it) and never printed.
+// ondevice   StructuredNotesSummarizer over Apple's on-device model, as the app runs it.
+//
+// Writes <out>/notes-<provider>-<n>.md (the next free n): the cleaned, sanitized notes
+// body plus the engine footer, exactly as notes.md would carry them. --out defaults to
+// the current directory and may not be inside ~/Documents/zMeet or the configured
+// meetings folder, so real meetings are never touched. Prints the engine, word count, headings and elapsed time.
+
+func fail(_ message: String, code: Int32 = 1) -> Never {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
+    exit(code)
+}
+
+let usage = "usage: notes-probe <transcript.md> --provider anthropic|ondevice [--title \"<title>\"] [--out <dir>]"
+
+// MARK: - Arguments
+
+var args = Array(CommandLine.arguments.dropFirst())
+@MainActor func option(_ name: String) -> String? {
+    guard let i = args.firstIndex(of: name) else { return nil }
+    guard i + 1 < args.count else { fail(usage, code: 64) }
+    let value = args[i + 1]
+    args.removeSubrange(i...(i + 1))
+    return value
+}
+guard let providerName = option("--provider") else { fail(usage, code: 64) }
+let title = option("--title") ?? "Zoom Meeting"
+let outDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(option("--out") ?? "."), isDirectory: true).standardizedFileURL
+guard args.count == 1 else { fail(usage, code: 64) }
+let transcriptURL = URL(fileURLWithPath: ZMeetPaths.expandTilde(args[0]))
+
+let config: ZMeetConfig
+do { config = try ConfigStore().load() } catch { fail("can't read ~/.zmeet/config.json: \(error)") }
+
+// Never write among real meetings: the default folder or the configured one.
+let meetingRoots = [
+    FileManager.default.homeDirectoryForCurrentUser.appending(path: "Documents/zMeet").path,
+    ZMeetPaths.expandTilde(config.outputPath),
+].map { URL(fileURLWithPath: $0, isDirectory: true).resolvingSymlinksInPath().path }
+let resolvedOut = outDir.resolvingSymlinksInPath().path
+for root in meetingRoots where (resolvedOut + "/").hasPrefix(root + "/") {
+    fail("refusing to write inside \(root): pick another --out", code: 64)
+}
+guard let transcript = try? String(contentsOf: transcriptURL, encoding: .utf8),
+      !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    fail("can't read a transcript at \(transcriptURL.path)")
+}
+
+// MARK: - Engines
+
+/// zMeet's Keychain item, read-only. Same service and accounts as the app's store.
+struct KeychainReader: SecretStore {
+    func read(account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "edu.umontana.zmeet",
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+    func write(_ value: String, account: String) throws {}
+    func delete(account: String) throws {}
+}
+
+/// Ephemeral and redirect-refusing, like the app's AIHTTP.session: the key rides
+/// in a custom header that URLSession would replay to a redirect target.
+final class RedirectRefuser: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+let session: URLSession = {
+    let config = URLSessionConfiguration.ephemeral
+    config.timeoutIntervalForRequest = 300
+    config.timeoutIntervalForResource = 600
+    return URLSession(configuration: config, delegate: RedirectRefuser(), delegateQueue: nil)
+}()
+
+let onDevice = StructuredNotesSummarizer(
+    maxChunkCharacters: AIProvider.onDevice.chunkBudget ?? 10_000,
+    complete: { prompt in try await LanguageModelSession().respond(to: prompt).content })
+
+let started = Date()
+let markdown: String
+let engine: SummaryEngine
+switch providerName {
+case "anthropic":
+    guard let key = KeychainReader().read(account: SecretAccount.anthropicAPIKey), !key.isEmpty else {
+        fail("no Anthropic key in the Keychain", code: 2)
+    }
+    let model = config.model(for: .anthropic)
+    let connection = AIConnection(provider: .anthropic, model: model, key: key, ollamaAddress: config.ollamaAddress)
+    let remote = connection.summarizer(complete: { prompt in
+        let (data, response) = try await session.data(for: AnthropicSummary.makeRequest(key: key, model: model, prompt: prompt))
+        return try AnthropicSummary.parseSummary(data: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+    })
+    (markdown, engine) = try await SummarizationPolicy().summarize(
+        transcript: transcript, title: title, provider: .anthropic, model: model, remote: remote, onDevice: onDevice)
+case "ondevice":
+    guard case .available = SystemLanguageModel.default.availability else { fail("Apple Intelligence is unavailable", code: 2) }
+    (markdown, engine) = (try await onDevice.summarize(transcript: transcript, title: title), .onDevice)
+default:
+    fail(usage, code: 64)
+}
+let elapsed = Date().timeIntervalSince(started)
+
+// MARK: - Output
+
+let body = ZMeetText.sanitizeNoteMarkdown(markdown).trimmingCharacters(in: .whitespacesAndNewlines)
+try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+var n = 1
+while FileManager.default.fileExists(atPath: outDir.appending(path: "notes-\(providerName)-\(n).md").path) { n += 1 }
+let outURL = outDir.appending(path: "notes-\(providerName)-\(n).md")
+try (body + "\n\n_\(engine.attribution)_\n").write(to: outURL, atomically: true, encoding: .utf8)
+
+let words = body.split(whereSeparator: \.isWhitespace).count
+let headings = body.components(separatedBy: "\n").filter { $0.hasPrefix("## ") }
+print("engine:   \(engine.attribution)")
+print("anchors:  \(SummaryOutput.hasRequiredSections(markdown) ? "ok" : "MISSING")")
+print("words:    \(words)")
+print("headings: \(headings.joined(separator: " | "))")
+print(String(format: "elapsed:  %.1f s", elapsed))
+print("wrote:    \(outURL.path)")

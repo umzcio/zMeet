@@ -14,7 +14,8 @@ let package = Package(
     products: [
         .library(name: "ZMeetCore", targets: ["ZMeetCore"]),
         .executable(name: "ZMeetApp", targets: ["ZMeetApp"]),
-        .executable(name: "aec-probe", targets: ["aec-probe"])
+        .executable(name: "aec-probe", targets: ["aec-probe"]),
+        .executable(name: "notes-probe", targets: ["notes-probe"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.2")
@@ -64,6 +65,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "aec-probe",
+            dependencies: ["ZMeetCore"]
+        ),
+        .executableTarget(
+            name: "notes-probe",
             dependencies: ["ZMeetCore"]
         ),
         .testTarget(
