@@ -115,8 +115,11 @@ public enum ZMeetText {
         let spaced = raw.unicodeScalars.map {
             CharacterSet.controlCharacters.contains($0) ? Unicode.Scalar(" ") : $0
         }
-        return String(String.UnicodeScalarView(spaced))
+        let collapsed = String(String.UnicodeScalarView(spaced))
             .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        // Window titles are set by meeting organizers, so markup is neutralized
+        // here too, not only when a note is rendered. "‹" keeps the title readable.
+        return neutralizingMarkup(collapsed, lessThan: "‹")
     }
 
     /// Neutralizes Markdown that turns a note into an egress or execution channel
@@ -127,26 +130,38 @@ public enum ZMeetText {
     /// links, a spaced "a < b") passes through. Apply to every model-, user- or
     /// window-derived string that reaches a rendered note, including titles.
     public static func sanitizeNoteMarkdown(_ md: String) -> String {
-        // Repeat until none is left: one pass turns "!![" into a live "![" again.
-        // Each pass removes a "!", so this always terminates.
-        var unembedded = md
-        while unembedded.contains("![") {
-            unembedded = unembedded.replacingOccurrences(of: "![", with: "[")
-        }
-        var out = ""
-        out.reserveCapacity(unembedded.count)
-        var characters = unembedded.makeIterator()
-        var pending = characters.next()
-        while let c = pending {
-            let next = characters.next()
-            if c == "<", let n = next, n.isLetter || n == "/" || n == "!" || n == "?" {
-                out += "&lt;"
-            } else {
-                out.append(c)
+        neutralizingMarkup(md, lessThan: "&lt;")
+    }
+
+    /// Drops every "!" right before "[" (so no image embed survives, however many
+    /// bangs) and replaces each "<" that could open a tag, comment or declaration
+    /// with `lessThan`. Works per Unicode scalar, as Markdown and HTML parsers do:
+    /// a combining or prepend mark can fuse "[" or "<" into one grapheme that a
+    /// Character comparison wouldn't match while a renderer still sees the syntax.
+    static func neutralizingMarkup(_ text: String, lessThan: String) -> String {
+        let scalars = Array(text.unicodeScalars)
+        var out = String.UnicodeScalarView()
+        for (i, scalar) in scalars.enumerated() {
+            if scalar == "[" {
+                while out.last == "!" { out.removeLast() }
             }
-            pending = next
+            if scalar == "<", i + 1 < scalars.count, opensMarkup(after: scalars[i + 1]) {
+                out.append(contentsOf: lessThan.unicodeScalars)
+            } else {
+                out.append(scalar)
+            }
         }
-        return out
+        return String(out)
+    }
+
+    /// Whether "<" followed by `next` could open a tag ("<a", "</", "<!--",
+    /// "<?") — or would, once a mark between them is dropped by a renderer.
+    private static func opensMarkup(after next: Unicode.Scalar) -> Bool {
+        if next.properties.isAlphabetic || next == "/" || next == "!" || next == "?" { return true }
+        switch next.properties.generalCategory {
+        case .nonspacingMark, .spacingMark, .enclosingMark: return true
+        default: return false
+        }
     }
 
     public static func yamlQuote(_ value: String) -> String {

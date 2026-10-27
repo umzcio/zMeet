@@ -15,10 +15,23 @@ private func body(_ note: String) -> String {
 }
 
 /// True when the text still contains something a Markdown/HTML renderer would
-/// treat as a tag, comment, declaration or image embed.
+/// treat as a tag, comment, declaration or image embed. Checked per Unicode
+/// scalar, as renderers parse: a String/Character search would miss "![" or
+/// "<img" fused with a combining or prepend mark into one grapheme.
 private func hasLiveMarkup(_ text: String) -> Bool {
-    text.range(of: #"<[A-Za-z/!?]"#, options: .regularExpression) != nil || text.contains("![")
+    let scalars = Array(text.unicodeScalars)
+    for (i, s) in scalars.enumerated() where i + 1 < scalars.count {
+        let n = scalars[i + 1]
+        if s == "!" && n == "[" { return true }
+        if s == "<" && (n.properties.isAlphabetic || "/!?".unicodeScalars.contains(n)) { return true }
+    }
+    return false
 }
+
+/// The finding's attacks: a mark after "[" or a prepend scalar before "!"/"<"
+/// fuses the syntax into one grapheme that a Character check doesn't match.
+private let markSmuggled = ["![\u{301}](https://x)", "![\u{FE0F}](https://x)", "\u{D4E}![](https://x)",
+                            "\u{600}<img src=https://x>", "\u{D4E}<img src=https://x>"]
 
 private let hostileTitle = #"Call <img src="https://x"> <iframe src="https://x"> ![](https://x)"#
 
@@ -99,4 +112,33 @@ private func session(title: String) -> MeetingSession {
         #expect(!hasLiveMarkup(body(note)))
         #expect(body(note).contains("# Weekly call [](https://x/b)"))
     }
+}
+
+@Test func sanitizerNeutralizesMarkupFusedWithMarks() {
+    for attack in markSmuggled {
+        #expect(!hasLiveMarkup(ZMeetText.sanitizeNoteMarkdown(attack)), "still live: \(attack.unicodeScalars.map { String($0.value, radix: 16) })")
+    }
+}
+
+@Test func markSmuggledTitlesAndSummariesAreNeutralizedInEveryRenderedNote() {
+    for attack in markSmuggled {
+        let s = session(title: "Weekly Call " + attack)
+        let summary = "## Summary\nok " + attack
+        let notes = MarkdownRenderer().renderProcessedNote(session: s, transcriptURL: URL(fileURLWithPath: "/x/transcript.md"),
+            noteURL: URL(fileURLWithPath: "/x/notes.md"), summaryMarkdown: summary)
+        let main = ObsidianNoteRenderer.mainNote(session: s, summary: summary, entities: MeetingEntities(), transcriptNoteName: "T")
+        let transcript = ObsidianNoteRenderer.transcriptNote(session: s, transcript: "[0:00] " + attack, mainNoteName: "M")
+        for note in [notes, main, transcript] { #expect(!hasLiveMarkup(body(note))) }
+    }
+}
+
+@Test func storedTitlesCannotCarryMarkupEvenWithoutTheNoteSanitizer() {
+    // Defense in depth: a window title is organizer-controlled, so it is
+    // neutralized when stored, not only when rendered.
+    for raw in ["![\u{301}](https://x) Weekly Call", "\u{D4E}<img src=https://x> Weekly Call",
+                "<IFRAME src=x> Call", "!![](https://x) Call"] {
+        #expect(!hasLiveMarkup(ZMeetText.sanitizeTitle(raw)), "still live: \(raw)")
+    }
+    #expect(ZMeetText.sanitizeTitle("Café Weekly Call") == "Café Weekly Call")
+    #expect(ZMeetText.sanitizeTitle("Budget: a < b [draft]") == "Budget: a < b [draft]")
 }
