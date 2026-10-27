@@ -163,3 +163,48 @@ private func paragraphs(_ count: Int, length: Int) -> String {
     #expect(parsed.contains(.bullet("Wire $1M today")))
     #expect(parsed.contains(.bullet("Who asked for the wire?")))
 }
+
+// MARK: - Cloud: extract facts from the whole transcript, then write
+
+@Test func factFirstExtractsThenWrites() async throws {
+    let model = FactModel()
+    let out = try await FactFirstSummarizer(complete: model.complete)
+        .summarize(transcript: "[0:05] We shipped it.", title: "Sync")
+    #expect(out == "NOTES")
+    #expect(model.prompts.count == 2)
+    #expect(model.mapPrompts.count == 1)
+    #expect(model.mapPrompts[0].contains("We shipped it."))
+    #expect(model.reducePrompts.count == 1)
+    #expect(model.reducePrompts[0].contains("fact-1"))
+}
+
+@Test func factFirstMapIsNotCappedLikeAChunk() async throws {
+    let model = FactModel()
+    _ = try await FactFirstSummarizer(complete: model.complete).summarize(transcript: "x", title: "Sync")
+    #expect(!model.mapPrompts[0].contains("at most 30 lines"))
+    #expect(MeetingSummaryPrompt.map(transcript: "x", title: "Sync").contains("at most 30 lines"))
+}
+
+@Test func factFirstWithNoFactsWritesFromTheTranscript() async throws {
+    let model = FactModel(mapAnswer: { _ in "  " })
+    let out = try await FactFirstSummarizer(complete: model.complete)
+        .summarize(transcript: "We shipped it.", title: "Sync")
+    #expect(out == "NOTES")
+    #expect(model.prompts.count == 2)
+    #expect(model.prompts[1].contains("using only") && model.prompts[1].contains("We shipped it."))
+}
+
+@Test func factFirstClipsTheTranscript() async throws {
+    let model = FactModel()
+    let transcript = String(repeating: "a", count: 10) + String(repeating: "b", count: 10)
+    _ = try await FactFirstSummarizer(maxTranscriptCharacters: 10, complete: model.complete)
+        .summarize(transcript: transcript, title: "Sync")
+    #expect(model.mapPrompts[0].contains("aaaaaaaaaa"))
+    #expect(!model.mapPrompts[0].contains("bbbbb"))
+}
+
+@Test func garbledPassagesAreMarkedUnclearNotGuessed() {
+    #expect(MeetingSummaryPrompt.map(transcript: "x", title: "Sync").contains("UNCLEAR"))
+    let reduce = MeetingSummaryPrompt.reduce(parts: ["UNCLEAR [1:00] pay flow"], title: "Sync")
+    #expect(reduce.contains("UNCLEAR"))
+}

@@ -75,14 +75,3 @@ private func paragraphs(_ count: Int, length: Int) -> String {
         _ = try await summarizer.summarize(transcript: "hi", title: "Sync")
     }
 }
-
-@Test func singlePassClipsTheTranscript() async throws {
-    let model = FakeModel(mapAnswer: "ONE")
-    let transcript = String(repeating: "a", count: 10) + String(repeating: "b", count: 10)
-    let out = try await SinglePassSummarizer(maxTranscriptCharacters: 10, complete: model.complete)
-        .summarize(transcript: transcript, title: "Sync")
-    #expect(out == "ONE")
-    #expect(model.prompts.count == 1)
-    #expect(model.prompts[0].contains("aaaaaaaaaa"))
-    #expect(!model.prompts[0].contains("bbbbb"))   // the prompt template itself contains the letter b
-}

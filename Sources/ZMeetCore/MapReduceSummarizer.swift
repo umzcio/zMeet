@@ -96,9 +96,11 @@ public struct MapReduceSummarizer: Summarizer {
     }
 }
 
-/// Sends the whole transcript (capped) in one request — for large-context cloud
-/// models, where map-reduce would only lose cross-meeting context.
-public struct SinglePassSummarizer: Summarizer {
+/// For large-context cloud models: extracts facts from the whole transcript
+/// (capped) in one request, then writes the notes from those facts in a second.
+/// Separating the steps keeps speakers and details that a single pass blurs;
+/// map-reduce would only lose cross-meeting context.
+public struct FactFirstSummarizer: Summarizer {
     let maxTranscriptCharacters: Int
     let complete: MapReduceSummarizer.Complete
 
@@ -109,6 +111,12 @@ public struct SinglePassSummarizer: Summarizer {
 
     public func summarize(transcript: String, title: String) async throws -> String {
         let clipped = String(transcript.prefix(maxTranscriptCharacters))
-        return try await complete(MeetingSummaryPrompt.build(transcript: clipped, title: title))
+        let facts = SummaryOutput.clean(try await complete(
+            MeetingSummaryPrompt.map(transcript: clipped, title: title, maxLines: nil)))
+        // Nothing extracted (an empty or odd reply): write from the transcript itself.
+        guard !facts.isEmpty else {
+            return try await complete(MeetingSummaryPrompt.build(transcript: clipped, title: title))
+        }
+        return try await complete(MeetingSummaryPrompt.reduce(parts: [facts], title: title))
     }
 }

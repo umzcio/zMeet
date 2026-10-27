@@ -38,6 +38,6 @@ private final class MemorySecrets: SecretStore, @unchecked Sendable {
 @Test func summarizerShapeFollowsProvider() {
     let complete: MapReduceSummarizer.Complete = { _ in "" }
     #expect(AIConnection(provider: .ollama, model: "m", key: nil, ollamaAddress: "localhost").summarizer(complete: complete) is MapReduceSummarizer)
-    #expect(AIConnection(provider: .openAI, model: "m", key: "k", ollamaAddress: "").summarizer(complete: complete) is SinglePassSummarizer)
-    #expect(AIConnection(provider: .anthropic, model: "m", key: "k", ollamaAddress: "").summarizer(complete: complete) is SinglePassSummarizer)
+    #expect(AIConnection(provider: .openAI, model: "m", key: "k", ollamaAddress: "").summarizer(complete: complete) is FactFirstSummarizer)
+    #expect(AIConnection(provider: .anthropic, model: "m", key: "k", ollamaAddress: "").summarizer(complete: complete) is FactFirstSummarizer)
 }

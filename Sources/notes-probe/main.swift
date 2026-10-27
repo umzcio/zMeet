@@ -77,7 +77,10 @@ enum Diagnostics {
         var line = "anthropic: HTTP \(status) in \(Int(seconds)) s, stop=\(obj?["stop_reason"] ?? "-"), out_tokens=\(usage?["output_tokens"] ?? "-")"
         if status == 200 {
             let cleaned = SummaryOutput.clean(text)
-            line += ", anchors=\(SummaryOutput.hasRequiredSections(cleaned) ? "ok" : "FAIL"), first=\(cleaned.prefix(60).debugDescription)"
+            line += cleaned.hasPrefix("## ")
+                ? ", anchors=\(SummaryOutput.hasRequiredSections(cleaned) ? "ok" : "FAIL")"
+                : ", fact lines=\(cleaned.split(separator: "\n").count)"
+            line += ", first=\(cleaned.prefix(60).debugDescription)"
         } else {
             line += ", error=\(((obj?["error"] as? [String: Any])?["message"] as? String ?? "-").prefix(200))"
         }

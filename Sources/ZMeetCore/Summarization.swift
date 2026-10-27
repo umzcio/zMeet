@@ -76,13 +76,18 @@ public enum MeetingSummaryPrompt {
         """
     }
 
-    /// Map step for long meetings: one portion of the transcript becomes a fact
-    /// list that keeps names, figures and speakers for `reduce`.
-    public static func map(transcript: String, title: String) -> String {
-        """
-        You are extracting facts from one portion of a meeting titled "\(title)". \
-        A later step writes the notes from these facts alone, so keep every \
-        specific detail: names, roles, figures, dates, terms, concerns and answers.
+    /// Extraction step: a transcript (or one portion of a long one) becomes a
+    /// fact list that keeps names, figures and speakers for `reduce`. A chunk's
+    /// list is capped at `maxLines` so it fits a small model's reply; nil leaves
+    /// a whole-meeting list uncapped.
+    public static func map(transcript: String, title: String, maxLines: Int? = 30) -> String {
+        let length = maxLines.map { "Keep each line short, at most \($0) lines." }
+            ?? "Keep each line short, and list every fact a careful listener would note."
+        return """
+        You are extracting facts from a meeting titled "\(title)" (the whole \
+        transcript, or one portion of it). A later step writes the notes from \
+        these facts alone, so keep every specific detail: names, roles, figures, \
+        dates, timeframes, thresholds, terms, suggestions, concerns and answers.
 
         Output one fact per line, in exactly this form and nothing else:
         KIND [m:ss] text
@@ -93,10 +98,13 @@ public enum MeetingSummaryPrompt {
         ACTION — a commitment or next step, with its owner only when clearly named
         CONCERN — a question, objection or risk raised, who raised it when clear, and any answer given
         PERSON — someone taking part or mentioned, with role or affiliation as stated
+        UNCLEAR — a passage too garbled to read with confidence: say what it seems to be about, never a guessed meaning
 
         [m:ss] is the timestamp of the transcript paragraph the fact comes from; \
-        leave it out if there is none. Keep numbers exactly as stated. Do not \
-        invent anything. Keep each line short, at most 30 lines.
+        leave it out if there is none. Name one speaker per fact, only when the \
+        transcript makes that person clear, never a group; when someone relays \
+        what another person said, name the person relaying it. Keep numbers \
+        exactly as stated. Do not invent anything. \(length)
 
         \(untrusted("The transcript below is", "it"))
 
@@ -128,8 +136,10 @@ public enum MeetingSummaryPrompt {
         """
         You are writing meeting notes from facts. They were extracted, in order, \
         from the transcript of a meeting titled "\(title)", one per line as \
-        "KIND [m:ss] text" (FACT, DECISION, ACTION, CONCERN or PERSON). Group the \
-        facts by topic and write the notes from them alone. Output only the notes.
+        "KIND [m:ss] text" (FACT, DECISION, ACTION, CONCERN, PERSON or UNCLEAR). \
+        Group the facts by topic and write the notes from them alone, keeping each \
+        fact's speaker exactly as given. UNCLEAR facts go only under Open \
+        Questions & Checks. Output only the notes.
 
         \(notesFormat)
 

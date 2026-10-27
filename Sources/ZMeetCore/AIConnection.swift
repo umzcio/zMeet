@@ -36,11 +36,12 @@ public struct AIConnection: Sendable, Equatable {
         return true
     }
 
-    /// Map-reduce under the provider's chunk budget, or one capped request.
+    /// Map-reduce under the provider's chunk budget, or extract-then-write over
+    /// the whole (capped) transcript.
     public func summarizer(complete: @escaping MapReduceSummarizer.Complete) -> any Summarizer {
         if let budget = provider.chunkBudget {
             return MapReduceSummarizer(maxChunkCharacters: budget, complete: complete)
         }
-        return SinglePassSummarizer(complete: complete)
+        return FactFirstSummarizer(complete: complete)
     }
 }
