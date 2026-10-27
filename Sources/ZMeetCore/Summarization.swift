@@ -103,7 +103,11 @@ public enum MeetingSummaryPrompt {
         [m:ss] is the timestamp of the transcript paragraph the fact comes from; \
         leave it out if there is none. Name one speaker per fact, only when the \
         transcript makes that person clear, never a group; when someone relays \
-        what another person said, name the person relaying it. Keep numbers \
+        what another person said, name the person relaying it. The transcript \
+        usually has no speaker labels: a person is clear only when they name \
+        themselves, are introduced or handed the floor right before they speak, \
+        or are thanked or answered by name right after. Never infer a speaker \
+        from topic or role; leave the fact unattributed instead. Keep numbers \
         exactly as stated. Do not invent anything. \(length)
 
         \(untrusted("The transcript below is", "it"))
@@ -170,7 +174,8 @@ public enum MeetingSummaryPrompt {
         everything else is bullets.
 
         ## Decisions
-        Bulleted.
+        Bulleted, including agreements reached in conversation ("let's do that \
+        instead").
 
         ## Action Items
         Bulleted. Start with "Owner:" only when the transcript clearly names who is \
@@ -191,21 +196,25 @@ public enum MeetingSummaryPrompt {
         participant's stance (interested, skeptical, undecided) with their reason, \
         and every next step, including ones mentioned in passing.
         - Credit a statement to a person only when the transcript makes the speaker \
-        clear (they are addressed or introduced by name, or name themselves). \
-        Otherwise leave it unattributed. Credit only the person who said it, never \
-        a group. When someone relays another person's point, credit the person who \
+        clear. It usually has no speaker labels, so a person is clear only when \
+        they name themselves, are introduced or handed the floor right before they \
+        speak, or are thanked or answered by name right after; never infer a \
+        speaker from topic or role. Otherwise leave it unattributed. Credit only \
+        the person who said it, never a group. When someone relays another person's point, credit the person who \
         relayed it ("Pat said Sam compared it to …").
         - Keep numbers exactly as stated. If stated figures conflict or don't add \
         up, report them as stated and flag the conflict under Open Questions & \
-        Checks; never correct them. If a stated figure might combine others that \
-        were stated, say so there as something to check.
+        Checks; never correct them. Add up every total whose parts were stated. If \
+        a stated figure might combine others that were stated, say so there as \
+        something to check.
         - The transcript comes from speech recognition: names may be misspelled \
         (keep them as written) and some sentences are garbled. Never guess what a \
         garbled passage means; report only what is clear, and list anything \
         important but unclear under Open Questions & Checks.
         - Be as long as the meeting warrants and no longer: roughly 300 words for a \
         10-minute meeting, about 1,100 for a 40-minute one dense with figures. \
-        Concise bullets, no filler.
+        State each point once, in the section where it fits best; don't repeat \
+        figures from a table in bullets. Concise bullets, no filler.
         """
 
     /// The prompt-injection guard every prompt carries.
