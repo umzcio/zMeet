@@ -47,7 +47,7 @@ public enum AnthropicSummary {
         return req
     }
 
-    public static func makeRequest(key: String, model: String = AnthropicSummary.model, prompt: String, maxTokens: Int = 1500) throws -> URLRequest {
+    public static func makeRequest(key: String, model: String = AnthropicSummary.model, prompt: String, maxTokens: Int = 4096) throws -> URLRequest {
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
         req.setValue(key, forHTTPHeaderField: "x-api-key")
