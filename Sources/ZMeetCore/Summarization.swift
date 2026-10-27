@@ -185,7 +185,7 @@ public struct SummarizationPolicy: Sendable {
     /// `remote` is the selected non-Apple provider's summarizer, or nil when the
     /// provider is on-device or isn't set up (no key or model) — then nothing is
     /// transmitted and on-device runs plainly. Remote output is cleaned and must
-    /// contain the four sections: a malformed reply gets one retry; a thrown
+    /// pass the anchor check (SummaryOutput.hasRequiredSections): a malformed reply gets one retry; a thrown
     /// error goes straight to the fallback.
     public func summarize(
         transcript: String,

@@ -3,8 +3,9 @@ import Foundation
 /// Normalizes and validates notes returned by a non-Apple model before they are
 /// saved. Catches broken structure, not weak content.
 public enum SummaryOutput {
-    /// The four sections `MeetingSummaryPrompt` asks for, in order.
-    public static let requiredHeaders = ["## Summary", "## Key Points", "## Action Items", "## Decisions"]
+    /// Headings every note must carry wherever its topic sections fall; the
+    /// note must also open with `## Summary` and have one other section.
+    public static let anchorHeaders = ["## Decisions", "## Action Items"]
 
     /// Strips a leading `<think>…</think>` block (reasoning models such as qwen3
     /// or deepseek-r1 emit one) and a single outer code fence (small models
@@ -25,19 +26,29 @@ public enum SummaryOutput {
             lines.removeLast()
             text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return text
+        return renamingTranscriptHeadings(text)
     }
 
-    /// Whether all four headers appear, each on its own line, in order.
-    /// Case-insensitive, since some models write "## Key points".
+    /// notes.md readers stop at a `## Transcript` line (the link section), so a
+    /// model-written one would cut the notes off there.
+    private static func renamingTranscriptHeadings(_ text: String) -> String {
+        text.components(separatedBy: "\n").map { line in
+            line.trimmingCharacters(in: .whitespaces).lowercased() == "## transcript"
+                ? "## Transcript Discussion" : line
+        }.joined(separator: "\n")
+    }
+
+    /// Whether the note opens with `## Summary`, has `## Decisions` and
+    /// `## Action Items` on their own lines, and at least one other `## `
+    /// section. Case-insensitive, since some models write "## Action items".
+    /// Older four-section notes (Key Points) pass too.
     public static func hasRequiredSections(_ markdown: String) -> Bool {
-        let wanted = requiredHeaders.map { $0.lowercased() }
-        var next = 0
-        for line in markdown.components(separatedBy: "\n") where next < wanted.count {
-            if line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == wanted[next] {
-                next += 1
-            }
-        }
-        return next == wanted.count
+        let lines = markdown.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard lines.first?.lowercased() == "## summary" else { return false }
+        let h2 = Set(lines.filter { $0.hasPrefix("## ") }.map { $0.lowercased() })
+        let anchors = Set((["## Summary"] + anchorHeaders).map { $0.lowercased() })
+        return anchors.isSubset(of: h2) && !h2.subtracting(anchors).isEmpty
     }
 }
