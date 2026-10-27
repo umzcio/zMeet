@@ -44,6 +44,14 @@ private func paragraphs(_ count: Int, length: Int) -> String {
     #expect(!p.contains("## Key Points"))
 }
 
+@Test func fullPromptHasNoPlaceholderHeadingToCopy() {
+    // The on-device model copied a "## <Topic>" placeholder literally.
+    for p in [MeetingSummaryPrompt.build(transcript: "x", title: "Sync"), MeetingSummaryPrompt.reduce(parts: ["FACT a"], title: "Sync")] {
+        #expect(!p.contains("## <"))
+        #expect(p.contains("not a heading"))
+    }
+}
+
 @Test func mapPromptAsksForFactLines() {
     let p = MeetingSummaryPrompt.map(transcript: "[0:05] Pat: budget is $12M.", title: "Sync")
     for needle in ["FACT", "DECISION", "ACTION", "CONCERN", "PERSON", "[m:ss]", "UNTRUSTED MEETING DATA", "$12M"] {

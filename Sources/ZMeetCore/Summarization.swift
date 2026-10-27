@@ -150,13 +150,14 @@ public enum MeetingSummaryPrompt {
         then say what the meeting was about.
 
         **On the call:** the people named or clearly heard, with role or \
-        affiliation when stated. Write "Not stated" if the transcript doesn't say.
+        affiliation when stated, on this one bold line — not a heading, not a \
+        list. Write "Not stated" if the transcript doesn't say.
 
-        ## <Topic>
-        2–6 sections named for the meeting's content (for example "## Deal Terms" \
-        or "## Timeline"), in the order that best explains the meeting. Flat \
-        bullets only, never nested. Use a simple Markdown pipe table with a header \
-        row only for a set of related figures; everything else is bullets.
+        Then 2–6 topic sections. Give each a "## " heading that names its subject \
+        in plain words, such as "## Deal Terms" or "## Timeline", and order them \
+        to best explain the meeting. Flat bullets only, never nested. Use a simple \
+        Markdown pipe table with a header row only for a set of related figures; \
+        everything else is bullets.
 
         ## Decisions
         Bulleted.
