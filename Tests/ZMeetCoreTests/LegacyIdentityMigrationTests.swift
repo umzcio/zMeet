@@ -88,3 +88,12 @@ private final class MemoryStore: SecretStore, @unchecked Sendable {
     try store.delete(account: "k")
     #expect(legacy.read(account: "k") == nil)
 }
+
+@Test func aLegacyFeedOverrideIsNotCarriedOver() {
+    // A SUFeedURL left in the old domain (a testing override) would pin the new
+    // app to that feed forever; updates must come from its Info.plist feed.
+    let current = scratchDefaults()
+    _ = LegacyIdentityMigration.migrateDefaults(legacy: ["SUFeedURL": "http://127.0.0.1/appcast.xml", "A": 1], into: current)
+    #expect(current.object(forKey: "SUFeedURL") == nil)
+    #expect(current.integer(forKey: "A") == 1)
+}

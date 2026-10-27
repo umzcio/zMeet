@@ -7,6 +7,8 @@ public enum LegacyIdentityMigration {
     /// The bundle ID (and Keychain service) zMeet used through v1.18.x.
     public static let legacyBundleID = "edu.umontana.zmeet"
     static let migratedKey = "zmeet.migratedFromLegacyBundleID"
+    /// Never carried over: a feed override (testing) would pin the new app to it.
+    static let excludedKeys: Set<String> = ["SUFeedURL"]
 
     /// Copies each legacy setting the current domain doesn't have, once.
     /// Returns true only when this run carried settings over (an upgrade), so
@@ -15,7 +17,7 @@ public enum LegacyIdentityMigration {
         guard !defaults.bool(forKey: migratedKey) else { return false }
         defaults.set(true, forKey: migratedKey)
         guard let legacy, !legacy.isEmpty else { return false }
-        for (key, value) in legacy where defaults.object(forKey: key) == nil {
+        for (key, value) in legacy where defaults.object(forKey: key) == nil && !excludedKeys.contains(key) {
             defaults.set(value, forKey: key)
         }
         return true
