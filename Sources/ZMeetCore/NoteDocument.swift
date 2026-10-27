@@ -9,6 +9,8 @@ public enum NoteElement: Equatable {
     case h3(String)
     case bullet(String)
     case paragraph(String)
+    /// A GitHub-style pipe table: header cells plus rows of the same width.
+    case table(header: [String], rows: [[String]])
 }
 
 public enum NoteDocument {
@@ -26,9 +28,21 @@ public enum NoteDocument {
         }
 
         var blocks: [NoteElement] = []
-        for line in lines {
-            let t = line.trimmingCharacters(in: .whitespaces)
+        var i = 0
+        while i < lines.count {
+            let t = lines[i].trimmingCharacters(in: .whitespaces)
+            i += 1
             if t.isEmpty { continue }
+            if isPipeRow(t) {
+                // Gather the run of consecutive pipe rows; it is a table only if
+                // well-formed, otherwise each row stays a plain paragraph.
+                var run = [t]
+                while i < lines.count, case let next = lines[i].trimmingCharacters(in: .whitespaces), isPipeRow(next) {
+                    run.append(next); i += 1
+                }
+                blocks += table(from: run).map { [$0] } ?? run.map { .paragraph($0) }
+                continue
+            }
             if t.hasPrefix("# ") { continue } // title shown in header
             if t.lowercased() == "## transcript" { break } // tab covers the transcript
             if t.hasPrefix("### ") {
@@ -43,5 +57,30 @@ public enum NoteDocument {
             }
         }
         return blocks
+    }
+
+    private static func isPipeRow(_ t: String) -> Bool {
+        t.count >= 2 && t.hasPrefix("|") && t.hasSuffix("|")
+    }
+
+    private static func cells(_ row: String) -> [String] {
+        row.dropFirst().dropLast()
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// A header row, a `|---|:--:|` separator of the same width, then data rows
+    /// of that width. Anything ragged returns nil.
+    private static func table(from run: [String]) -> NoteElement? {
+        guard run.count >= 2 else { return nil }
+        let header = cells(run[0])
+        let separator = cells(run[1])
+        let isSeparator = separator.allSatisfy { cell in
+            cell.contains("-") && cell.allSatisfy { $0 == "-" || $0 == ":" || $0 == " " }
+        }
+        guard isSeparator, separator.count == header.count else { return nil }
+        let rows = run.dropFirst(2).map(cells)
+        guard rows.allSatisfy({ $0.count == header.count }) else { return nil }
+        return .table(header: header, rows: rows)
     }
 }

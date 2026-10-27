@@ -1182,6 +1182,27 @@ extension NoteElement {
                 .font(.system(size: 15)).foregroundStyle(ZMeetPalette.body)
                 .lineSpacing(5)
                 .padding(.vertical, 5)
+        case .table(let header, let rows):
+            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
+                GridRow {
+                    ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
+                        NoteElement.inline(cell)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(ZMeetPalette.light)
+                    }
+                }
+                Rectangle().fill(ZMeetPalette.hairline).frame(height: 1).gridCellUnsizedAxes(.horizontal)
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            NoteElement.inline(cell)
+                                .font(.system(size: 14))
+                                .foregroundStyle(ZMeetPalette.body)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 8)
         }
     }
 
