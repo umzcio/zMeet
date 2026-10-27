@@ -47,7 +47,9 @@ public enum AnthropicSummary {
         return req
     }
 
-    public static func makeRequest(key: String, model: String = AnthropicSummary.model, prompt: String, maxTokens: Int = 4096) throws -> URLRequest {
+    /// `maxTokens` covers thinking too: current models think by default and those
+    /// tokens count toward the cap, so a low cap truncates or empties the notes.
+    public static func makeRequest(key: String, model: String = AnthropicSummary.model, prompt: String, maxTokens: Int = 16_000) throws -> URLRequest {
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
         req.setValue(key, forHTTPHeaderField: "x-api-key")

@@ -7,11 +7,13 @@ import ZMeetCore
 // app does after a meeting, so the notes prompts can be tuned against a real meeting
 // without re-processing it. A developer tool; never shipped in the app bundle.
 //
-//   notes-probe <transcript.md> --provider anthropic|ondevice [--title "<title>"] [--out <dir>]
+//   notes-probe <transcript.md> --provider anthropic|ondevice [--title "<title>"] [--out <dir>] [--no-fallback]
 //
 // anthropic  the app's remote path: SummarizationPolicy over the configured model
 //            (~/.zmeet/config.json), on-device as the fallback. The key is read from
 //            zMeet's Keychain item (macOS may ask once to allow it) and never printed.
+//            Each Anthropic reply logs one stderr line (status, stop reason, anchors);
+//            --no-fallback exits instead of falling back, for quick tuning runs.
 // ondevice   StructuredNotesSummarizer over Apple's on-device model, as the app runs it.
 //
 // Writes <out>/notes-<provider>-<n>.md (the next free n): the cleaned, sanitized notes
@@ -24,7 +26,7 @@ func fail(_ message: String, code: Int32 = 1) -> Never {
     exit(code)
 }
 
-let usage = "usage: notes-probe <transcript.md> --provider anthropic|ondevice [--title \"<title>\"] [--out <dir>]"
+let usage = "usage: notes-probe <transcript.md> --provider anthropic|ondevice [--title \"<title>\"] [--out <dir>] [--no-fallback]"
 
 // MARK: - Arguments
 
@@ -38,6 +40,8 @@ var args = Array(CommandLine.arguments.dropFirst())
 }
 guard let providerName = option("--provider") else { fail(usage, code: 64) }
 let title = option("--title") ?? "Zoom Meeting"
+let noFallback = args.contains("--no-fallback")
+args.removeAll { $0 == "--no-fallback" }
 let outDir = URL(fileURLWithPath: ZMeetPaths.expandTilde(option("--out") ?? "."), isDirectory: true).standardizedFileURL
 guard args.count == 1 else { fail(usage, code: 64) }
 let transcriptURL = URL(fileURLWithPath: ZMeetPaths.expandTilde(args[0]))
@@ -60,6 +64,32 @@ guard let transcript = try? String(contentsOf: transcriptURL, encoding: .utf8),
 }
 
 // MARK: - Engines
+
+enum Diagnostics {
+    static func log(_ line: String) { FileHandle.standardError.write(Data((line + "\n").utf8)) }
+
+    /// One stderr line per Anthropic reply: why a remote attempt failed is otherwise
+    /// invisible, since the policy falls back silently. Never logs the request.
+    static func report(status: Int, data: Data, seconds: TimeInterval) {
+        let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let text = ((obj?["content"] as? [[String: Any]]) ?? []).compactMap { $0["text"] as? String }.joined()
+        let usage = obj?["usage"] as? [String: Any]
+        var line = "anthropic: HTTP \(status) in \(Int(seconds)) s, stop=\(obj?["stop_reason"] ?? "-"), out_tokens=\(usage?["output_tokens"] ?? "-")"
+        if status == 200 {
+            let cleaned = SummaryOutput.clean(text)
+            line += ", anchors=\(SummaryOutput.hasRequiredSections(cleaned) ? "ok" : "FAIL"), first=\(cleaned.prefix(60).debugDescription)"
+        } else {
+            line += ", error=\(((obj?["error"] as? [String: Any])?["message"] as? String ?? "-").prefix(200))"
+        }
+        log(line)
+    }
+}
+
+/// Stands in for on-device under --no-fallback, so a failed remote run stops at once.
+struct NoFallback: Summarizer {
+    struct RemoteFailed: Error {}
+    func summarize(transcript: String, title: String) async throws -> String { throw RemoteFailed() }
+}
 
 /// zMeet's Keychain item, read-only. Same service and accounts as the app's store.
 struct KeychainReader: SecretStore {
@@ -112,11 +142,20 @@ case "anthropic":
     let model = config.model(for: .anthropic)
     let connection = AIConnection(provider: .anthropic, model: model, key: key, ollamaAddress: config.ollamaAddress)
     let remote = connection.summarizer(complete: { prompt in
-        let (data, response) = try await session.data(for: AnthropicSummary.makeRequest(key: key, model: model, prompt: prompt))
-        return try AnthropicSummary.parseSummary(data: data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        let sent = Date()
+        do {
+            let (data, response) = try await session.data(for: AnthropicSummary.makeRequest(key: key, model: model, prompt: prompt))
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            Diagnostics.report(status: status, data: data, seconds: Date().timeIntervalSince(sent))
+            return try AnthropicSummary.parseSummary(data: data, status: status)
+        } catch {
+            Diagnostics.log("anthropic: \(type(of: error)) \(error) after \(Int(Date().timeIntervalSince(sent))) s")
+            throw error
+        }
     })
     (markdown, engine) = try await SummarizationPolicy().summarize(
-        transcript: transcript, title: title, provider: .anthropic, model: model, remote: remote, onDevice: onDevice)
+        transcript: transcript, title: title, provider: .anthropic, model: model, remote: remote,
+        onDevice: noFallback ? NoFallback() : onDevice)
 case "ondevice":
     guard case .available = SystemLanguageModel.default.availability else { fail("Apple Intelligence is unavailable", code: 2) }
     (markdown, engine) = (try await onDevice.summarize(transcript: transcript, title: title), .onDevice)

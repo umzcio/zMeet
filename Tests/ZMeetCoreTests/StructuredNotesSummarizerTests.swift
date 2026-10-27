@@ -62,9 +62,11 @@ private final class FormatModel: @unchecked Sendable {
     #expect(out == fullNotes)
 }
 
-@Test func anthropicRequestAsks4096Tokens() throws {
+@Test func anthropicRequestLeavesRoomForThinking() throws {
     let req = try AnthropicSummary.makeRequest(key: "k", prompt: "p")
     let body = try #require(req.httpBody)
     let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-    #expect(json["max_tokens"] as? Int == 4096)
+    // Sonnet 5 thinks by default and thinking tokens count toward max_tokens;
+    // 4096 left notes truncated or empty.
+    #expect(json["max_tokens"] as? Int == 16_000)
 }
