@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import ZMeetCore
 
-@Test func meetingSummaryPromptHasRequiredSections() {
-    let prompt = MeetingSummaryPrompt.build(transcript: "We shipped X.", title: "Sync")
+@Test func compactSummaryPromptHasRequiredSections() {
+    let prompt = MeetingSummaryPrompt.buildCompact(transcript: "We shipped X.", title: "Sync")
     #expect(prompt.contains("## Summary"))
     #expect(prompt.contains("## Key Points"))
     #expect(prompt.contains("## Action Items"))
@@ -122,8 +122,8 @@ private struct Boom: Error {}
     #expect(p.contains("flights"))
 }
 
-@Test func reducePromptHasSectionsAndParts() {
-    let prompt = MeetingSummaryPrompt.reduce(parts: ["## Summary\n- Alpha", "## Summary\n- Beta"], title: "Sync")
+@Test func compactReducePromptHasSectionsAndParts() {
+    let prompt = MeetingSummaryPrompt.reduceCompact(parts: ["## Summary\n- Alpha", "## Summary\n- Beta"], title: "Sync")
     #expect(prompt.contains("## Summary"))
     #expect(prompt.contains("## Key Points"))
     #expect(prompt.contains("## Action Items"))

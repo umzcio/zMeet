@@ -1,5 +1,9 @@
 import Foundation
 
+/// Which notes a summarizer asks for: the full structured format, or the
+/// compact four-section fallback.
+public enum NotesFormat: Sendable { case full, compact }
+
 /// Summarizes with any prompt → text completion, map-reducing transcripts longer
 /// than one chunk so long meetings are fully covered, not just their opening.
 /// Shared by the on-device engine and Ollama; the completion is injected so the
@@ -8,10 +12,12 @@ public struct MapReduceSummarizer: Summarizer {
     public typealias Complete = @Sendable (String) async throws -> String
 
     let maxChunkCharacters: Int
+    let format: NotesFormat
     let complete: Complete
 
-    public init(maxChunkCharacters: Int, complete: @escaping Complete) {
+    public init(maxChunkCharacters: Int, format: NotesFormat = .full, complete: @escaping Complete) {
         self.maxChunkCharacters = maxChunkCharacters
+        self.format = format
         self.complete = complete
     }
 
@@ -19,20 +25,52 @@ public struct MapReduceSummarizer: Summarizer {
         let chunks = TranscriptChunker().chunk(transcript, maxCharacters: maxChunkCharacters)
         // Short meeting (or empty): single pass.
         guard chunks.count > 1 else {
-            return try await complete(MeetingSummaryPrompt.build(transcript: chunks.first ?? transcript, title: title))
+            let text = chunks.first ?? transcript
+            return try await complete(format == .full
+                ? MeetingSummaryPrompt.build(transcript: text, title: title)
+                : MeetingSummaryPrompt.buildCompact(transcript: text, title: title))
         }
-        // Map: summarize each chunk. Clean each answer so a reasoning model's
-        // <think> block never reaches the reduce prompt.
+        // Map each chunk — to a fact list (full) or to compact notes. Clean each
+        // answer so a reasoning model's <think> block never reaches the reduce.
         var parts: [String] = []
         for chunk in chunks {
-            parts.append(SummaryOutput.clean(try await complete(MeetingSummaryPrompt.build(transcript: chunk, title: title))))
+            let prompt = format == .full
+                ? MeetingSummaryPrompt.map(transcript: chunk, title: title)
+                : MeetingSummaryPrompt.buildCompact(transcript: chunk, title: title)
+            parts.append(SummaryOutput.clean(try await complete(prompt)))
         }
-        return try await reduce(parts: parts, title: title)
+        return format == .full
+            ? try await writeNotes(facts: parts, title: title)
+            : try await reduceCompact(parts: parts, title: title)
     }
 
-    /// Collapse per-portion notes into one set, reducing in rounds when the joined
-    /// notes are themselves too large for a single pass.
-    private func reduce(parts: [String], title: String) async throws -> String {
+    /// Merges fact lists in rounds until they fit one call, then writes the notes
+    /// once. Merging deduplicates without summarizing numbers or speakers away.
+    private func writeNotes(facts: [String], title: String) async throws -> String {
+        var facts = facts
+        let chunker = TranscriptChunker()
+        // Same bound as reduceCompact: a model whose merges don't shrink the
+        // list must not loop forever.
+        for _ in 0..<6 {
+            let groups = chunker.group(facts, maxCharacters: maxChunkCharacters)
+            if groups.count == 1 { break }
+            var merged: [String] = []
+            for group in groups {
+                merged.append(SummaryOutput.clean(try await complete(MeetingSummaryPrompt.mergeFacts(parts: group, title: title))))
+            }
+            let shrank = merged.count < facts.count
+            facts = merged
+            if !shrank { break }
+        }
+        // Still too large (a merge that wouldn't shrink): clip rather than overflow.
+        let joined = facts.joined(separator: "\n\n")
+        if joined.count > maxChunkCharacters { facts = [String(joined.prefix(maxChunkCharacters))] }
+        return try await complete(MeetingSummaryPrompt.reduce(parts: facts, title: title))
+    }
+
+    /// Collapse per-portion compact notes into one set, reducing in rounds when
+    /// the joined notes are themselves too large for a single pass.
+    private func reduceCompact(parts: [String], title: String) async throws -> String {
         var parts = parts
         let chunker = TranscriptChunker()
         // Each round should shrink the part count; a model that returns
@@ -42,11 +80,11 @@ public struct MapReduceSummarizer: Summarizer {
             if parts.count == 1 { return parts[0] }
             let groups = chunker.group(parts, maxCharacters: maxChunkCharacters)
             if groups.count == 1 {
-                return try await complete(MeetingSummaryPrompt.reduce(parts: parts, title: title))
+                return try await complete(MeetingSummaryPrompt.reduceCompact(parts: parts, title: title))
             }
             var reduced: [String] = []
             for group in groups {
-                reduced.append(SummaryOutput.clean(try await complete(MeetingSummaryPrompt.reduce(parts: group, title: title))))
+                reduced.append(SummaryOutput.clean(try await complete(MeetingSummaryPrompt.reduceCompact(parts: group, title: title))))
             }
             // A round that didn't shrink will never converge — bail to the guard below.
             if reduced.count >= parts.count { parts = reduced; break }
@@ -54,7 +92,7 @@ public struct MapReduceSummarizer: Summarizer {
         }
         // Exhausted: reduce whatever we have in one clipped pass rather than spin.
         let joined = parts.joined(separator: "\n\n")
-        return try await complete(MeetingSummaryPrompt.reduce(parts: [String(joined.prefix(maxChunkCharacters))], title: title))
+        return try await complete(MeetingSummaryPrompt.reduceCompact(parts: [String(joined.prefix(maxChunkCharacters))], title: title))
     }
 }
 

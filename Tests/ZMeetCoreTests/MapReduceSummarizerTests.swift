@@ -36,10 +36,12 @@ private func paragraphs(_ count: Int, length: Int) -> String {
     #expect(model.prompts[0].contains("We shipped it."))
 }
 
+// The compact format keeps the original per-chunk notes → reduce flow; the
+// full format's fact-first flow is covered in StructuredPromptTests.
 @Test func longTranscriptMapsEachChunkThenReduces() async throws {
     // Short map answers so all three parts fit one reduce pass under the budget.
     let model = FakeModel(mapAnswer: "- p")
-    let out = try await MapReduceSummarizer(maxChunkCharacters: 50, complete: model.complete)
+    let out = try await MapReduceSummarizer(maxChunkCharacters: 50, format: .compact, complete: model.complete)
         .summarize(transcript: paragraphs(3, length: 40), title: "Sync")
     #expect(out == "FINAL")
     #expect(model.mapPrompts.count == 3)
@@ -51,7 +53,7 @@ private func paragraphs(_ count: Int, length: Int) -> String {
     // Four 30-char map answers under a 70-char budget → two groups of two, then a
     // final pass over the two short reduced parts.
     let model = FakeModel(mapAnswer: String(repeating: "m", count: 30), reduceAnswer: "R")
-    let out = try await MapReduceSummarizer(maxChunkCharacters: 70, complete: model.complete)
+    let out = try await MapReduceSummarizer(maxChunkCharacters: 70, format: .compact, complete: model.complete)
         .summarize(transcript: paragraphs(4, length: 60), title: "Sync")
     #expect(out == "R")
     #expect(model.mapPrompts.count == 4)
@@ -60,7 +62,7 @@ private func paragraphs(_ count: Int, length: Int) -> String {
 
 @Test func mapAnswersAreCleanedBeforeReduce() async throws {
     let model = FakeModel(mapAnswer: "<think>secret reasoning</think>\n## Summary\n- a")
-    _ = try await MapReduceSummarizer(maxChunkCharacters: 50, complete: model.complete)
+    _ = try await MapReduceSummarizer(maxChunkCharacters: 50, format: .compact, complete: model.complete)
         .summarize(transcript: paragraphs(2, length: 40), title: "Sync")
     #expect(model.reducePrompts.count == 1)
     #expect(!model.reducePrompts[0].contains("secret reasoning"))
