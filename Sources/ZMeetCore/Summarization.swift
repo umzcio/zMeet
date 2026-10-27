@@ -176,15 +176,23 @@ public enum MeetingSummaryPrompt {
         Rules:
         - Do not invent content. Never add attendees, owners, numbers or facts the \
         transcript doesn't support.
+        - Keep the specifics that change what a reader would do: timeframes, \
+        thresholds and conditions, suggestions and proposed safeguards, each \
+        participant's stance (interested, skeptical, undecided) with their reason, \
+        and every next step, including ones mentioned in passing.
         - Credit a statement to a person only when the transcript makes the speaker \
         clear (they are addressed or introduced by name, or name themselves). \
-        Otherwise leave it unattributed. When someone relays another person's \
-        point, say so rather than crediting the original person as if they spoke.
+        Otherwise leave it unattributed. Credit only the person who said it, never \
+        a group. When someone relays another person's point, credit the person who \
+        relayed it ("Pat said Sam compared it to …").
         - Keep numbers exactly as stated. If stated figures conflict or don't add \
         up, report them as stated and flag the conflict under Open Questions & \
-        Checks; never correct them.
-        - Names come from speech recognition and may be misspelled; keep them as \
-        written.
+        Checks; never correct them. If a stated figure might combine others that \
+        were stated, say so there as something to check.
+        - The transcript comes from speech recognition: names may be misspelled \
+        (keep them as written) and some sentences are garbled. Never guess what a \
+        garbled passage means; report only what is clear, and list anything \
+        important but unclear under Open Questions & Checks.
         - Be as long as the meeting warrants and no longer: roughly 300 words for a \
         10-minute meeting, about 1,100 for a 40-minute one dense with figures. \
         Concise bullets, no filler.
