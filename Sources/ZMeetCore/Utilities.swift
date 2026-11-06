@@ -124,10 +124,11 @@ public enum ZMeetText {
 
     /// Neutralizes Markdown that turns a note into an egress or execution channel
     /// when rendered (Obsidian renders inline HTML and fetches remote images):
-    /// image embeds become plain links, and every `<` that could open an HTML tag,
-    /// comment or declaration (followed by a letter, `/`, `!` or `?`) is escaped,
-    /// whatever the element or its case. Everything else (headings, lists, normal
-    /// links, a spaced "a < b") passes through. Apply to every model-, user- or
+    /// image embeds become plain links, links to anything but web or mail become
+    /// their plain text, and every `<` that could open an HTML tag, comment or
+    /// declaration (followed by a letter, `/`, `!` or `?`) is escaped, whatever
+    /// the element or its case. Everything else (headings, lists, web links, a
+    /// spaced "a < b") passes through. Apply to every model-, user- or
     /// window-derived string that reaches a rendered note, including titles.
     public static func sanitizeNoteMarkdown(_ md: String) -> String {
         neutralizingMarkup(md, lessThan: "&lt;")
@@ -139,7 +140,7 @@ public enum ZMeetText {
     /// a combining or prepend mark can fuse "[" or "<" into one grapheme that a
     /// Character comparison wouldn't match while a renderer still sees the syntax.
     static func neutralizingMarkup(_ text: String, lessThan: String) -> String {
-        let scalars = Array(text.unicodeScalars)
+        let scalars = Array(defangingUnsafeLinks(text).unicodeScalars)
         var out = String.UnicodeScalarView()
         for (i, scalar) in scalars.enumerated() {
             if scalar == "[" {
@@ -152,6 +153,48 @@ public enum ZMeetText {
             }
         }
         return String(out)
+    }
+
+    /// Link schemes a note may keep live. Any other scheme would hand a click to
+    /// whatever app owns it (smb mounts, Terminal via ssh:, deep links).
+    static let openableNoteLinkSchemes: Set<String> = ["http", "https", "mailto"]
+
+    /// Whether a link in a note may be opened: web and mail links only.
+    public static func isOpenableNoteLink(_ url: URL) -> Bool {
+        url.scheme.map { openableNoteLinkSchemes.contains($0.lowercased()) } ?? false
+    }
+
+    private static let inlineLink = try! NSRegularExpression(pattern: #"\[([^\[\]\n]*)\]\(([^)\n]*)\)"#)
+    private static let referenceDefinition = try! NSRegularExpression(
+        pattern: #"(?m)^([ \t]{0,3})\[([^\]\n]+)\]:[ \t]*(\S+)"#)
+
+    /// Turns every Markdown link whose destination isn't a web or mail link into
+    /// its plain text, and escapes such reference definitions so they don't
+    /// define a link. Web and mail links are left exactly as written.
+    static func defangingUnsafeLinks(_ text: String) -> String {
+        let out = NSMutableString(string: text)
+        for match in inlineLink.matches(in: text, range: NSRange(location: 0, length: out.length)).reversed()
+        where !isWebDestination(out.substring(with: match.range(at: 2))) {
+            out.replaceCharacters(in: match.range, with: out.substring(with: match.range(at: 1)))
+        }
+        let linked = out as String
+        for match in referenceDefinition.matches(in: linked, range: NSRange(location: 0, length: out.length)).reversed()
+        where !isWebDestination(out.substring(with: match.range(at: 3))) {
+            // "[s]: smb://…" becomes the literal text "\[s]: smb://…".
+            out.insert("\\", at: match.range(at: 2).location - 1)
+        }
+        return out as String
+    }
+
+    /// Judged on the destination's literal text: an entity or backslash escape
+    /// that a renderer would decode into another scheme doesn't pass.
+    private static func isWebDestination(_ raw: String) -> Bool {
+        var destination = Substring(raw.trimmingCharacters(in: .whitespaces))
+        if destination.hasPrefix("<") { destination = destination.dropFirst() }
+        guard let colon = destination.firstIndex(of: ":") else { return false }
+        let scheme = destination[..<colon]
+        return scheme.allSatisfy { $0.isASCII && $0.isLetter }
+            && openableNoteLinkSchemes.contains(scheme.lowercased())
     }
 
     /// Whether "<" followed by `next` could open a tag ("<a", "</", "<!--",

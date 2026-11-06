@@ -670,6 +670,9 @@ struct LibraryView: View {
                 }
             }
             .textSelection(.enabled)
+            .environment(\.openURL, OpenURLAction { url in
+                MainActor.assumeIsolated { NoteLinks.open(url) }
+            })
         }
     }
 
@@ -1215,6 +1218,22 @@ extension NoteElement {
             return Text(attr)
         }
         return Text(s)
+    }
+}
+
+/// Links in notes are model-written, and a meeting can steer what the model
+/// writes. A click opens only web and mail links, and only after the reader
+/// sees where the link really goes; any other scheme does nothing.
+@MainActor
+enum NoteLinks {
+    static func open(_ url: URL) -> OpenURLAction.Result {
+        guard ZMeetText.isOpenableNoteLink(url) else { return .discarded }
+        let alert = NSAlert()
+        alert.messageText = "Open this link?"
+        alert.informativeText = url.absoluteString
+        alert.addButton(withTitle: "Open")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn ? .systemAction : .discarded
     }
 }
 
