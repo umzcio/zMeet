@@ -140,7 +140,7 @@ public enum ZMeetText {
     /// a combining or prepend mark can fuse "[" or "<" into one grapheme that a
     /// Character comparison wouldn't match while a renderer still sees the syntax.
     static func neutralizingMarkup(_ text: String, lessThan: String) -> String {
-        let scalars = Array(defangingUnsafeLinks(text).unicodeScalars)
+        let scalars = Array(escapingUnverifiedLinkSyntax(defangingUnsafeLinks(text)).unicodeScalars)
         var out = String.UnicodeScalarView()
         for (i, scalar) in scalars.enumerated() {
             if scalar == "[" {
@@ -186,6 +186,39 @@ public enum ZMeetText {
         return out as String
     }
 
+    /// A link the backstop keeps: plain text, and a web or mail destination with
+    /// nothing in it that could open or hide another link (one level of balanced
+    /// parentheses allowed, as in Wikipedia URLs).
+    private static let strictWebLink = try! NSRegularExpression(pattern:
+        #"\[[^\[\]\\\n]*\]\((?i:https?|mailto):(?:[^\s()<>\\\[\]]|\([^\s()<>\\\[\]]*\))*\)"#)
+
+    /// Backstop for link shapes `defangingUnsafeLinks` can't see (nested,
+    /// escaped, multi-line, reference style): escapes every unescaped "]" that
+    /// could close a link (one followed by "(", "[" or ":") unless it closes a
+    /// strict web link. No other link, and no reference definition, can form.
+    static func escapingUnverifiedLinkSyntax(_ text: String) -> String {
+        let units = Array(text.utf16)
+        var kept = Set<Int>()
+        let all = NSRange(location: 0, length: units.count)
+        for match in strictWebLink.matches(in: text, range: all) {
+            kept.insert((text as NSString).range(of: "](", range: match.range).location)
+        }
+        let close = UInt16(UInt8(ascii: "]")), backslash = UInt16(UInt8(ascii: "\\"))
+        let opensAfter: Set<UInt16> = [UInt16(UInt8(ascii: "(")), UInt16(UInt8(ascii: "[")), UInt16(UInt8(ascii: ":"))]
+        var out: [UInt16] = []
+        out.reserveCapacity(units.count)
+        var precedingBackslashes = 0
+        for (i, unit) in units.enumerated() {
+            if unit == close, precedingBackslashes % 2 == 0, i + 1 < units.count,
+               opensAfter.contains(units[i + 1]), !kept.contains(i) {
+                out.append(backslash)
+            }
+            out.append(unit)
+            precedingBackslashes = unit == backslash ? precedingBackslashes + 1 : 0
+        }
+        return String(decoding: out, as: UTF16.self)
+    }
+
     /// Judged on the destination's literal text: an entity or backslash escape
     /// that a renderer would decode into another scheme doesn't pass.
     private static func isWebDestination(_ raw: String) -> Bool {
@@ -214,6 +247,13 @@ public enum ZMeetText {
             .replacingOccurrences(of: "\n", with: "\\n")
             .replacingOccurrences(of: "\r", with: "\\r")
             .replacingOccurrences(of: "\t", with: "\\t")
+            // Viewers without frontmatter support render this line as Markdown;
+            // YAML decodes \uXXXX to the same characters, so YAML readers see
+            // the exact value while no link, image or tag can form here.
+            .replacingOccurrences(of: "[", with: "\\u005B")
+            .replacingOccurrences(of: "]", with: "\\u005D")
+            .replacingOccurrences(of: "<", with: "\\u003C")
+            .replacingOccurrences(of: ">", with: "\\u003E")
         return "\"\(escaped)\""
     }
 
