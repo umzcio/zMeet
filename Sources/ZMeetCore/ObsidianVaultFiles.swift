@@ -35,16 +35,33 @@ public enum ObsidianVaultFiles {
         try main.write(to: mainURL, atomically: true, encoding: .utf8)
     }
     /// Remove a previously-published pair (main note + companion transcript) for the
-    /// given base name. Best-effort — used to clean up stale files when a meeting was
-    /// renamed and republished under a new name. Missing files are ignored, and so is
-    /// a base name that would resolve outside the vault (see `containedURL`).
-    public static func remove(baseName base: String, from vault: URL) {
-        if let mainURL = containedURL("\(base).md", in: vault) {
-            try? FileManager.default.removeItem(at: mainURL)
+    /// given base name, when the vault is cleaned up after a rename or the
+    /// pre-1.12.1 naming scheme. Best-effort, and only for files zMeet wrote: a
+    /// user's own note that happens to share the name is never touched (see
+    /// `isZMeetNote`). Removed files go to the Trash, so a mistaken match is
+    /// recoverable. Missing files are ignored, and so is a base name that would
+    /// resolve outside the vault (see `containedURL`).
+    public static func remove(
+        baseName base: String, from vault: URL,
+        discard: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
+    ) {
+        for (name, marker) in [("\(base).md", "tags: [meeting]"), ("\(base) — Transcript.md", "type: transcript")] {
+            guard let url = containedURL(name, in: vault), isZMeetNote(url, marker: marker) else { continue }
+            try? discard(url)
         }
-        if let transcriptURL = containedURL("\(base) — Transcript.md", in: vault) {
-            try? FileManager.default.removeItem(at: transcriptURL)
-        }
+    }
+
+    /// Whether the note at `url` is one zMeet wrote: its frontmatter (between the
+    /// first two `---` lines) carries the marker line ObsidianNoteRenderer has
+    /// always written (`tags: [meeting]` on main notes, `type: transcript` on
+    /// transcripts).
+    static func isZMeetNote(_ url: URL, marker: String) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        guard let head = try? handle.read(upToCount: 16_384) else { return false }
+        let lines = String(decoding: head, as: UTF8.self).components(separatedBy: "\n")
+        guard lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") else { return false }
+        return lines[1..<end].contains(marker)
     }
     /// Resolves `name` strictly inside `vault`; nil if it escapes (e.g. a
     /// tampered stored base name containing "../"). Names created by this type

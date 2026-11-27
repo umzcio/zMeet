@@ -571,7 +571,11 @@ public final class SessionManager {
     }
 
     private func uniqueSessionID(title: String, startedAt: Date) throws -> String {
-        let base = "\(ZMeetDates.fileStamp(startedAt))-\(ZMeetText.slugify(title))"
+        // The id names files (<id>.json, <id>.recorder.log): keep it well under the
+        // 255-byte file-name limit whatever the title, suffix included.
+        let slug = ZMeetText.clampUTF8(ZMeetText.slugify(title), maxBytes: 120)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        let base = "\(ZMeetDates.fileStamp(startedAt))-\(slug)"
         var candidate = base
         var suffix = 2
 

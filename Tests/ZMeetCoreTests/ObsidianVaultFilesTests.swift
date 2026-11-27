@@ -67,14 +67,40 @@ import Testing
     #expect(ObsidianVaultFiles.names(for: s).transcript.utf8.count < 255)
 }
 
-@Test func removeDeletesBothPublishedFiles() throws {
+private func zmeetSession() -> MeetingSession {
+    MeetingSession(id: "2026-11-20-090000-standup", title: "Standup", sourceApp: "Zoom",
+        startedAt: Date(timeIntervalSince1970: 1_780_000_000), endedAt: Date(timeIntervalSince1970: 1_780_003_480),
+        status: .processed, audioPath: "/x/recording.m4a", transcriptPath: "/x/transcript.md",
+        notePath: "/x/notes.md", recorderLogPath: nil, errorMessage: nil)
+}
+
+@Test func removeDiscardsBothZMeetNotes() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("vault-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
-    try ObsidianVaultFiles.write(main: "M", transcript: "T", mainName: "Old.md", transcriptName: "Old — Transcript.md", into: dir)
-    ObsidianVaultFiles.remove(baseName: "Old", from: dir)
-    #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("Old.md").path))
-    #expect(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("Old — Transcript.md").path))
+    let s = zmeetSession()
+    try ObsidianVaultFiles.write(
+        main: ObsidianNoteRenderer.mainNote(session: s, summary: "## Summary\nok", entities: MeetingEntities(), transcriptNoteName: "Old — Transcript"),
+        transcript: ObsidianNoteRenderer.transcriptNote(session: s, transcript: "hi", mainNoteName: "Old"),
+        mainName: "Old.md", transcriptName: "Old — Transcript.md", into: dir)
+    var discarded: [String] = []
+    ObsidianVaultFiles.remove(baseName: "Old", from: dir) { discarded.append($0.lastPathComponent) }
+    #expect(Set(discarded) == ["Old.md", "Old — Transcript.md"])
+}
+
+@Test func removeNeverTouchesNotesZMeetDidNotWrite() throws {
+    // A user's own same-day note with the meeting's name must survive a
+    // (legacy-name or rename) cleanup byte for byte.
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("vault-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let mine = "# Standup\n\nMy own notes.\n", mineTranscript = "---\ntags: [personal]\n---\nnot zMeet"
+    try mine.write(to: dir.appendingPathComponent("2026-11-20 Standup.md"), atomically: true, encoding: .utf8)
+    try mineTranscript.write(to: dir.appendingPathComponent("2026-11-20 Standup — Transcript.md"), atomically: true, encoding: .utf8)
+    var discarded: [URL] = []
+    ObsidianVaultFiles.remove(baseName: "2026-11-20 Standup", from: dir) { discarded.append($0) }
+    #expect(discarded.isEmpty)
+    #expect(try String(contentsOf: dir.appendingPathComponent("2026-11-20 Standup.md"), encoding: .utf8) == mine)
 }
 
 @Test func removeIgnoresTraversalBaseName() throws {

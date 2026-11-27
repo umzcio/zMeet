@@ -147,6 +147,27 @@ import Testing
     #expect(started.mode == .inPerson)
 }
 
+@Test func veryLongTitlesStillRecord() async throws {
+    // A meeting app's window title is organizer-set and unbounded; a session id
+    // built from it must stay under the 255-byte file-name limit.
+    for title in [String(repeating: "Quarterly Review ", count: 400) + "Meeting",
+                  String(repeating: "会議", count: 400), String(repeating: "Встреча ", count: 300)] {
+        let (config, root) = makeTempConfig()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = SessionManager(config: config, recorder: MockRecorder())
+        let started = try manager.start(title: title, sourceApp: "Microsoft Teams")
+        #expect("\(started.id).json".utf8.count < 255)
+        #expect(started.title.count <= ZMeetText.maxTitleLength)
+        let stopped = try await manager.stop()
+        #expect(stopped.status == .recorded)
+    }
+}
+
+@Test func storedTitlesAreCapped() {
+    #expect(ZMeetText.sanitizeTitle(String(repeating: "a", count: 5_000)).count == ZMeetText.maxTitleLength)
+    #expect(ZMeetText.sanitizeTitle("Weekly Sync") == "Weekly Sync")
+}
+
 /// Locks/unlocks a directory against writes via the BSD "user immutable" flag
 /// (`chflags uchg`), rather than a POSIX-mode `chmod`. Permission 036 added a
 /// self-healing `setAttributes(.posixPermissions:)` reassertion to every

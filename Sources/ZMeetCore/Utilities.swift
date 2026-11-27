@@ -103,10 +103,13 @@ public enum ZMeetText {
         return result.trimmingCharacters(in: CharacterSet(charactersIn: " .-"))
     }
 
+    /// Longest stored title. Window titles are organizer-set and unbounded.
+    public static let maxTitleLength = 200
+
     /// Normalizes a human-entered or window-derived meeting title for storage:
     /// strips control characters (incl. newlines — YAML/heading safety), collapses
-    /// whitespace runs, trims. Returns "" if nothing remains (callers substitute
-    /// their placeholder).
+    /// whitespace runs, trims, caps the length. Returns "" if nothing remains
+    /// (callers substitute their placeholder).
     public static func sanitizeTitle(_ raw: String) -> String {
         // Replace (not delete) control characters with a space so an interior
         // newline/tab/CR becomes a word break rather than fusing the two
@@ -115,8 +118,9 @@ public enum ZMeetText {
         let spaced = raw.unicodeScalars.map {
             CharacterSet.controlCharacters.contains($0) ? Unicode.Scalar(" ") : $0
         }
-        let collapsed = String(String.UnicodeScalarView(spaced))
+        let collapsed = String(String(String.UnicodeScalarView(spaced))
             .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            .prefix(maxTitleLength)).trimmingCharacters(in: .whitespaces)
         // Window titles are set by meeting organizers, so markup is neutralized
         // here too, not only when a note is rendered. "‹" keeps the title readable.
         return neutralizingMarkup(collapsed, lessThan: "‹")
@@ -125,10 +129,11 @@ public enum ZMeetText {
     /// Neutralizes Markdown that turns a note into an egress or execution channel
     /// when rendered (Obsidian renders inline HTML and fetches remote images):
     /// image embeds become plain links, links to anything but web or mail become
-    /// their plain text, and every `<` that could open an HTML tag, comment or
-    /// declaration (followed by a letter, `/`, `!` or `?`) is escaped, whatever
-    /// the element or its case. Everything else (headings, lists, web links, a
-    /// spaced "a < b") passes through. Apply to every model-, user- or
+    /// their plain text, every `<` that could open an HTML tag, comment,
+    /// declaration or Templater command (followed by a letter, `/`, `!`, `?` or
+    /// `%`) is escaped, and no code span or fenced block can form (Obsidian
+    /// plugins such as Dataview execute some). Everything else (headings, lists,
+    /// tables, web links, a spaced "a < b") passes through. Apply to every model-, user- or
     /// window-derived string that reaches a rendered note, including titles.
     public static func sanitizeNoteMarkdown(_ md: String) -> String {
         neutralizingMarkup(md, lessThan: "&lt;")
@@ -140,7 +145,7 @@ public enum ZMeetText {
     /// a combining or prepend mark can fuse "[" or "<" into one grapheme that a
     /// Character comparison wouldn't match while a renderer still sees the syntax.
     static func neutralizingMarkup(_ text: String, lessThan: String) -> String {
-        let scalars = Array(escapingUnverifiedLinkSyntax(defangingUnsafeLinks(text)).unicodeScalars)
+        let scalars = Array(escapingActiveSyntax(defangingUnsafeLinks(text)).unicodeScalars)
         var out = String.UnicodeScalarView()
         for (i, scalar) in scalars.enumerated() {
             if scalar == "[" {
@@ -192,11 +197,13 @@ public enum ZMeetText {
     private static let strictWebLink = try! NSRegularExpression(pattern:
         #"\[[^\[\]\\\n]*\]\((?i:https?|mailto):(?:[^\s()<>\\\[\]]|\([^\s()<>\\\[\]]*\))*\)"#)
 
-    /// Backstop for link shapes `defangingUnsafeLinks` can't see (nested,
-    /// escaped, multi-line, reference style): escapes every unescaped "]" that
-    /// could close a link (one followed by "(", "[" or ":") unless it closes a
-    /// strict web link. No other link, and no reference definition, can form.
-    static func escapingUnverifiedLinkSyntax(_ text: String) -> String {
+    /// Backstop for syntax a renderer or Obsidian plugin would act on. Escapes
+    /// every unescaped "]" that could close a link (one followed by "(", "[" or
+    /// ":") unless it closes a strict web link, so no other link or reference
+    /// definition can form, whatever its shape; every unescaped backtick, and the
+    /// first of any run of three or more tildes, so no code span or fence can
+    /// form (Dataview runs `$= …` spans and dataviewjs fences).
+    static func escapingActiveSyntax(_ text: String) -> String {
         let units = Array(text.utf16)
         var kept = Set<Int>()
         let all = NSRange(location: 0, length: units.count)
@@ -204,13 +211,20 @@ public enum ZMeetText {
             kept.insert((text as NSString).range(of: "](", range: match.range).location)
         }
         let close = UInt16(UInt8(ascii: "]")), backslash = UInt16(UInt8(ascii: "\\"))
+        let backtick = UInt16(UInt8(ascii: "`")), tilde = UInt16(UInt8(ascii: "~"))
         let opensAfter: Set<UInt16> = [UInt16(UInt8(ascii: "(")), UInt16(UInt8(ascii: "[")), UInt16(UInt8(ascii: ":"))]
         var out: [UInt16] = []
         out.reserveCapacity(units.count)
         var precedingBackslashes = 0
         for (i, unit) in units.enumerated() {
-            if unit == close, precedingBackslashes % 2 == 0, i + 1 < units.count,
+            let escaped = precedingBackslashes % 2 == 1
+            if unit == close, !escaped, i + 1 < units.count,
                opensAfter.contains(units[i + 1]), !kept.contains(i) {
+                out.append(backslash)
+            } else if unit == backtick, !escaped {
+                out.append(backslash)
+            } else if unit == tilde, !escaped, i + 2 < units.count, units[i + 1] == tilde, units[i + 2] == tilde,
+                      i == 0 || units[i - 1] != tilde {
                 out.append(backslash)
             }
             out.append(unit)
@@ -233,7 +247,7 @@ public enum ZMeetText {
     /// Whether "<" followed by `next` could open a tag ("<a", "</", "<!--",
     /// "<?") — or would, once a mark between them is dropped by a renderer.
     private static func opensMarkup(after next: Unicode.Scalar) -> Bool {
-        if next.properties.isAlphabetic || next == "/" || next == "!" || next == "?" { return true }
+        if next.properties.isAlphabetic || next == "/" || next == "!" || next == "?" || next == "%" { return true }
         switch next.properties.generalCategory {
         case .nonspacingMark, .spacingMark, .enclosingMark: return true
         default: return false
@@ -254,6 +268,7 @@ public enum ZMeetText {
             .replacingOccurrences(of: "]", with: "\\u005D")
             .replacingOccurrences(of: "<", with: "\\u003C")
             .replacingOccurrences(of: ">", with: "\\u003E")
+            .replacingOccurrences(of: "`", with: "\\u0060")
         return "\"\(escaped)\""
     }
 
