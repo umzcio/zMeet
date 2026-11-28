@@ -133,7 +133,8 @@ public enum ZMeetText {
     /// declaration or Templater command (followed by a letter, `/`, `!`, `?` or
     /// `%`) is escaped, and no code span or fenced block can form (Obsidian
     /// plugins such as Dataview execute some). Everything else (headings, lists,
-    /// tables, web links, a spaced "a < b") passes through. Apply to every model-, user- or
+    /// tables, web links, a spaced "a < b") passes through, with indentation
+    /// limited so no indented code block forms (`limitingIndentation`). Apply to every model-, user- or
     /// window-derived string that reaches a rendered note, including titles.
     public static func sanitizeNoteMarkdown(_ md: String) -> String {
         neutralizingMarkup(md, lessThan: "&lt;")
@@ -145,7 +146,7 @@ public enum ZMeetText {
     /// a combining or prepend mark can fuse "[" or "<" into one grapheme that a
     /// Character comparison wouldn't match while a renderer still sees the syntax.
     static func neutralizingMarkup(_ text: String, lessThan: String) -> String {
-        let scalars = Array(escapingActiveSyntax(defangingUnsafeLinks(text)).unicodeScalars)
+        let scalars = Array(escapingActiveSyntax(defangingUnsafeLinks(limitingIndentation(text))).unicodeScalars)
         var out = String.UnicodeScalarView()
         for (i, scalar) in scalars.enumerated() {
             if scalar == "[" {
@@ -231,6 +232,53 @@ public enum ZMeetText {
             precedingBackslashes = unit == backslash ? precedingBackslashes + 1 : 0
         }
         return String(decoding: out, as: UTF16.self)
+    }
+
+    /// Rewrites each line's indentation so no indented code block can form (Dataview
+    /// runs `= …` code, and an indented block is code too). One needs four columns
+    /// past its container's content column, so: leading indentation is capped at
+    /// three columns, and after each block-quote ">" or list marker at the start of
+    /// a line, any run of spaces or tabs becomes one space, so content starts right
+    /// after the marker. Bullets nested by two or four spaces still nest; deeper
+    /// levels flatten into their parent list.
+    static func limitingIndentation(_ text: String) -> String {
+        text.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
+            var rest = Substring(line)
+            var out = String(repeating: " ", count: min(leadingColumns(&rest), 3))
+            while let marker = containerMarker(at: rest) {
+                out += marker
+                rest = rest.dropFirst(marker.count)
+                if leadingColumns(&rest) > 0 { out += " " }
+            }
+            return out + rest
+        }.joined(separator: "\n")
+    }
+
+    /// Consumes leading spaces and tabs (tab stops every four columns) and returns their width.
+    private static func leadingColumns(_ text: inout Substring) -> Int {
+        var columns = 0
+        while let c = text.first, c == " " || c == "\t" {
+            columns = c == " " ? columns + 1 : (columns / 4 + 1) * 4
+            text = text.dropFirst()
+        }
+        return columns
+    }
+
+    /// A block-quote ">" or list marker ("-", "+", "*", or up to nine digits then
+    /// "." or ")") at the start of `text`, followed by whitespace or the line's end.
+    private static func containerMarker(at text: Substring) -> String? {
+        if text.first == ">" { return ">" }
+        var marker = ""
+        if let c = text.first, c == "-" || c == "+" || c == "*" {
+            marker = String(c)
+        } else {
+            let digits = text.prefix(while: { $0.isASCII && $0.isNumber })
+            guard (1...9).contains(digits.count), let delimiter = text.dropFirst(digits.count).first,
+                  delimiter == "." || delimiter == ")" else { return nil }
+            marker = digits + String(delimiter)
+        }
+        let after = text.dropFirst(marker.count).first
+        return after == nil || after == " " || after == "\t" || after == "\r" ? marker : nil
     }
 
     /// Judged on the destination's literal text: an entity or backslash escape

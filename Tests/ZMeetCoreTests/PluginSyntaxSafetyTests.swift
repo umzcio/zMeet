@@ -21,7 +21,14 @@ private let templaterTags = ["Weekly <% tp.system.exec('id') %> Meeting", "<%* a
                              "<%+ tp.date.now() %>", "<%- x -%>", "<\u{301}% x %>"]
 private let codeForms = ["`$= dv.pages().length`", "`= this.file.name`", "```dataviewjs\ndv.span(1)\n```",
                          "~~~dataviewjs\ndv.span(1)\n~~~", "- ```js\nx\n```", "> ~~~\nx\n~~~", "``double ` tick``",
-                         "\\\\`$= x`"]
+                         "\\\\`$= x`"] + indentedCodeForms
+// Indented code blocks: 4+ columns past the container's content column, after a
+// blank line (an indented line can't interrupt a paragraph), with spaces or tabs,
+// at top level, inside a list item or block quote, or right after a marker.
+private let indentedCodeForms = ["\n\n    $= dv.pages().length", "\n\n\t= this.file.name", "\n\n \t = x",
+                                 "\n\n- item\n\n      = this.file.name", "\n\n- a\n  - b\n\n          = x",
+                                 "\n\n> quote\n>\n>     = this.file.name", "\n\n-     = this.file.name",
+                                 "\n\n1.      = x", "\n\n> -      = x", "\n\n>\t\t= x", "\n\n-\n\n      = x"]
 
 @Test func templaterTagsNeverSurvive() {
     for input in templaterTags {
@@ -51,7 +58,9 @@ private let codeForms = ["`$= dv.pages().length`", "`= this.file.name`", "```dat
         let transcript = ObsidianNoteRenderer.transcriptNote(session: s, transcript: "[0:00] " + input, mainNoteName: "M")
         let notes = MarkdownRenderer().renderProcessedNote(session: s, transcriptURL: URL(fileURLWithPath: "/x/transcript.md"),
             noteURL: URL(fileURLWithPath: "/x/notes.md"), summaryMarkdown: "## Summary\nok " + input)
-        for note in [main, transcript, notes] {
+        let republished = ObsidianNoteRenderer.mainNote(session: s,
+            summary: MarkdownRenderer().summaryBody(fromProcessedNote: notes), entities: MeetingEntities(), transcriptNoteName: "T")
+        for note in [main, transcript, notes, republished] {
             #expect(!note.contains("<%"), "templater tag in note from \(input.debugDescription)")
             #expect(!hasCode(note), "code in note from \(input.debugDescription)")
         }
@@ -61,5 +70,44 @@ private let codeForms = ["`$= dv.pages().length`", "`= this.file.name`", "```dat
 @Test func ordinaryProseIsUnchanged() {
     for prose in ["Budget < $5M and 20% growth", "a ~ b, ~~struck~~ and 3<4 is spaced: 3 < 4", "Q3 20%>15%"] {
         #expect(ZMeetText.sanitizeNoteMarkdown(prose) == prose.replacingOccurrences(of: "3<4", with: "3<4"))
+    }
+}
+
+@Test func listNestingSurvivesIndentLimits() {
+    // Models nest bullets with 2 or 4 spaces; both must still nest after sanitizing.
+    for input in ["- a\n  - b", "- a\n    - b", "- a\n\t- b"] {
+        let out = ZMeetText.sanitizeNoteMarkdown(input)
+        let parsed = try! AttributedString(markdown: out, options: .init(interpretedSyntax: .full))
+        let depth = parsed.runs.map { run in
+            run.presentationIntent?.components.filter { if case .listItem = $0.kind { return true } else { return false } }.count ?? 0
+        }.max()
+        #expect(depth == 2, "nesting lost: \(input.debugDescription) → \(out.debugDescription)")
+    }
+}
+
+@Test func sanitizingTwiceChangesNothing() {
+    // notes.md is re-read and sanitized again on re-publish.
+    for input in templaterTags + codeForms + ["- a\n    - b\n\n        c", "1.  two\n2)\tthree"] {
+        let once = ZMeetText.sanitizeNoteMarkdown(input)
+        #expect(ZMeetText.sanitizeNoteMarkdown(once) == once, "not stable: \(input.debugDescription)")
+    }
+}
+
+@Test func noIndentedCodeInRandomContainerNesting() {
+    // Seeded: random lines of indentation, quote and list markers around "= x".
+    var seed: UInt64 = 0x5EED
+    func next(_ n: Int) -> Int {
+        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+        return Int((seed >> 33) % UInt64(n))
+    }
+    let pieces = [" ", "  ", "    ", "\t", ">", "> ", "-", "- ", "* ", "1.", "1. ", "10) ", "     ", ""]
+    for _ in 0..<2_000 {
+        let lines = (0..<(2 + next(5))).map { _ -> String in
+            if next(3) == 0 { return "" }
+            return (0..<(1 + next(5))).map { _ in pieces[next(pieces.count)] }.joined() + (next(2) == 0 ? "= x" : "text")
+        }
+        let input = lines.joined(separator: "\n")
+        let out = ZMeetText.sanitizeNoteMarkdown(input)
+        #expect(!hasCode(out), "code survives: \(input.debugDescription) → \(out.debugDescription)")
     }
 }
