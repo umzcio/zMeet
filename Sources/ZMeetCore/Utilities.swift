@@ -146,7 +146,10 @@ public enum ZMeetText {
     /// a combining or prepend mark can fuse "[" or "<" into one grapheme that a
     /// Character comparison wouldn't match while a renderer still sees the syntax.
     static func neutralizingMarkup(_ text: String, lessThan: String) -> String {
-        let scalars = Array(escapingActiveSyntax(defangingUnsafeLinks(limitingIndentation(text))).unicodeScalars)
+        // CRLF and a bare CR end lines for Markdown parsers too; every step below
+        // sees lines only at LF.
+        let lf = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        let scalars = Array(escapingActiveSyntax(defangingUnsafeLinks(lf)).unicodeScalars)
         var out = String.UnicodeScalarView()
         for (i, scalar) in scalars.enumerated() {
             if scalar == "[" {
@@ -158,7 +161,9 @@ public enum ZMeetText {
                 out.append(scalar)
             }
         }
-        return String(out)
+        // Last, on the final text: the steps above remove characters (a defanged
+        // link's brackets, a dropped "!") that could leave whitespace leading a line.
+        return limitingIndentation(String(out))
     }
 
     /// Link schemes a note may keep live. Any other scheme would hand a click to

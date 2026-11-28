@@ -28,7 +28,12 @@ private let codeForms = ["`$= dv.pages().length`", "`= this.file.name`", "```dat
 private let indentedCodeForms = ["\n\n    $= dv.pages().length", "\n\n\t= this.file.name", "\n\n \t = x",
                                  "\n\n- item\n\n      = this.file.name", "\n\n- a\n  - b\n\n          = x",
                                  "\n\n> quote\n>\n>     = this.file.name", "\n\n-     = this.file.name",
-                                 "\n\n1.      = x", "\n\n> -      = x", "\n\n>\t\t= x", "\n\n-\n\n      = x"]
+                                 "\n\n1.      = x", "\n\n> -      = x", "\n\n>\t\t= x", "\n\n-\n\n      = x",
+                                 // CRLF and bare CR are line endings too.
+                                 "\r\n\r\n    = x", "\r\r    = x", "\n\r\n    = x", "\r\n\r\n-      = x",
+                                 // A defanged link's text lands at the line start, or right after a marker.
+                                 "\n\n[    = x](smb://h)", "\n\n- [     = x](smb://h)", "\n\n> [\t\t= x](smb://h)",
+                                 "\n\n[-      = x](smb://h)", "\n\n   [ \t= x](smb://h)", "\n\n[x\r    = x](smb://h)"]
 
 @Test func templaterTagsNeverSurvive() {
     for input in templaterTags {
@@ -101,13 +106,27 @@ private let indentedCodeForms = ["\n\n    $= dv.pages().length", "\n\n\t= this.f
         return Int((seed >> 33) % UInt64(n))
     }
     let pieces = [" ", "  ", "    ", "\t", ">", "> ", "-", "- ", "* ", "1.", "1. ", "10) ", "     ", ""]
+    let separators = ["\n", "\n", "\r\n", "\r"]
     for _ in 0..<2_000 {
         let lines = (0..<(2 + next(5))).map { _ -> String in
             if next(3) == 0 { return "" }
-            return (0..<(1 + next(5))).map { _ in pieces[next(pieces.count)] }.joined() + (next(2) == 0 ? "= x" : "text")
+            let indent = { (0..<(1 + next(4))).map { _ in pieces[next(pieces.count)] }.joined() }
+            let content = indent() + (next(2) == 0 ? "= x" : "text")
+            // Sometimes inside a link that gets defanged to its text.
+            return next(3) == 0 ? indent() + "[" + content + "](smb://h)" : content
         }
-        let input = lines.joined(separator: "\n")
+        let input = lines.reduce("") { $0.isEmpty ? $1 : $0 + separators[next(separators.count)] + $1 }
         let out = ZMeetText.sanitizeNoteMarkdown(input)
         #expect(!hasCode(out), "code survives: \(input.debugDescription) → \(out.debugDescription)")
+        #expect(ZMeetText.sanitizeNoteMarkdown(out) == out, "not stable: \(input.debugDescription)")
+    }
+}
+
+@Test func outdentingNeverRevivesAReferenceLink() {
+    // Four spaces make this code in the input; once outdented it would define a link.
+    for input in ["\n\n    [s]: smb://host/share\n\n[go][s]", "\r\n\r\n\t[s]: ssh://h\r\n\r\n[go][s]"] {
+        let out = ZMeetText.sanitizeNoteMarkdown(input)
+        let parsed = try! AttributedString(markdown: out, options: .init(interpretedSyntax: .full))
+        #expect(!parsed.runs.contains { $0.link != nil }, "live link: \(out.debugDescription)")
     }
 }
